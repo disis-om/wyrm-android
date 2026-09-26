@@ -55,10 +55,8 @@ final class UpdateManager {
     private static final String TAG = "WyrmUpdater";
     private static final String RELEASE_PATH =
             UpdateManifest.RELEASE_OWNER + "/" + UpdateManifest.RELEASE_REPO;
-    private static final String MANIFEST_URL =
-            "https://raw.githubusercontent.com/" + RELEASE_PATH + "/main/update/latest.json";
-    private static final String SIGNATURE_URL =
-            "https://raw.githubusercontent.com/" + RELEASE_PATH + "/main/update/latest.json.sig";
+    private static final String UPDATE_BASE_URL =
+            "https://raw.githubusercontent.com/" + RELEASE_PATH + "/main/update/";
     private static final String RAW_HOST = "raw.githubusercontent.com";
     private static final String GITHUB_HOST = "github.com";
     private static final String RAW_PATH_PREFIX = "/" + RELEASE_PATH + "/main/update/";
@@ -250,9 +248,31 @@ final class UpdateManager {
      * one, which is exactly the problem being solved.
      */
     private UpdateManifest fetchAndVerifyManifest() throws Exception {
+        // Stable always; beta too when the player opted in, and whichever is
+        // newer wins. A missing beta file only means there is no beta yet.
+        UpdateManifest stable = null;
+        Exception stableError = null;
+        try {
+            stable = fetchAndVerifyManifest(UpdateChannel.STABLE_MANIFEST);
+        } catch (Exception error) {
+            stableError = error;
+        }
+        if (UpdateChannel.isBetaEnabled(activity)) {
+            try {
+                UpdateManifest beta = fetchAndVerifyManifest(UpdateChannel.BETA_MANIFEST);
+                if (stable == null || beta.versionCode > stable.versionCode) return beta;
+            } catch (Exception betaError) {
+                if (stable == null) throw stableError;
+            }
+        }
+        if (stable == null) throw stableError;
+        return stable;
+    }
+
+    private UpdateManifest fetchAndVerifyManifest(String file) throws Exception {
         String moment = "?t=" + (System.currentTimeMillis() / 1000L);
-        byte[] manifestBytes = fetchSmallFile(MANIFEST_URL + moment, MAX_MANIFEST_BYTES);
-        byte[] encodedSignature = fetchSmallFile(SIGNATURE_URL + moment, MAX_SIGNATURE_BYTES);
+        byte[] manifestBytes = fetchSmallFile(UPDATE_BASE_URL + file + moment, MAX_MANIFEST_BYTES);
+        byte[] encodedSignature = fetchSmallFile(UPDATE_BASE_URL + file + ".sig" + moment, MAX_SIGNATURE_BYTES);
         byte[] signatureBytes;
         try {
             signatureBytes = Base64.decode(

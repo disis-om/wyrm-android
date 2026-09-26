@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.blur
@@ -401,6 +402,8 @@ class WyrmOverlay(private val activity: Activity) :
     private var highlightedNotification by mutableStateOf<String?>(null)
     private var eventGate by mutableStateOf<WyrmNotification?>(null)
     private var enteringArena by mutableStateOf(false)
+    /** The root tab bar folded into its circle, as iOS minimizes it on scroll. */
+    private var rootBarCollapsed by mutableStateOf(false)
     private var betaUpdates by mutableStateOf(com.wyrm.omrajput.UpdateChannel.isBetaEnabled(activity))
     private var arenaNativePortBusySeen = false
     /* Compose state, not a plain field: the Play button reads it. As a plain
@@ -2275,7 +2278,22 @@ class WyrmOverlay(private val activity: Activity) :
     ) {
         val imeUp = ComposeInsets.ime.getBottom(LocalDensity.current) > 0
         val barAlpha by animateFloatAsState(if (imeUp) 0f else 1f, tween(180), label = "tab-bar-keyboard")
-        Box(Modifier.fillMaxSize()) {
+        // Scrolling a root page down folds the bar; scrolling back up opens it.
+        val foldOnScroll = remember {
+            object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+                override fun onPostScroll(
+                    consumed: androidx.compose.ui.geometry.Offset,
+                    available: androidx.compose.ui.geometry.Offset,
+                    source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+                ): androidx.compose.ui.geometry.Offset {
+                    if (consumed.y < -6f) rootBarCollapsed = true
+                    else if (consumed.y > 6f) rootBarCollapsed = false
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
+            }
+        }
+        LaunchedEffect(selectedTab) { rootBarCollapsed = false }
+        Box(Modifier.fillMaxSize().nestedScroll(foldOnScroll)) {
             CompositionLocalProvider(LocalRootTabClearance provides 114.dp) { page() }
             if (barAlpha > 0.01f) {
                 CompositionLocalProvider(LocalPageBackdrop provides pageBackdrop) {
@@ -2315,6 +2333,8 @@ class WyrmOverlay(private val activity: Activity) :
             selected = selected,
             unreadNotifications = visibleNotifications().count { !it.read },
             modifier = modifier,
+            collapsed = rootBarCollapsed,
+            onExpand = { rootBarCollapsed = false },
             onSelect = { tab ->
                 when (tab) {
                     RootTab.NOTIFICATIONS -> openNotifications()

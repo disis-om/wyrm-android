@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "source": "github",
+  "productName": "Wyrm",
+  "packageName": "com.wyrm.omrajput",
+  "versionCode": 621,
+  "versionName": "6.2.1",
+  "minimumVersionCode": 0,
+  "mandatory": false,
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v6.2.1/Wyrm-v6.2.1.apk",
+  "apkSize": 56065488,
+  "sha256": "4b1c22a7ad23f14140f9797b45fc776f35f9883a83059a53a01dd26b50cd7004",
+  "publishedAt": "2026-09-26T21:51:23Z",
+  "headline": "A new version of Wyrm",
+  "author": "OM Rajput",
+  "releaseNotes": ["First beta of the new Wyrm.", "Liquid Glass tab bar that folds while you scroll.", "Beta updates switch in Settings > Backup.", "Arena drops fixed: tags are off until Wyrm serves its own."]
+}

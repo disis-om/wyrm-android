@@ -7,11 +7,24 @@
 # over that manifest — and doing them by hand is how a release goes out that
 # every installed copy refuses to install.
 #
-#   tools/publish-release.sh 1.0.1 2 "What changed" ["second note"...]
+#   tools/publish-release.sh [--beta] 6.2.1 621 "What changed" ["second note"...]
+#
+# Stable writes update/latest.json, which every install reads. --beta writes
+# update/beta.json and marks the release as a pre-release, so only players who
+# turned on "Beta updates" are offered it. Beta = 6.2.x patch steps; stable
+# moves the major/minor. Ask OM before any beta release.
 #
 # The private signing key never leaves ./release-signing, which is not in the
 # repository and must be backed up somewhere that is not this machine.
 set -euo pipefail
+
+CHANNEL=latest
+PRERELEASE=()
+if [ "${1:-}" = "--beta" ]; then
+    CHANNEL=beta
+    PRERELEASE=(--prerelease)
+    shift
+fi
 
 VERSION="${1:?usage: publish-release.sh <version> <versionCode> [notes...]}"
 VERSION_CODE="${2:?usage: publish-release.sh <version> <versionCode> [notes...]}"
@@ -46,7 +59,7 @@ import json,sys
 print(json.dumps([line.rstrip("\n") for line in sys.stdin if line.strip()]))')
 fi
 
-cat > "$STAGE/update/latest.json" <<JSON
+cat > "$STAGE/update/$CHANNEL.json" <<JSON
 {
   "schemaVersion": 1,
   "source": "github",
@@ -67,17 +80,19 @@ cat > "$STAGE/update/latest.json" <<JSON
 JSON
 
 # The app verifies this signature before it believes a single field above.
-openssl dgst -sha256 -sign "$KEY" -out "$STAGE/update/latest.sig.bin" "$STAGE/update/latest.json"
-openssl base64 -A -in "$STAGE/update/latest.sig.bin" -out "$STAGE/update/latest.json.sig"
-rm "$STAGE/update/latest.sig.bin"
+openssl dgst -sha256 -sign "$KEY" -out "$STAGE/update/$CHANNEL.sig.bin" "$STAGE/update/$CHANNEL.json"
+openssl base64 -A -in "$STAGE/update/$CHANNEL.sig.bin" -out "$STAGE/update/$CHANNEL.json.sig"
+rm "$STAGE/update/$CHANNEL.sig.bin"
 
 echo "==> Publishing v$VERSION"
-gh release create "v$VERSION" "$STAGE/$ASSET" --repo "$REPO" \
-    --title "Wyrm $VERSION" --notes "${*:-A new version of Wyrm}" >/dev/null
+TITLE="Wyrm $VERSION"
+[ "$CHANNEL" = beta ] && TITLE="Wyrm $VERSION (beta)"
+gh release create "v$VERSION" "$STAGE/$ASSET" --repo "$REPO" "${PRERELEASE[@]}" \
+    --title "$TITLE" --notes "${*:-A new version of Wyrm}" >/dev/null
 
 # The manifest goes up last: until it does, nobody is offered the build, so a
 # half-finished release is invisible rather than broken.
-for file in update/latest.json update/latest.json.sig; do
+for file in "update/$CHANNEL.json" "update/$CHANNEL.json.sig"; do
     gh api --method PUT "repos/$REPO/contents/$file" \
         -f message="Publish $VERSION" \
         -f content="$(openssl base64 -A -in "$STAGE/$file")" \

@@ -62,6 +62,8 @@ fun BackupScreen(
     onRestore: () -> Unit,
     onChooseFolder: () -> Unit,
     onCheckUpdate: () -> Unit = {},
+    betaUpdates: Boolean = false,
+    onBetaUpdates: (Boolean) -> Unit = {},
     onInstall: () -> Unit = {},
     onOpenInstalledNotes: () -> Unit = {},
     onOpenAvailableNotes: () -> Unit = {},
@@ -193,6 +195,13 @@ fun BackupScreen(
                 value = updateLabel,
                 first = false,
                 onClick = if (update.available) onInstall else onCheckUpdate,
+            )
+            SettingsBoolRow(
+                title = "Beta updates",
+                detail = "Try new builds before everyone else. They can have rough edges.",
+                on = betaUpdates,
+                first = false,
+                onToggle = onBetaUpdates,
             )
             if (settingsVersion.isNotBlank()) {
                 SettingsValueRow("Settings format", "v$settingsVersion", first = false)

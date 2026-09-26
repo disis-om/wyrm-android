@@ -401,6 +401,7 @@ class WyrmOverlay(private val activity: Activity) :
     private var highlightedNotification by mutableStateOf<String?>(null)
     private var eventGate by mutableStateOf<WyrmNotification?>(null)
     private var enteringArena by mutableStateOf(false)
+    private var betaUpdates by mutableStateOf(com.wyrm.omrajput.UpdateChannel.isBetaEnabled(activity))
     private var arenaNativePortBusySeen = false
     /* Compose state, not a plain field: the Play button reads it. As a plain
        field its release changed nothing Compose could see, so after a match the
@@ -1301,6 +1302,12 @@ class WyrmOverlay(private val activity: Activity) :
                             onRestore = { requestBackupAction(BackupAction.RESTORE, 2) },
                             onChooseFolder = { requestBackupAction(BackupAction.CHOOSE_FOLDER, 3) },
                             onCheckUpdate = { host?.onUpdateAction(0) },
+                            betaUpdates = betaUpdates,
+                            onBetaUpdates = { enabled ->
+                                betaUpdates = enabled
+                                com.wyrm.omrajput.UpdateChannel.setBetaEnabled(activity, enabled)
+                                host?.onUpdateAction(0)
+                            },
                             onInstall = ::startUpdate,
                             onOpenInstalledNotes = {
                                 openWhatsNew(

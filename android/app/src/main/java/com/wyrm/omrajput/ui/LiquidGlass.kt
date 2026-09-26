@@ -637,6 +637,59 @@ fun LiquidTabBar(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    collapsed: Boolean = false,
+    onExpand: () -> Unit = {},
+) {
+    // iOS 26 `.tabBarMinimizeBehavior(.onScrollDown)`: the bar folds towards
+    // the leading edge into a glass circle carrying the chosen tab, and a tap
+    // on that circle (or scrolling back up) unfolds it.
+    val fold = remember { Animatable(if (collapsed) 1f else 0f) }
+    LaunchedEffect(collapsed) { fold.animateTo(if (collapsed) 1f else 0f, iosSpring(0.42f, 0.78f)) }
+    val pageBackdrop = LocalPageBackdrop.current
+    Box(modifier.fillMaxWidth()) {
+        if (fold.value < 0.999f) {
+            ExpandedLiquidTabBar(
+                tabs = tabs,
+                selected = selected,
+                onSelect = onSelect,
+                modifier = Modifier.graphicsLayer {
+                    val f = fold.value
+                    alpha = 1f - f
+                    val s = lerp(1f, 0.82f, f)
+                    scaleX = s
+                    scaleY = s
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                },
+            )
+        }
+        if (fold.value > 0.001f) {
+            Box(
+                Modifier
+                    .padding(start = 18.dp)
+                    .align(Alignment.CenterStart)
+                    .size(56.dp)
+                    .graphicsLayer {
+                        val f = fold.value
+                        alpha = f
+                        val s = lerp(0.6f, 1f, f)
+                        scaleX = s
+                        scaleY = s
+                    }
+                    .liquidGlass(backdrop = pageBackdrop, shape = WyrmCapsule, tint = Wyrm.Paper.copy(alpha = 0.4f))
+                    .clip(WyrmCapsule)
+                    .clickable(interactionSource = null, indication = null, role = Role.Button) { onExpand() },
+                contentAlignment = Alignment.Center,
+            ) { tabs.getOrNull(selected)?.content?.invoke(true) }
+        }
+    }
+}
+
+@Composable
+private fun ExpandedLiquidTabBar(
+    tabs: List<LiquidTab>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val count = tabs.size
     val haptics = LocalHapticFeedback.current

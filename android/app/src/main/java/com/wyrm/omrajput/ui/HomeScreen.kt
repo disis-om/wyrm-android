@@ -966,6 +966,8 @@ fun FloatingRootTabs(
     unreadNotifications: Int,
     onSelect: (RootTab) -> Unit,
     modifier: Modifier = Modifier,
+    collapsed: Boolean = false,
+    onExpand: () -> Unit = {},
 ) {
     val order = RootTab.entries
     val tabs = order.map { tab ->
@@ -976,6 +978,8 @@ fun FloatingRootTabs(
         selected = order.indexOf(selected),
         onSelect = { onSelect(order[it]) },
         modifier = modifier,
+        collapsed = collapsed,
+        onExpand = onExpand,
     )
 }
 

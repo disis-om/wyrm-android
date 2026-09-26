@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Wyrm's mark, cropped tight for the status bar.
+
+    Same geometry as ic_launcher_foreground.xml, just without the adaptive
+    icon's safe-zone padding — a notification icon renders small enough that
+    empty margin reads as "nothing here" rather than as breathing room.
+    Android draws this as a plain white silhouette from the alpha channel
+    alone, whatever colour is set here.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="20dp"
+    android:viewportWidth="68"
+    android:viewportHeight="56">
+    <path
+        android:pathData="M7.6,8.3 C11.8,46.7 22.0,48.5 25.6,21.4 C29.2,47.6 38.8,47.6 42.4,21.4 C46.0,48.5 56.2,46.7 60.4,8.3"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

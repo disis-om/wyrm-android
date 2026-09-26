@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Wyrm mark: a W with rounded valleys, drawn as one continuous stroke.
+
+    This geometry is the brand. The identical drawing appears in WyrmMark.kt,
+    in the connecting screen in app/src/game/loop.c, and as <Mark /> in the
+    operator dashboard — change it in all four at once or in none of them.
+
+    Kept inside the adaptive icon's safe zone so round and squircle launchers
+    cannot clip it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M27.6,35.3 C31.8,73.7 42.0,75.5 45.6,48.4 C49.2,74.6 58.8,74.6 62.4,48.4 C66.0,75.5 76.2,73.7 80.4,35.3"
+        android:strokeColor="#37352F"
+        android:strokeWidth="9.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

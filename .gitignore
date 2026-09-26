@@ -1,0 +1,33 @@
+# Build output
+/build/
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/app/.cxx/
+/app/res/shaders/bin/
+/thermite/res/shaders/bin/
+compile_commands.json
+__pycache__/
+*.py[cod]
+*.exe
+*.apk
+*.aab
+
+# Machine-local configuration
+local.properties
+.idea/
+*.iml
+
+# Signing material and service configuration stay private
+/release-signing/
+*.jks
+*.keystore
+*.p12
+*.key
+keystore.properties
+google-services.json
+.env*
+
+# Only README.md is published
+*.md
+!/README.md

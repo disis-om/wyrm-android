@@ -93,11 +93,14 @@ gh release create "v$VERSION" "$STAGE/$ASSET" --repo "$REPO" "${PRERELEASE[@]}" 
 # The manifest goes up last: until it does, nobody is offered the build, so a
 # half-finished release is invisible rather than broken.
 for file in "update/$CHANNEL.json" "update/$CHANNEL.json.sig"; do
+    # A channel's first release has no file yet: gh prints the 404 body, not a sha.
+    OLD_SHA="$(gh api "repos/$REPO/contents/$file" --jq '.sha' 2>/dev/null | grep -E '^[0-9a-f]{40}$' || true)"
+    SHA_ARG=()
+    [ -n "$OLD_SHA" ] && SHA_ARG=(-f "sha=$OLD_SHA")
     gh api --method PUT "repos/$REPO/contents/$file" \
         -f message="Publish $VERSION" \
         -f content="$(openssl base64 -A -in "$STAGE/$file")" \
-        $(gh api "repos/$REPO/contents/$file" --jq '.sha' 2>/dev/null | sed 's/^/-f sha=/') \
-        >/dev/null
+        "${SHA_ARG[@]}" >/dev/null
 done
 
 echo "==> v$VERSION is live ($(numfmt --to=iec "$SIZE" 2>/dev/null || echo "$SIZE bytes"))"

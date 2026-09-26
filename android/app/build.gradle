@@ -1,0 +1,197 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+    id 'com.google.gms.google-services'
+}
+
+def wyrmVersionCode = (project.findProperty('WYRM_VERSION_CODE') ?: '1').toInteger()
+def wyrmVersionName = project.findProperty('WYRM_VERSION_NAME') ?: '0.1.0'
+def wyrmApiUrl = project.findProperty('WYRM_API_URL') ?: 'https://wyrm-api.77-245-76-86.sslip.io'
+def wyrmReleaseNotesRepo = project.findProperty('WYRM_RELEASE_NOTES_REPO') ?: 'disis-om/wyrm-android'
+def googleWebClientId = project.findProperty('GOOGLE_WEB_CLIENT_ID') ?: '784880532261-a87vndl02m35n8u49ke6eulc56ilft1f.apps.googleusercontent.com'
+def signingPropertiesFile = rootProject.file('../release-signing/keystore.properties')
+def signingProperties = new Properties()
+def hasReleaseSigning = signingPropertiesFile.exists()
+def officialUpdaterKeyFile = file('src/main/res/raw/wyrm_update_manifest_public.pem')
+if (hasReleaseSigning) {
+    signingPropertiesFile.withInputStream { signingProperties.load(it) }
+}
+
+/**
+ * Carries the privacy policy into the app.
+ *
+ * One document, kept at the root of the repository where it can be read and
+ * reviewed like anything else, and copied into the assets on every build. The
+ * app reads it from there rather than from a string somebody remembered to
+ * update — a privacy policy that disagrees with itself in two places is worse
+ * than none.
+ *
+ * The task itself is handed to `assets.srcDir` below rather than a path, so
+ * every task that reads the assets knows to wait for it. Naming the folder
+ * instead left lint reading a directory nothing had filled yet.
+ */
+def copyPrivacyPolicy = tasks.register('copyPrivacyPolicy', Copy) {
+    from rootProject.file('../PRIVACY.md')
+    into layout.buildDirectory.dir('generated/wyrmAssets')
+    rename { 'privacy.md' }
+}
+
+android {
+    namespace = "com.wyrm.omrajput"
+    compileSdk 36
+    ndkVersion = "28.2.13676358"
+
+    defaultConfig {
+        applicationId "com.wyrm.omrajput"
+        minSdk 26
+        targetSdk 35
+        versionCode wyrmVersionCode
+        versionName wyrmVersionName
+        buildConfigField 'String', 'WYRM_API_URL', "\"${wyrmApiUrl}\""
+        buildConfigField 'String', 'WYRM_RELEASE_NOTES_REPO', "\"${wyrmReleaseNotesRepo}\""
+        buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', "\"${googleWebClientId}\""
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_PLATFORM=android-26", "-DANDROID_STL=c++_shared", "-DWYRM_APP_VERSION=${wyrmVersionName}"
+                abiFilters 'arm64-v8a'
+            }
+        }
+
+        /*
+         * One architecture, said once, for everything that goes in the APK.
+         *
+         * The filter above only decides what CMake builds — it says nothing
+         * about native libraries that arrive inside a dependency. One AndroidX
+         * library ships 32-bit and x86 builds of itself, and those alone were
+         * enough to make the package *look* installable on a 32-bit phone.
+         * Android would then install it as a 32-bit app, and the engine — which
+         * exists only as arm64 — was simply not there:
+         *
+         *     dlopen failed: library "libSDL3.so" not found
+         *
+         * With the filter here, the APK contains arm64 and nothing else, so a
+         * phone that cannot run it says so at install time instead of failing
+         * in a dialog the player can do nothing about.
+         */
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile rootProject.file(signingProperties['storeFile'])
+                storePassword signingProperties['storePassword']
+                keyAlias signingProperties['keyAlias']
+                keyPassword signingProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            jniDebuggable true
+        }
+        release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+            debuggable false
+            jniDebuggable false
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        migrationRelease {
+            initWith release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+            debuggable true
+            jniDebuggable false
+            matchingFallbacks = ['release']
+        }
+    }
+
+    sourceSets {
+        main {
+            // The engine's resources, plus one folder of our own that the task
+            // below fills. The privacy policy is copied there from the
+            // repository root, so the document a player reads inside the app
+            // and the one in the repository cannot drift apart.
+            assets.srcDirs = ['../../app/res']
+            assets.srcDir(copyPrivacyPolicy)
+            if (!officialUpdaterKeyFile.exists()) {
+                res.srcDirs += ['src/publicPlaceholder/res']
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'jni/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation platform('androidx.compose:compose-bom:2026.06.00')
+    implementation 'androidx.activity:activity-compose:1.13.0'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.animation:animation'
+    implementation 'com.composables:icons-lucide-android:2.2.1'
+    // Liquid Glass: backdrop sampling, lens refraction and continuous corners,
+    // so the controls and the floating tab bar match Wyrm iOS's system glass.
+    implementation 'io.github.kyant0:backdrop:1.0.6'
+    implementation 'io.github.kyant0:shapes:1.2.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.9.2'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.9.2'
+    implementation 'androidx.savedstate:savedstate-ktx:1.3.1'
+    implementation 'androidx.credentials:credentials:1.5.0'
+    implementation 'androidx.credentials:credentials-play-services-auth:1.5.0'
+    implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
+    implementation platform('com.google.firebase:firebase-bom:34.4.0')
+    implementation 'com.google.firebase:firebase-messaging'
+    implementation 'io.getstream:stream-webrtc-android:1.3.10'
+    implementation 'io.livekit:livekit-android:2.27.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'org.commonmark:commonmark:0.24.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-tables:0.24.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.24.0'
+    implementation 'org.commonmark:commonmark-ext-task-list-items:0.24.0'
+    implementation 'org.commonmark:commonmark-ext-autolink:0.24.0'
+    testImplementation 'junit:junit:4.13.2'
+}

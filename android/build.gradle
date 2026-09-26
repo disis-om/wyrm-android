@@ -1,0 +1,19 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath 'com.google.gms:google-services:4.4.2'
+    }
+}
+
+plugins {
+    id 'org.jetbrains.kotlin.android' version '2.3.21' apply false
+    id 'org.jetbrains.kotlin.plugin.compose' version '2.3.21' apply false
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}

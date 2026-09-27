@@ -152,7 +152,11 @@ android {
             // repository root, so the document a player reads inside the app
             // and the one in the repository cannot drift apart.
             assets.srcDirs = ['../../app/res']
-            assets.srcDir(copyPrivacyPolicy)
+            // A plain folder plus an explicit preBuild dependency (below).
+            // Handing the task itself to srcDir was never wired up: the task
+            // did not run and no APK carried privacy.md, so Settings › Privacy
+            // said "could not be opened" (found 2026-09-27).
+            assets.srcDir(layout.buildDirectory.dir('generated/wyrmAssets'))
             if (!officialUpdaterKeyFile.exists()) {
                 res.srcDirs += ['src/publicPlaceholder/res']
             }
@@ -208,3 +212,6 @@ dependencies {
     implementation 'org.commonmark:commonmark-ext-autolink:0.24.0'
     testImplementation 'junit:junit:4.13.2'
 }
+
+// Every variant's assets are read after preBuild, lint included.
+tasks.named('preBuild').configure { dependsOn copyPrivacyPolicy }

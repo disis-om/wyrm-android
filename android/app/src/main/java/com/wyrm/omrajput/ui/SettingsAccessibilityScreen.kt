@@ -48,7 +48,7 @@ fun SettingsAccessibilityScreen(
     onIntensityChange: (Float) -> Unit,
     onResetIntensity: () -> Unit,
 ) {
-    var advancedOpen by remember { mutableStateOf(false) }
+    var advancedOpen by remember { mutableStateOf(SettingsFocus.wants("app.theme-intensity")) }
     SettingsDrillScaffold(
         title = "Accessibility",
         insetTop = insetTop,
@@ -56,7 +56,7 @@ fun SettingsAccessibilityScreen(
         onBack = onBack,
     ) {
         SettingsSectionLabel("Themes", top = 18.dp)
-        SettingsCard {
+        Box(Modifier.settingAnchor("app.theme")) { SettingsCard {
             WyrmThemeId.entries.forEachIndexed { index, theme ->
                 ThemeChoiceRow(
                     theme = theme,
@@ -66,7 +66,7 @@ fun SettingsAccessibilityScreen(
                     onClick = { onTheme(theme) },
                 )
             }
-        }
+        } }
         Text(
             text = "Themes colour the app and arena interface only. Skins, arena background and gameplay stay untouched.",
             fontFamily = Wyrm.Body,
@@ -82,7 +82,7 @@ fun SettingsAccessibilityScreen(
         )
         AnimatedVisibility(visible = advancedOpen) {
             SettingsCard {
-                SettingsSliderRow(
+                Box(Modifier.settingAnchor("app.theme-intensity")) { SettingsSliderRow(
                     title = "Theme intensity",
                     valueText = "${(intensity * 100f).roundToInt()}%",
                     detail = "50% is the original theme look. Lower moves towards Paper; higher is richer.",
@@ -91,7 +91,7 @@ fun SettingsAccessibilityScreen(
                     steps = 0,
                     first = true,
                     onChange = onIntensityChange,
-                )
+                ) }
                 SettingsHairline()
                 Box(Modifier.padding(14.dp)) {
                     PaperOutlineButton(

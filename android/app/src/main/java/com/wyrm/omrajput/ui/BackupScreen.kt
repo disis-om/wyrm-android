@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -233,20 +234,25 @@ fun BackupScreen(
                 first = false,
                 onClick = if (update.available) onInstall else onCheckUpdate,
             )
-            SettingsBoolRow(
-                title = "Beta updates",
-                detail = "Try new builds before everyone else. They can have rough edges.",
-                on = betaUpdates,
-                first = false,
-                onToggle = onBetaUpdates,
-            )
-            SettingsBoolRow(
-                title = "Back up before updating",
-                detail = "Saves skins, controls and settings to your backup folder first.",
-                on = backupFirst,
-                first = false,
-                onToggle = onBackupFirst,
-            )
+            // Also where the beta prompt's "turn them off" shortcut lands.
+            Box(Modifier.settingAnchor("app.beta-updates")) {
+                SettingsBoolRow(
+                    title = "Beta updates",
+                    detail = "Get early builds before everyone else. They can have rough edges or bugs; turn this off to get stable updates only.",
+                    on = betaUpdates,
+                    first = false,
+                    onToggle = onBetaUpdates,
+                )
+            }
+            Box(Modifier.settingAnchor("app.backup-first")) {
+                SettingsBoolRow(
+                    title = "Back up before updating",
+                    detail = "Saves skins, controls and settings to your backup folder first.",
+                    on = backupFirst,
+                    first = false,
+                    onToggle = onBackupFirst,
+                )
+            }
             if (settingsVersion.isNotBlank()) {
                 SettingsValueRow("Settings format", "v$settingsVersion", first = false)
             }

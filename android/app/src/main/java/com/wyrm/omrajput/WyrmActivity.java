@@ -143,6 +143,7 @@ public final class WyrmActivity extends SDLActivity {
     private static native String nativeUpdateSnapshot();
     private static native void nativeUpdateAction(int action);
     private static native void nativeSetArrowSkin(int skin, float brightness);
+    private static native void nativeSetWyrmLook(int hair, int hairRgb, int ears, int glasses);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -150,6 +151,11 @@ public final class WyrmActivity extends SDLActivity {
         // Image arrows: the saved choice reaches the engine before the first frame.
         com.wyrm.omrajput.ui.ArrowSkinStore.attach(this, (skin, brightness) -> {
             try { nativeSetArrowSkin(skin, brightness); } catch (UnsatisfiedLinkError ignored) { }
+            return kotlin.Unit.INSTANCE;
+        });
+        // Wyrm looks (hair, ears, glasses): drawn on this phone only, never sent.
+        com.wyrm.omrajput.ui.WyrmLookStore.attach(this, (hair, hairRgb, ears, glasses) -> {
+            try { nativeSetWyrmLook(hair, hairRgb, ears, glasses); } catch (UnsatisfiedLinkError ignored) { }
             return kotlin.Unit.INSTANCE;
         });
 

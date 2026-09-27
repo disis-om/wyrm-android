@@ -28,6 +28,13 @@ object AirSkin {
         else -> null
     }
 
+    /**
+     * AIR's `ksmc_t` under each wheel bead. Off (OM, 2026-09-28), like the
+     * engine's `WYRM_AIR_BEAD_SHADOW`: it read as a black shadow round the
+     * whole snake that grid beads never had.
+     */
+    const val BEAD_SHADOW = false
+
     const val WHEEL_RADIUS = 128.0
     const val BEZEL_WIDTH = 18.0
     const val BEZEL_POINTER_RADIUS = 151.0

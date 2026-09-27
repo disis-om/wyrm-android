@@ -50,7 +50,8 @@ fun SettingsAssistScreen(
     onBack: () -> Unit,
     onChange: (Setting, List<Float>) -> Unit,
 ) {
-    var mode by remember { mutableIntStateOf(1) }
+    // Settings search picks the tab that holds the row it opened.
+    var mode by remember { mutableIntStateOf(if (SettingsFocus.target?.startsWith("normal.") == true) 0 else 1) }
     var advanced by remember { mutableStateOf(true) }
     val foodIds = setOf("food_type", "food_scale", "food_float", "food_flicker",
         "const_food_scale", "uniform_food_color", "food_color")
@@ -134,7 +135,9 @@ fun SettingsAssistScreen(
                 SettingsSectionLabel("Arena colours")
                 SettingsCard {
                     colours.forEachIndexed { index, setting ->
-                        SettingsColourRow(setting = setting, first = index == 0, onChange = onChange)
+                        Box(Modifier.settingAnchor(setting.id)) {
+                            SettingsColourRow(setting = setting, first = index == 0, onChange = onChange)
+                        }
                     }
                 }
 
@@ -148,7 +151,9 @@ fun SettingsAssistScreen(
                         SettingTypedRow(setting = setting, first = false, onChange = onChange)
                     }
                     headDotColor?.let { setting ->
-                        SettingsColourRow(setting = setting, first = false, onChange = onChange)
+                        Box(Modifier.settingAnchor(setting.id)) {
+                            SettingsColourRow(setting = setting, first = false, onChange = onChange)
+                        }
                     }
                 }
 

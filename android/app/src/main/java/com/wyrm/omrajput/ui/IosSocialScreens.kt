@@ -969,6 +969,7 @@ fun IosProfileScreen(
     onFollowing: () -> Unit,
     onSignOut: () -> Unit,
     onToggleFollow: () -> Unit,
+    followBusy: Boolean = false,
 ) {
     IosPageChrome("Profile", insetTop, onBack, actionTitle = if (own) "Edit" else "", onAction = onEdit) {
         IosRefreshable(refreshing, onRefresh, Modifier.weight(1f)) {
@@ -988,6 +989,40 @@ fun IosProfileScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 34.dp).padding(top = 10.dp),
                 )
+                if (!own) {
+                    // Follow, Follow back or Following, as a real button under the
+                    // name. It was a plain third row in the list card, which read as
+                    // no button at all. As `followBar` on iOS.
+                    Column(
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        if (followsYou) {
+                            Text(
+                                if (isFollowing) "You follow each other" else "Follows you",
+                                fontFamily = Wyrm.Body,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp,
+                                letterSpacing = 0.4.sp,
+                                color = Wyrm.Live,
+                                modifier = Modifier
+                                    .clip(WyrmCapsule)
+                                    .background(Wyrm.Live.copy(alpha = 0.14f))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (isFollowing) {
+                            PaperOutlineButton(if (followBusy) "…" else "Following", enabled = !followBusy, onClick = onToggleFollow)
+                        } else {
+                            PaperPrimaryButton(
+                                if (followBusy) "…" else if (followsYou) "Follow back" else "Follow",
+                                enabled = !followBusy,
+                                onClick = onToggleFollow,
+                            )
+                        }
+                    }
+                }
                 Row(
                     Modifier
                         .padding(16.dp)
@@ -1006,13 +1041,6 @@ fun IosProfileScreen(
                     IosListRow("Following", value = "$following", onClick = onFollowing)
                     if (own) {
                         IosListRow("Sign out", destructive = true, showsChevron = false, onClick = onSignOut)
-                    } else {
-                        IosListRow(
-                            if (isFollowing) "Unfollow" else "Follow",
-                            value = if (followsYou) "Follows you" else "",
-                            showsChevron = false,
-                            onClick = onToggleFollow,
-                        )
                     }
                 }
                 Spacer(Modifier.height(24.dp + insetBottom))

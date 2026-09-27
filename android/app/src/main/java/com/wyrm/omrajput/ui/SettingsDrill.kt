@@ -150,6 +150,7 @@ internal fun SettingsDrillScaffold(
         Column(
             modifier = Modifier
                 .weight(1f)
+                .adjustViewport()
                 .verticalScroll(rememberScrollState()),
         ) {
             content()
@@ -707,6 +708,7 @@ private fun PaperShadeTrack(
 @Composable
 private fun PaperGradientTrack(fraction: Float, brush: Brush, onPick: (Float) -> Unit) {
     val pick by androidx.compose.runtime.rememberUpdatedState(onPick)
+    val adjusting by androidx.compose.runtime.rememberUpdatedState(LocalAdjustSubject.current)
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -716,13 +718,19 @@ private fun PaperGradientTrack(fraction: Float, brush: Brush, onPick: (Float) ->
                 val run = (size.width - knob).coerceAtLeast(1f)
                 awaitEachGesture {
                     val down = awaitFirstDown()
+                    val held = adjusting
+                    held?.let { AdjustPreview.editing(it, true) }
                     pick(((down.position.x - knob / 2f) / run).coerceIn(0f, 1f))
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) break
-                        change.consume()
-                        pick(((change.position.x - knob / 2f) / run).coerceIn(0f, 1f))
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            change.consume()
+                            pick(((change.position.x - knob / 2f) / run).coerceIn(0f, 1f))
+                        }
+                    } finally {
+                        held?.let { AdjustPreview.editing(it, false) }
                     }
                 }
             },
@@ -750,6 +758,19 @@ private fun PaperGradientTrack(fraction: Float, brush: Brush, onPick: (Float) ->
 
 @Composable
 internal fun SettingTypedRow(
+    setting: Setting,
+    first: Boolean,
+    onChange: (Setting, List<Float>) -> Unit,
+) {
+    // Every engine row is a settings-search anchor under its own id, and a
+    // row that changes a control raises the adjust preview while held.
+    androidx.compose.runtime.CompositionLocalProvider(LocalAdjustSubject provides AdjustPreview.subjectFor(setting.id)) {
+        Box(Modifier.settingAnchor(setting.id)) { TypedRowBody(setting, first, onChange) }
+    }
+}
+
+@Composable
+private fun TypedRowBody(
     setting: Setting,
     first: Boolean,
     onChange: (Setting, List<Float>) -> Unit,

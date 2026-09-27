@@ -1,6 +1,7 @@
 package com.wyrm.omrajput.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,18 +16,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private data class NotificationChoice(
+internal data class NotificationChoice(
     val kind: String,
     val title: String,
     val detail: String,
 )
 
-private data class NotificationGroup(
+internal data class NotificationGroup(
     val title: String,
     val rows: List<NotificationChoice>,
 )
 
-private val notificationGroups = listOf(
+internal val notificationGroups = listOf(
     NotificationGroup(
         "People",
         listOf(
@@ -75,7 +76,7 @@ fun NotificationSettingsScreen(
     ) {
         SettingsSectionLabel("Android", top = 16.dp)
         SettingsCard {
-            SettingsBoolRow(
+            Box(Modifier.settingAnchor("app.notify.all")) { SettingsBoolRow(
                 title = "All notifications",
                 detail = if (masterEnabled) {
                     "Allowed by Android. Tap to manage the master permission."
@@ -85,20 +86,22 @@ fun NotificationSettingsScreen(
                 on = masterEnabled,
                 first = true,
                 onToggle = { onOpenSystemSettings() },
-            )
+            ) }
         }
 
         notificationGroups.forEach { group ->
             SettingsSectionLabel(group.title)
             SettingsCard {
                 group.rows.forEachIndexed { index, choice ->
-                    NotificationPaperRow(
-                        choice = choice,
-                        enabled = masterEnabled,
-                        checked = masterEnabled && choice.kind in enabledKinds,
-                        first = index == 0,
-                        onClick = { onKindChanged(choice.kind, choice.kind !in enabledKinds) },
-                    )
+                    Box(Modifier.settingAnchor("app.notify.${choice.kind}")) {
+                        NotificationPaperRow(
+                            choice = choice,
+                            enabled = masterEnabled,
+                            checked = masterEnabled && choice.kind in enabledKinds,
+                            first = index == 0,
+                            onClick = { onKindChanged(choice.kind, choice.kind !in enabledKinds) },
+                        )
+                    }
                 }
             }
         }

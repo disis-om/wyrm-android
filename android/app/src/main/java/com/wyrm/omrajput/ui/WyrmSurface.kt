@@ -343,6 +343,16 @@ object Wyrm {
     val Track: Color get() = palette.track
     val Hover: Color get() = palette.hover
 
+    /**
+     * Ink on a selected pill or tab (OM, 2026-09-28). Graphite and Midnight
+     * seat the selection on a light thumb, where their light ink vanished, so
+     * there it is the dark paper mixed towards black. As `selectedPillInk` on iOS.
+     */
+    val PillInk: Color get() =
+        if (palette.dark) androidx.compose.ui.graphics.lerp(palette.paper, Color(0xFF111111), 0.55f) else palette.ink
+    /** The light thumb under [PillInk] in the dark themes. */
+    val PillThumb: Color get() = palette.ink.copy(alpha = 0.9f)
+
     fun contentOn(background: Color): Color {
         val luminance = background.luminance()
         val darkContrast = (luminance + 0.05f) / 0.05f

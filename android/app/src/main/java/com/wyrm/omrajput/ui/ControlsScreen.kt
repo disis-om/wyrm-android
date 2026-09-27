@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -165,9 +167,10 @@ fun ControlsScreen(
     val handedness = settings.named("controls.handedness")
     val zoomRows = settings.filter { it.group == "controls.zoom" }
     val arrowRows = settings.filter { it.group == "controls.arrow" }
-    var zoomOpen by remember { mutableStateOf(false) }
+    var zoomOpen by remember { mutableStateOf(SettingsFocus.wants(zoomRows.map { it.id })) }
     var behaviourOpen by remember { mutableStateOf(false) }
     var arrowPickerOpen by remember { mutableStateOf(false) }
+    androidx.compose.runtime.SideEffect { AdjustPreview.arrowSteering = arrowSteering }
 
     SettingsDrillScaffold(
         title = "Controls",
@@ -204,7 +207,7 @@ fun ControlsScreen(
 
         SettingsSectionLabel("Basic · steering")
         SettingsCard {
-            SettingsEnumBlock(
+            Box(Modifier.settingAnchor("controls.joystick_mode")) { SettingsEnumBlock(
                 title = "Steering style",
                 detail = "",
                 options = listOf("Joystick", "Arrow"),
@@ -220,7 +223,7 @@ fun ControlsScreen(
                         }
                     }
                 },
-            )
+            ) }
             if (!arrowSteering && steeringSetting != null) {
                 val behaviour = steeringSetting.options.take(2)
                 if (behaviour.size >= 2) {
@@ -242,24 +245,24 @@ fun ControlsScreen(
                 }
             }
             handedness?.let { setting ->
-                SettingsEnumBlock(
+                Box(Modifier.settingAnchor(setting.id)) { SettingsEnumBlock(
                     title = setting.label,
                     detail = setting.hint,
                     options = listOf("Left", "Right"),
                     selected = setting.index.coerceIn(0, 1),
                     first = false,
                     onSelect = { onChange(setting, listOf(it.toFloat())) },
-                )
+                ) }
             }
             boostMode?.let { setting ->
-                SettingsEnumBlock(
+                Box(Modifier.settingAnchor(setting.id)) { SettingsEnumBlock(
                     title = "Boost",
                     detail = setting.hint,
                     options = setting.options,
                     selected = setting.index.coerceIn(0, (setting.options.size - 1).coerceAtLeast(0)),
                     first = false,
                     onSelect = { onChange(setting, listOf(it.toFloat())) },
-                )
+                ) }
             }
         }
 
@@ -285,20 +288,24 @@ fun ControlsScreen(
             SettingsSectionLabel("Basic · arrow")
             SettingsCard {
                 // The picker replaces the style row; colour only tints the drawn arrows.
-                ArrowStyleRow(arrowStyleSetting, arrowColor, first = true) { arrowPickerOpen = true }
+                Box(Modifier.settingAnchor("arrow.style")) {
+                    ArrowStyleRow(arrowStyleSetting, arrowColor, first = true) { arrowPickerOpen = true }
+                }
                 arrowRows.filter { it.id != "arrow.style" && it.id != "arrow.color" }.forEach { setting ->
                     SettingTypedRow(setting = setting, first = false, onChange = onChange)
                 }
-                SettingsSliderRow(
-                    title = "Brightness",
-                    valueText = "${(ArrowSkinStore.brightness * 100).roundToInt()}%",
-                    detail = "",
-                    value = ArrowSkinStore.brightness,
-                    range = 0.2f..1f,
-                    steps = 0,
-                    first = false,
-                    onChange = { ArrowSkinStore.updateBrightness(it) },
-                )
+                androidx.compose.runtime.CompositionLocalProvider(LocalAdjustSubject provides AdjustSubject.ARROW) {
+                    Box(Modifier.settingAnchor("app.arrow-brightness")) { SettingsSliderRow(
+                        title = "Brightness",
+                        valueText = "${(ArrowSkinStore.brightness * 100).roundToInt()}%",
+                        detail = "",
+                        value = ArrowSkinStore.brightness,
+                        range = 0.2f..1f,
+                        steps = 0,
+                        first = false,
+                        onChange = { ArrowSkinStore.updateBrightness(it) },
+                    ) }
+                }
                 if (ArrowSkinStore.skin < 0) {
                     arrowRows.firstOrNull { it.id == "arrow.color" }?.let { setting ->
                         SettingTypedRow(setting = setting, first = false, onChange = onChange)
@@ -712,6 +719,7 @@ private fun ControlsPreview(
             PreviewPositioned(position = joystickPosition) {
                 PaperJoystick(
                     diameter = (60 * joystickSize).dp,
+                    modifier = Modifier.adjustPlace(AdjustSubject.JOYSTICK),
                     opacity = opacity,
                 )
             }
@@ -723,9 +731,16 @@ private fun ControlsPreview(
                 imageSkin = arrowSkin,
                 colour = arrowColor,
                 brightness = arrowBrightness,
-                modifier = Modifier.align(Alignment.Center).size((52f * 1.44f * arrowSize).dp),
+                modifier = Modifier.align(Alignment.Center).size((52f * 1.44f * arrowSize).dp)
+                    .adjustPlace(AdjustSubject.ARROW),
             )
         } else if (showArrow) {
+            // The drawn arrow's reach (length -0.72..0.82, width +-0.72), for the adjust preview.
+            Box(
+                Modifier.align(Alignment.Center)
+                    .size(width = (1.64f * 52f * arrowSize).dp, height = (1.44f * 30f * arrowSize).dp)
+                    .adjustPlace(AdjustSubject.ARROW),
+            )
             Canvas(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 18.dp)) {
                 drawArrowShape(
                     style = arrowStyle,
@@ -745,6 +760,7 @@ private fun ControlsPreview(
             PreviewPositioned(position = boostPosition) {
                 PaperBoostButton(
                     diameter = (46 * boostSize).dp,
+                    modifier = Modifier.adjustPlace(AdjustSubject.BOOST),
                     opacity = opacity,
                 )
             }
@@ -753,7 +769,100 @@ private fun ControlsPreview(
             PreviewPositioned(position = zoomPosition) {
                 PaperZoomBar(
                     length = (102 * zoomLength).dp,
+                    modifier = Modifier.adjustPlace(AdjustSubject.ZOOM),
                     vertical = zoomVertical,
+                    opacity = opacity,
+                    value = 0.45f,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The adjust preview's card (see AdjustPreview.kt): the control being changed,
+ * drawn at its live size, opacity and colour at the top of the page while the
+ * page's own preview is off screen. The same views as [ControlsPreview].
+ */
+@Composable
+internal fun androidx.compose.foundation.layout.BoxScope.AdjustPreviewCard(settings: List<Setting>, top: Dp) {
+    val shown = AdjustPreview.shown
+    val alpha by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = tween(if (shown) 220 else 280),
+        label = "adjust preview",
+    )
+    val subject = AdjustPreview.subject ?: return
+    if (alpha <= 0.001f) return
+    val opacity = settings.named("controls.opacity")?.number ?: 1f
+    Column(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = top)
+            .alpha(alpha)
+            .scale(0.96f + 0.04f * alpha)
+            .shadow(18.dp, wyrmRounded(18.dp), ambientColor = Color.Black.copy(alpha = 0.3f), spotColor = Color.Black.copy(alpha = 0.3f))
+            .clip(wyrmRounded(18.dp))
+            .background(Wyrm.Well)
+            .border(1.dp, Wyrm.Rule, wyrmRounded(18.dp))
+            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .widthIn(min = 150.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = when (subject) {
+                AdjustSubject.ARROW -> "ARROW PREVIEW"
+                AdjustSubject.JOYSTICK -> "JOYSTICK PREVIEW"
+                AdjustSubject.BOOST -> "BOOST PREVIEW"
+                AdjustSubject.ZOOM -> "ZOOM BAR PREVIEW"
+            },
+            fontFamily = Wyrm.Body,
+            fontWeight = FontWeight.Bold,
+            fontSize = 9.sp,
+            letterSpacing = 1.4.sp,
+            color = Wyrm.Quiet,
+        )
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.defaultMinSize(minHeight = 70.dp), contentAlignment = Alignment.Center) {
+            when (subject) {
+                AdjustSubject.ARROW -> {
+                    val size = settings.named("arrow.size")?.number ?: 1f
+                    val style = (settings.named("arrow.style")?.index ?: 0).coerceIn(0, ArrowOptions.lastIndex)
+                    val channels = settings.named("arrow.color")?.channels ?: listOf(1f, 1f, 1f, 1f)
+                    val colour = Color(channels[0].coerceIn(0f, 1f), channels[1].coerceIn(0f, 1f), channels[2].coerceIn(0f, 1f))
+                    if (ArrowSkinStore.skin >= 0) {
+                        ArrowGlyph(
+                            codeStyle = style,
+                            imageSkin = ArrowSkinStore.skin,
+                            colour = colour,
+                            brightness = ArrowSkinStore.brightness,
+                            modifier = Modifier.size((52f * 1.44f * size).dp).alpha(opacity.coerceIn(0f, 1f)),
+                        )
+                    } else {
+                        Canvas(Modifier.size(width = (1.64f * 52f * size).dp + 8.dp, height = (1.44f * 30f * size).dp + 8.dp)) {
+                            drawArrowShape(
+                                style = style,
+                                length = 52.dp.toPx() * size,
+                                width = 30.dp.toPx() * size,
+                                fill = colour,
+                                outline = Color(0xFF040609),
+                                alpha = opacity.coerceIn(0f, 1f),
+                                outlineWidth = 2.dp.toPx(),
+                            )
+                        }
+                    }
+                }
+                AdjustSubject.JOYSTICK -> PaperJoystick(
+                    diameter = (60 * (settings.named("controls.joystick_size")?.number ?: 1f)).dp,
+                    opacity = opacity,
+                )
+                AdjustSubject.BOOST -> PaperBoostButton(
+                    diameter = (46 * (settings.named("controls.boost_size")?.number ?: 1f)).dp,
+                    opacity = opacity,
+                )
+                AdjustSubject.ZOOM -> PaperZoomBar(
+                    length = (102 * (settings.named("controls.zoom_length")?.number ?: 1f)).dp,
+                    vertical = settings.named("controls.zoom_orientation")?.index == 1,
                     opacity = opacity,
                     value = 0.45f,
                 )

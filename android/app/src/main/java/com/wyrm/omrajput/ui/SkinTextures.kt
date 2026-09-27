@@ -33,6 +33,10 @@ class SkinTextures(
     val tags: Map<Int, ImageBitmap>,
     val tagThumbnails: Map<Int, ImageBitmap>,
     val backgrounds: Map<Int, ImageBitmap>,
+    /** Wyrm's own beads (`WyrmBeads`), cut from their atlas quarters. */
+    val wyrmBeads: Map<Int, ImageBitmap> = emptyMap(),
+    /** Wyrm looks (`WyrmLook`): the 8 x 8 cells of wyrm_accessories.png. */
+    val looks: Map<Int, ImageBitmap> = emptyMap(),
 ) {
     companion object {
         private val lock = Mutex()
@@ -97,6 +101,10 @@ class SkinTextures(
                 crop(atlas, (2 + kind) / 7.0, 6.0 / 9, 1.0 / 7, 1.0 / 9)?.let { kind to it.asImageBitmap() }
             }.toMap()
             val airShadow = crop(atlas, 4.0 / 7, 6.0 / 9, 102.0 / 64 / 7, 102.0 / 64 / 9)?.asImageBitmap()
+            val wyrmBeads = (0 until WyrmBeads.COUNT).mapNotNull { kind ->
+                val r = WyrmBeads.uv(kind)
+                crop(atlas, r[0], r[1], r[2], r[3])?.let { kind to it.asImageBitmap() }
+            }.toMap()
             val airWheel = decode(context, "textures/air_colour_wheel.png", 768)?.asImageBitmap()
             val accessories = mutableMapOf<Int, ImageBitmap>()
             val accessoryThumbs = mutableMapOf<Int, ImageBitmap>()
@@ -119,7 +127,11 @@ class SkinTextures(
                 val path = background.asset ?: return@mapNotNull null
                 decode(context, path, 520)?.let { background.id to it.asImageBitmap() }
             }.toMap()
-            return SkinTextures(beads, airBeads, airShadow, airWheel, accessories, accessoryThumbs, tags, tagThumbs, backgrounds)
+            val lookSheet = decode(context, "textures/wyrm_accessories.png", 2048)
+            val looks = if (lookSheet == null) emptyMap() else (0 until 40).mapNotNull { cell ->
+                crop(lookSheet, (cell % 8) / 8.0, (cell / 8) / 8.0, 1.0 / 8, 1.0 / 8)?.let { cell to it.asImageBitmap() }
+            }.toMap()
+            return SkinTextures(beads, airBeads, airShadow, airWheel, accessories, accessoryThumbs, tags, tagThumbs, backgrounds, wyrmBeads, looks)
         }
     }
 }

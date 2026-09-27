@@ -132,7 +132,8 @@ internal fun <T> iosInterpolatingSpring(stiffness: Float, damping: Float): Sprin
 internal object IosFill {
     val switchOff: Color get() = if (Wyrm.currentPalette.dark) Color(0x52787880) else Color(0x29787880)
     val segmentTrack: Color get() = if (Wyrm.currentPalette.dark) Color(0x3D767680) else Color(0x1F767680)
-    val segmentThumb: Color get() = if (Wyrm.currentPalette.dark) Color(0xFF636366) else Color.White
+    // Dark themes: a light thumb carrying dark ink (Wyrm.PillInk), as on iOS.
+    val segmentThumb: Color get() = if (Wyrm.currentPalette.dark) Wyrm.PillThumb else Color.White
     val sliderTrack: Color get() = if (Wyrm.currentPalette.dark) Color(0x52787880) else Color(0x33787880)
 }
 
@@ -381,6 +382,8 @@ fun LiquidSlider(
     var dragFraction by remember { mutableFloatStateOf(-1f) }
     val change by rememberUpdatedState(onValueChange)
     val finished by rememberUpdatedState(onValueChangeFinished)
+    // Holding a slider that changes a control raises the adjust preview.
+    val adjusting by rememberUpdatedState(LocalAdjustSubject.current)
     val shownFraction = if (dragFraction >= 0f) dragFraction else ((value - valueRange.start) / span).coerceIn(0f, 1f)
     val animatedFraction = remember { Animatable(shownFraction) }
     LaunchedEffect(shownFraction) {
@@ -415,10 +418,12 @@ fun LiquidSlider(
                     if (!onThumb) start = ((down.position.x - thumbPx / 2f) / run).coerceIn(0f, 1f)
                     var lastStop = snap(start)
                     dragFraction = start
+                    val held = adjusting
+                    held?.let { AdjustPreview.editing(it, true) }
                     change(valueRange.start + snap(start) * span)
                     scope.launch { lift.animateTo(1f, iosSpring(0.3f, 0.5f)) }
                     var dx = 0f
-                    while (true) {
+                    try { while (true) {
                         val event = awaitPointerEvent()
                         val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!pointer.pressed) break
@@ -434,7 +439,7 @@ fun LiquidSlider(
                             lastStop = stop
                         }
                         change(valueRange.start + stop * span)
-                    }
+                    } } finally { held?.let { AdjustPreview.editing(it, false) } }
                     dragFraction = -1f
                     finished?.invoke()
                     scope.launch { lift.animateTo(0f, iosInterpolatingSpring(260f, 13f)) }
@@ -618,7 +623,7 @@ fun LiquidSegmented(
                                 fontFamily = Wyrm.Body,
                                 fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = fontSize,
-                                color = if (chosen) Wyrm.Ink else Wyrm.Mute,
+                                color = if (chosen) Wyrm.PillInk else Wyrm.Mute,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -717,7 +722,8 @@ private fun FoldingTabGlass(
 ) {
     val pageBackdrop = LocalPageBackdrop.current
     val container = Wyrm.Paper.copy(alpha = 0.4f)
-    val restingThumb = Wyrm.Ink.copy(alpha = if (Wyrm.currentPalette.dark) 0.16f else 0.1f)
+    // Dark themes flip the tabs (OM): a light thumb under dark ink, light idle tabs.
+    val restingThumb = if (Wyrm.currentPalette.dark) Wyrm.PillThumb else Wyrm.Ink.copy(alpha = 0.1f)
     val width = androidx.compose.ui.unit.lerp(fullWidth, 56.dp, fold)
     val height = androidx.compose.ui.unit.lerp(64.dp, 56.dp, fold)
     val barAlpha = (1f - fold / 0.5f).coerceIn(0f, 1f)
@@ -782,7 +788,11 @@ private fun FoldingTabGlass(
                         val s = lerp(0.7f, 1f, iconAlpha)
                         scaleX = s
                         scaleY = s
-                    },
+                    }
+                    // Dark themes: the chosen icon is dark ink, so it keeps its light thumb.
+                    .padding(4.dp)
+                    .clip(WyrmCapsule)
+                    .background(if (Wyrm.currentPalette.dark) restingThumb else Color.Transparent),
                 contentAlignment = Alignment.Center,
             ) { tabs.getOrNull(selected)?.content?.invoke(true) }
         }
@@ -806,7 +816,8 @@ private fun ExpandedLiquidTabBar(
     // tap on Settings could move the pill without ever opening Settings.
     val chosen by rememberUpdatedState(selected)
     val container = Wyrm.Paper.copy(alpha = 0.4f)
-    val restingThumb = Wyrm.Ink.copy(alpha = if (Wyrm.currentPalette.dark) 0.16f else 0.1f)
+    // Dark themes flip the tabs (OM): a light thumb under dark ink, light idle tabs.
+    val restingThumb = if (Wyrm.currentPalette.dark) Wyrm.PillThumb else Wyrm.Ink.copy(alpha = 0.1f)
 
     BoxWithConstraints(
         modifier = modifier

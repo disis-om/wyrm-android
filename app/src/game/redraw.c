@@ -3,6 +3,9 @@
 #include "../user.h"
 #include "backgrounds.h"
 #include "tags.h"
+#if defined(VLITHER_ANDROID)
+#include "../platform/android_look.h"
+#endif
 
 void lerp_minimap_float(float* dst, const uint8_t* src, int mmsz, float alpha) {
   int stride = MAX_MINIMAP_SIZE;
@@ -58,11 +61,49 @@ static uint32_t built_skin_rgba(tenv* env, snake* o, int index) {
   return 0;
 }
 
-/** The packed colour above, as the renderer's own RGBA. */
-static vec4s built_skin_color(uint32_t rgba, float alpha_scale) {
+/* Wyrm's own beads (OM, 2026-09-28). A built segment whose alpha byte is
+ * 0xE0 + k wears Wyrm bead k: 24 cells painted into free atlas space by Wyrm
+ * iOS Scripts/generate-wyrm-beads.py (row 7 cols 3 and 6, row 8 cols 0-3,
+ * each split into four quarters). Tinted beads are grey and take the low 24
+ * bits as their colour; fixed-colour beads (flags, metals, galaxy...) are
+ * drawn as painted, their RGB only picks the arena's nearest colour group.
+ * Like every slither bead, the motif sits on the +x side, the side a body
+ * drawn tail first leaves showing. */
+#define WYRM_BEAD_TAG 0xE0u
+#define WYRM_BEAD_COUNT 24
+
+static const unsigned char wyrm_bead_cells[WYRM_BEAD_COUNT / 4][2] = {
+    {7, 3}, {7, 6}, {8, 0}, {8, 1}, {8, 2}, {8, 3}};
+static const unsigned char wyrm_bead_tinted[WYRM_BEAD_COUNT] = {
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0};
+
+static int wyrm_bead_kind(uint32_t rgba) {
+  uint32_t tag = rgba >> 24;
+  return tag >= WYRM_BEAD_TAG && tag < WYRM_BEAD_TAG + WYRM_BEAD_COUNT
+             ? (int)(tag - WYRM_BEAD_TAG)
+             : -1;
+}
+
+static vec4s wyrm_bead_uv(int kind) {
+  const unsigned char* cell = wyrm_bead_cells[kind / 4];
+  float qx = (float)(kind % 2) * 0.5f, qy = (float)((kind % 4) / 2) * 0.5f;
+  return (vec4s){{(cell[1] + qx) / 7.0f, (cell[0] + qy) / 9.0f, 0.5f / 7.0f,
+                  0.5f / 9.0f}};
+}
+
+static vec4s wyrm_bead_color(uint32_t rgba, int kind, float alpha) {
+  if (!wyrm_bead_tinted[kind]) return (vec4s){{1, 1, 1, alpha}};
   return (vec4s){{((rgba >> 16) & 0xFF) / 255.0f, ((rgba >> 8) & 0xFF) / 255.0f,
-                  (rgba & 0xFF) / 255.0f,
-                  ((rgba >> 24) & 0xFF) / 255.0f * alpha_scale}};
+                  (rgba & 0xFF) / 255.0f, alpha}};
+}
+
+/** The packed colour above, as the renderer's own RGBA. A Wyrm bead's alpha
+ * byte names its texture, so where it is drawn as a plain colour (the flat
+ * render mode) it is opaque. */
+static vec4s built_skin_color(uint32_t rgba, float alpha_scale) {
+  float alpha = wyrm_bead_kind(rgba) >= 0 ? 1.0f : ((rgba >> 24) & 0xFF) / 255.0f;
+  return (vec4s){{((rgba >> 16) & 0xFF) / 255.0f, ((rgba >> 8) & 0xFF) / 255.0f,
+                  (rgba & 0xFF) / 255.0f, alpha * alpha_scale}};
 }
 
 /* Wyrm (ported from Wyrm iOS) — the slither.io Android client's Build-a-Slither beads.
@@ -75,6 +116,10 @@ static vec4s built_skin_color(uint32_t rgba, float alpha_scale) {
  * Their atlas cells hold exact ports of those AIR bitmaps and of `ksmc_t`,
  * the outline and drop shadow AIR draws beneath each such bead. */
 #define APPLE_AIR_SHADOW_SCALE (102.0f / 64.0f)
+/* Off (OM, 2026-09-28): the `ksmc_t` stamps read as a black shadow wrapped
+ * round the whole snake, which beads picked from the grid never had. With it
+ * off, wheel beads get the same shadows as every other bead. 1 restores AIR. */
+#define WYRM_AIR_BEAD_SHADOW 0
 
 static int apple_air_kind(uint32_t rgba) {
   uint32_t tag = rgba >> 24;
@@ -886,7 +931,7 @@ void redraw(tenv* env) {
             const float apple_air_half =
                 gdata->data.gsc * lsz * APPLE_AIR_SHADOW_SCALE;
             bool apple_air_any = false;
-            for (int s = 0; o->cusk && s < o->cusk_len && !apple_air_any; ++s)
+            for (int s = 0; WYRM_AIR_BEAD_SHADOW && o->cusk && s < o->cusk_len && !apple_air_any; ++s)
               apple_air_any = apple_air_kind_at(env, o, s) >= 0;
             float apple_air_sx = 31337357, apple_air_sy = 31337357;
             if (apple_air_any) {
@@ -987,11 +1032,15 @@ void redraw(tenv* env) {
                            gdata->data.gsc * 2 * lsz, gdata->data.pba[(int)j]},
                           /* A mixed colour is not in the atlas, so a built
                            * point drops to the blank bead and is tinted. */
-                          apple_air_kind(built) >= 0
+                          wyrm_bead_kind(built) >= 0
+                              ? wyrm_bead_uv(wyrm_bead_kind(built))
+                          : apple_air_kind(built) >= 0
                               ? apple_air_bead_uv(apple_air_kind(built))
                           : built ? gdata->cg_uvs[BLANK_UV]
                                   : gdata->cg_uvs[cg_id],
-                          apple_air_kind(built) >= 0
+                          wyrm_bead_kind(built) >= 0
+                              ? wyrm_bead_color(built, wyrm_bead_kind(built), a)
+                          : apple_air_kind(built) >= 0
                               ? apple_air_tint(built, a)
                           : built ? built_skin_color(built, a)
                                   : (vec4s){{1, 1, 1, a}}});
@@ -1771,6 +1820,12 @@ void redraw(tenv* env) {
                 &(bp_instance){
                     {acx - m, acy - m, m * 2, fang}, acc->uv, {1, 1, 1, ea}});
           }
+#if defined(VLITHER_ANDROID)
+          // Wyrm's own hair, ears and glasses: the player's snake only, and
+          // only on this phone (platform/android_look.c).
+          if (o->id == gdata->data.snake_id)
+            wyrm_look_draw(env, hx, hy, fang, lsz, ea, mww2, mhh2);
+#endif
         } else {
           // Tags are a separate cosmetic hanging from the head, not snake
           // thickness, so Rope Mode leaves the player's chosen tag intact.

@@ -300,6 +300,9 @@ class TeamService(context: Context) {
      */
     suspend fun poll(presence: TeamPresence, message: String?): TeamState =
         withContext(Dispatchers.IO) {
+            if (NTL_SERVICES_DISABLED) {
+                return@withContext TeamState(configured = configured, status = NTL_PAUSED)
+            }
             val credentials = readCredentials()
                 ?: return@withContext TeamState(status = "Add a team first.")
 
@@ -653,11 +656,21 @@ class TeamService(context: Context) {
         private const val PREFS = "wyrm_team_mode"
         private const val PREF_CREDENTIALS = "credentials"
         private const val KEY_ALIAS = "wyrm_team_mode"
+        const val NTL_PAUSED = "Team mode is paused: NTL services are switched off in this build."
         private const val MAX_SAVED_TEAMS = 32
         private const val MAX_TEAM_FIELD_CHARS = 2_048
         private const val MAX_VAULT_CHARS = 96 * 1_024
 
         /** Four seconds, which is the rate this service is used to. */
         const val POLL_INTERVAL_MS = 4_000L
+
+        /**
+         * Every NTL service is switched off (OM, 2026-09-27): arena drops kept
+         * following NTL traffic, so nothing is sent to or received from
+         * ntl-slither.com. The team poll never starts, [poll] makes no request
+         * and tag claims refuse. Saved teams stay on the phone. Set to false to
+         * bring Team Mode back.
+         */
+        const val NTL_SERVICES_DISABLED = true
     }
 }

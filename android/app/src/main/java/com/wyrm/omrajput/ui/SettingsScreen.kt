@@ -105,6 +105,7 @@ fun SettingsScreen(
     insetTop: Dp,
     insetBottom: Dp,
     showRootTabs: Boolean = true,
+    search: List<SettingsSearchEntry> = emptyList(),
     onOpenDisplay: (Rect) -> Unit,
     onOpenControls: (Rect) -> Unit,
     onOpenButtons: (Rect) -> Unit,
@@ -116,6 +117,7 @@ fun SettingsScreen(
     onOpenAccessibility: (Rect) -> Unit,
     onOpenFood: (Rect) -> Unit,
     onOpenBackup: (Rect) -> Unit,
+    onOpenAbout: (Rect) -> Unit = {},
     onResetAll: () -> Unit,
     onTabNotifications: (Rect) -> Unit,
     onTabPlay: (Rect) -> Unit,
@@ -195,6 +197,10 @@ fun SettingsScreen(
                 ),
             ),
         ),
+        SettingsHubGroup(
+            "About",
+            listOf(SettingsHubRow("About Wyrm", "The story, the maker, and how to support", "", onOpenAbout)),
+        ),
     )
 
     Column(
@@ -228,6 +234,13 @@ fun SettingsScreen(
                     modifier = Modifier.padding(top = 3.dp),
                 )
             }
+            // Search, as on iOS: results replace the hub while there is a query.
+            SettingsSearchField(query = SettingsFocus.query, onQuery = { SettingsFocus.query = it })
+            val query = SettingsFocus.query.trim()
+            if (query.isNotEmpty()) {
+                SettingsSearchResults(query = query, entries = search, onClear = { SettingsFocus.query = "" })
+                Spacer(Modifier.height(24.dp))
+            } else {
             groups.forEach { group ->
                 SettingsSectionLabel(group.title, top = 0.dp)
                 SettingsCard {
@@ -270,6 +283,7 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(top = 16.dp, bottom = 12.dp),
             )
+            }
             Spacer(Modifier.height(LocalRootTabClearance.current))
         }
         if (showRootTabs) {

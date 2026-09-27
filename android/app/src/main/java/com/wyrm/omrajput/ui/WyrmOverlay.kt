@@ -16,6 +16,8 @@ import android.view.Gravity
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.alpha
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -441,7 +443,7 @@ class WyrmOverlay(private val activity: Activity) :
         SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_BACKUP,
         SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT,
         CHAT, THREAD, PLAYER, CONNECTIONS, TEAM, VOICE, ARENA_CHAT, PRIVACY, NOTIFICATIONS,
-        GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY;
+        GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT;
 
         /**
          * Whether this screen was reached from a row on Home.
@@ -1020,6 +1022,7 @@ class WyrmOverlay(private val activity: Activity) :
                                 onFollowing = { other?.let { openConnections(it.id, "following") } },
                                 onSignOut = {},
                                 onToggleFollow = ::toggleFollow,
+                                followBusy = formBusy,
                             )
                         }
 
@@ -1139,7 +1142,8 @@ class WyrmOverlay(private val activity: Activity) :
                             onChange = ::writeSetting,
                         )
 
-                        Route.SETTINGS_CONTROLS -> if (tabRoot != Route.HOME) {
+                        // Both Controls hosts carry the adjust preview card over the page.
+                        Route.SETTINGS_CONTROLS -> Box(Modifier.fillMaxSize()) { if (tabRoot != Route.HOME) {
                             ControlsScreen(
                                 settings = settings,
                                 insetTop = insetTop,
@@ -1241,6 +1245,8 @@ class WyrmOverlay(private val activity: Activity) :
                             }
                           }
                         }
+                          AdjustPreviewCard(settings = settings, top = insetTop + 58.dp)
+                        }
 
                         Route.SETTINGS_BUTTONS -> SettingsButtonsScreen(
                             buttons = hotkeys,
@@ -1255,6 +1261,13 @@ class WyrmOverlay(private val activity: Activity) :
                                 host?.onSettingsAction(4)
                                 refreshSettingsSoon()
                             },
+                        )
+
+                        Route.ABOUT -> AboutScreen(
+                            appVersion = BuildConfig.VERSION_NAME,
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onBack = { panelOpen = false },
                         )
 
                         Route.SETTINGS_NOTIFICATIONS -> NotificationSettingsScreen(
@@ -1307,16 +1320,9 @@ class WyrmOverlay(private val activity: Activity) :
                             onChooseFolder = { requestBackupAction(BackupAction.CHOOSE_FOLDER, 3) },
                             onCheckUpdate = { host?.onUpdateAction(0) },
                             betaUpdates = betaUpdates,
-                            onBetaUpdates = { enabled ->
-                                betaUpdates = enabled
-                                com.wyrm.omrajput.UpdateChannel.setBetaEnabled(activity, enabled)
-                                host?.onUpdateAction(0)
-                            },
+                            onBetaUpdates = ::applyBetaUpdates,
                             backupFirst = backupFirst,
-                            onBackupFirst = { enabled ->
-                                backupFirst = enabled
-                                com.wyrm.omrajput.UpdateChannel.setBackupBeforeUpdate(activity, enabled)
-                            },
+                            onBackupFirst = ::applyBackupFirst,
                             onInstall = ::startUpdate,
                             onOpenInstalledNotes = {
                                 openWhatsNew(
@@ -1485,6 +1491,8 @@ class WyrmOverlay(private val activity: Activity) :
                             onLater = ::dismissUpdatePrompt,
                             onUpdate = ::startUpdate,
                             onChooseFolder = { host?.onBackupAction(3) },
+                            beta = com.wyrm.omrajput.UpdateChannel.isOfferedBeta(activity),
+                            onBetaSettings = ::openBetaUpdateSetting,
                         )
                     } else if (whatsNewState != null) {
                         whatsNewState?.let { notes ->
@@ -1976,6 +1984,7 @@ class WyrmOverlay(private val activity: Activity) :
             insetTop = insetTop,
             insetBottom = insetBottom,
             showRootTabs = showRootTabs,
+            search = if (interactive) settingsIndex() else emptyList(),
             onOpenDisplay = { origin ->
                 if (interactive) {
                     tabRoot = Route.SETTINGS
@@ -2033,6 +2042,12 @@ class WyrmOverlay(private val activity: Activity) :
                 if (interactive) {
                     tabRoot = Route.SETTINGS
                     openPanel(origin) { openSettingsBackup() }
+                }
+            },
+            onOpenAbout = { origin ->
+                if (interactive) {
+                    tabRoot = Route.SETTINGS
+                    openPanel(origin) { route = Route.ABOUT }
                 }
             },
             onResetAll = {
@@ -2474,6 +2489,8 @@ class WyrmOverlay(private val activity: Activity) :
      * brings the team's back down, because that is all the service offers.
      */
     private fun startTeamPolling() {
+        // No NTL traffic at all while NTL services are switched off.
+        if (TeamService.NTL_SERVICES_DISABLED) return
         if (teamJob != null) return
         teamJob = scope.launch {
             while (true) {
@@ -3360,6 +3377,248 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     /** Controls is a Home destination now, not a category buried in Settings. */
+    /* ------------------------------------------------------- settings search */
+
+    /** Opens a settings page from a search result; the page reveals the row itself. */
+    private fun openSettingsPage(page: Route) {
+        tabRoot = Route.SETTINGS
+        refreshSettings()
+        panelOpen = true
+        when (page) {
+            Route.SETTINGS_CONTROLS -> openControls()
+            Route.SETTINGS_BACKUP -> {
+                backupReturn = Route.SETTINGS
+                pollTransferState()
+                route = page
+            }
+            else -> route = page
+        }
+    }
+
+    private fun applyBetaUpdates(enabled: Boolean) {
+        betaUpdates = enabled
+        com.wyrm.omrajput.UpdateChannel.setBetaEnabled(activity, enabled)
+        host?.onUpdateAction(0)
+    }
+
+    private fun applyBackupFirst(enabled: Boolean) {
+        backupFirst = enabled
+        com.wyrm.omrajput.UpdateChannel.setBackupBeforeUpdate(activity, enabled)
+    }
+
+    /**
+     * Where a page draws an engine setting, as `WyrmSettingsIndex.place` on iOS.
+     * Settings no page shows are left out, so every arrow lands on something.
+     */
+    private fun placeSetting(setting: Setting): Pair<Route, String>? {
+        val id = setting.id
+        val group = setting.group
+        if (setting.label.isBlank() || id.startsWith("tags.")) return null
+        val arrowSteering = settings.named("controls.joystick_mode")?.index == 2
+        return when {
+            id == "general.bot_circle" || id == "general.bot_radius" -> Route.SETTINGS_BOT to "Bot"
+            group == "general.bot" -> null
+            group == "general" || group.startsWith("general.") -> Route.SETTINGS_GENERAL to "Display"
+            group == "controls.zoom" -> Route.SETTINGS_CONTROLS to "Controls · Zoom bar"
+            group == "controls.arrow" -> when {
+                !arrowSteering || id == "arrow.style" -> null
+                id == "arrow.color" && ArrowSkinStore.skin >= 0 -> null
+                else -> Route.SETTINGS_CONTROLS to "Controls · Arrow"
+            }
+            id == "controls.joystick_size" -> if (arrowSteering) null else Route.SETTINGS_CONTROLS to "Controls"
+            id == "controls.boost_size" ->
+                if (settings.named("controls.boost_mode")?.index == 1) Route.SETTINGS_CONTROLS to "Controls" else null
+            id in setOf("controls.joystick_mode", "controls.handedness", "controls.boost_mode", "controls.opacity") ->
+                Route.SETTINGS_CONTROLS to "Controls"
+            id == "keys.key_scale" || id == "keys.opacity" -> Route.SETTINGS_BUTTONS to "On-screen buttons"
+            group == "normal" || group == "assist" -> {
+                val mode = if (group == "assist") "Assist" else "Normal"
+                if (setting.isFoodSetting()) Route.SETTINGS_FOOD to "Food · $mode"
+                else Route.SETTINGS_ASSIST to "Modes · $mode"
+            }
+            else -> null
+        }
+    }
+
+    /** Every setting the hub's search can find, each with its live control. */
+    private fun settingsIndex(): List<SettingsSearchEntry> {
+        val out = mutableListOf<SettingsSearchEntry>()
+        settings.forEach { setting ->
+            val (page, label) = placeSetting(setting) ?: return@forEach
+            out += SettingsSearchEntry(
+                id = setting.id,
+                title = setting.label,
+                detail = setting.hint,
+                page = label,
+                keywords = setting.id.replace('_', ' ').replace('.', ' '),
+                open = { openSettingsPage(page) },
+            ) { SettingTypedRow(setting, first = true, onChange = ::writeSetting) }
+        }
+        val byAction = hotkeys.associateBy { it.action }
+        listOf(1, 2, 3, 4, 6, 7, 8, 9).mapNotNull(byAction::get).forEach { key ->
+            out += SettingsSearchEntry(
+                id = "hotkey.${key.action}",
+                title = "${key.name} button",
+                detail = "Show it in matches, and whether a press toggles or holds",
+                page = "On-screen buttons",
+                keywords = "hotkey key toggle hold",
+                open = { openSettingsPage(Route.SETTINGS_BUTTONS) },
+            ) { ButtonLine(button = key, onChange = ::writeHotkey) }
+        }
+        if (settings.named("controls.joystick_mode")?.index == 2) {
+            val style = settings.named("arrow.style")
+            out += SettingsSearchEntry(
+                id = "arrow.style",
+                title = "Arrow style",
+                detail = "Drawn and image arrows",
+                page = "Controls · Arrow",
+                keywords = "arrow skin steering cursor picker",
+                open = { openSettingsPage(Route.SETTINGS_CONTROLS) },
+            ) {
+                SettingsValueRow(
+                    title = "Arrow style",
+                    value = if (ArrowSkinStore.skin >= 0) "Image" else style?.options?.getOrNull(style.index).orEmpty(),
+                    first = true,
+                    onOpen = {
+                        SettingsFocus.reveal("arrow.style")
+                        openSettingsPage(Route.SETTINGS_CONTROLS)
+                    },
+                )
+            }
+            out += SettingsSearchEntry(
+                id = "app.arrow-brightness",
+                title = "Arrow brightness",
+                detail = "How bright image arrows draw",
+                page = "Controls · Arrow",
+                keywords = "arrow skin brightness dim",
+                open = { openSettingsPage(Route.SETTINGS_CONTROLS) },
+            ) {
+                SettingsSliderRow(
+                    title = "Brightness",
+                    valueText = "${(ArrowSkinStore.brightness * 100).roundToInt()}%",
+                    detail = "",
+                    value = ArrowSkinStore.brightness,
+                    range = 0.2f..1f,
+                    steps = 0,
+                    first = true,
+                    onChange = { ArrowSkinStore.updateBrightness(it) },
+                )
+            }
+        }
+        out += SettingsSearchEntry(
+            id = "app.theme",
+            title = "Theme",
+            detail = "Paper, dark and colour appearances",
+            page = "Accessibility",
+            keywords = "appearance dark mode colour color " + WyrmThemeId.entries.joinToString(" ") { it.displayName },
+            open = { openSettingsPage(Route.SETTINGS_ACCESSIBILITY) },
+        ) {
+            SettingsEnumBlock(
+                title = "Theme",
+                detail = appTheme.description,
+                options = WyrmThemeId.entries.map { it.displayName },
+                selected = appTheme.ordinal,
+                first = true,
+                onSelect = { selectAppTheme(WyrmThemeId.entries[it]) },
+            )
+        }
+        out += SettingsSearchEntry(
+            id = "app.theme-intensity",
+            title = "Theme intensity",
+            detail = "50% is the original look",
+            page = "Accessibility",
+            keywords = "strength richer appearance",
+            open = { openSettingsPage(Route.SETTINGS_ACCESSIBILITY) },
+        ) {
+            SettingsSliderRow(
+                title = "Theme intensity",
+                valueText = "${(themeIntensity * 100f).roundToInt()}%",
+                detail = "",
+                value = themeIntensity,
+                range = 0f..1f,
+                steps = 0,
+                first = true,
+                onChange = ::applyThemeIntensity,
+            )
+        }
+        out += SettingsSearchEntry(
+            id = "app.beta-updates",
+            title = "Beta updates",
+            detail = "Early builds before everyone else; they can have rough edges",
+            page = "Backup & version",
+            keywords = "update beta test early stable channel version",
+            open = { openSettingsPage(Route.SETTINGS_BACKUP) },
+        ) {
+            SettingsBoolRow(
+                title = "Beta updates",
+                detail = "Get early builds before everyone else. Turn this off to get stable updates only.",
+                on = betaUpdates,
+                first = true,
+                onToggle = ::applyBetaUpdates,
+            )
+        }
+        out += SettingsSearchEntry(
+            id = "app.backup-first",
+            title = "Back up before updating",
+            detail = "Saves skins, controls and settings to your backup folder first",
+            page = "Backup & version",
+            keywords = "update backup save restore",
+            open = { openSettingsPage(Route.SETTINGS_BACKUP) },
+        ) {
+            SettingsBoolRow(
+                title = "Back up before updating",
+                detail = "Saves skins, controls and settings to your backup folder first.",
+                on = backupFirst,
+                first = true,
+                onToggle = ::applyBackupFirst,
+            )
+        }
+        out += SettingsSearchEntry(
+            id = "app.notify.all",
+            title = "All notifications",
+            detail = "The Android permission for Wyrm",
+            page = "Notifications",
+            keywords = "alerts push permission",
+            open = { openSettingsPage(Route.SETTINGS_NOTIFICATIONS) },
+        ) {
+            SettingsBoolRow(
+                title = "All notifications",
+                detail = "Tap to manage the Android permission.",
+                on = notificationsAllowed,
+                first = true,
+                onToggle = { NotificationPreferences.openSystemSettings(activity) },
+            )
+        }
+        notificationGroups.forEach { group ->
+            group.rows.forEach { choice ->
+                out += SettingsSearchEntry(
+                    id = "app.notify.${choice.kind}",
+                    title = choice.title,
+                    detail = choice.detail,
+                    page = "Notifications · ${group.title}",
+                    keywords = "notification alert push",
+                    open = { openSettingsPage(Route.SETTINGS_NOTIFICATIONS) },
+                ) {
+                    val on = notificationsAllowed && choice.kind in enabledNotificationKinds
+                    Box(Modifier.alpha(if (notificationsAllowed) 1f else 0.46f)) {
+                        SettingsBoolRow(
+                            title = choice.title,
+                            detail = choice.detail,
+                            on = on,
+                            first = true,
+                            onToggle = {
+                                if (notificationsAllowed) {
+                                    setNotificationKindEnabled(choice.kind, choice.kind !in enabledNotificationKinds)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        return out
+    }
+
     private fun openControls() {
         refreshSettings()
         controlsWorkspaceTab = ControlsWorkspaceTab.CONTROLS
@@ -3448,6 +3707,17 @@ class WyrmOverlay(private val activity: Activity) :
             delay(150)
             refreshSettings()
         }
+    }
+
+    /** From the beta prompt: Settings › Backup, with the Beta updates switch lit. */
+    private fun openBetaUpdateSetting() {
+        dismissUpdatePrompt()
+        tabRoot = Route.SETTINGS
+        backupReturn = Route.SETTINGS
+        pollTransferState()
+        panelOpen = true
+        route = Route.SETTINGS_BACKUP
+        SettingsFocus.reveal("app.beta-updates")
     }
 
     private fun openSettingsBackup() {
@@ -3951,6 +4221,13 @@ class WyrmOverlay(private val activity: Activity) :
      * for the rest of the arena session, including the answer "not a Wyrm
      * player", which is why a busy arena settles into silence.
      */
+    /**
+     * The arena-skin side channel is switched off (OM, 2026-09-28): nothing
+     * sends this player's skin code to the backend in the background, and no
+     * other snakes' skins are asked for. As `arenaSkinSyncDisabled` on iOS.
+     * Set to false to bring it back.
+     */
+    private val ARENA_SKIN_SYNC_DISABLED = true
     private var arenaSkinArena = ""
     private var arenaSkinGeneration: String? = null
     private val arenaSkinLifecycle = Mutex()
@@ -3972,6 +4249,7 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     fun publishArenaSkin(arena: String, snakeId: Int, nickname: String) {
+        if (ARENA_SKIN_SYNC_DISABLED) return
         if (snakeId < 0 || arena.isBlank()) {
             val leaving = arenaSkinGeneration
             if (leaving != null) {
@@ -4039,6 +4317,7 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     fun requestArenaSkins(snakeIds: IntArray) {
+        if (ARENA_SKIN_SYNC_DISABLED) return
         val arena = arenaSkinArena
         val generation = arenaSkinGeneration ?: return
         if (arena.isEmpty()) return

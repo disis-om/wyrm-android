@@ -78,7 +78,9 @@ fun SettingsButtonsScreen(
         SettingsCard {
             allowed.forEachIndexed { index, button ->
                 if (index > 0) SettingsHairline()
-                ButtonLine(button = button, onChange = onButtonChange)
+                Box(Modifier.settingAnchor("hotkey.${button.action}")) {
+                    ButtonLine(button = button, onChange = onButtonChange)
+                }
             }
         }
 
@@ -112,7 +114,7 @@ fun SettingsButtonsScreen(
 }
 
 @Composable
-private fun ButtonLine(button: Hotkey, onChange: (Hotkey) -> Unit) {
+internal fun ButtonLine(button: Hotkey, onChange: (Hotkey) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

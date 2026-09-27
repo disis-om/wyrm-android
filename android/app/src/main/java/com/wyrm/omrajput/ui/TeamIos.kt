@@ -68,11 +68,22 @@ internal fun IosTeamOverview(
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var pickingTeam by remember { mutableStateOf(false) }
-    val running = enabled && teams.isNotEmpty()
+    val paused = com.wyrm.omrajput.data.TeamService.NTL_SERVICES_DISABLED
+    val running = enabled && teams.isNotEmpty() && !paused
     val current = teams.getOrNull(activeTeam)
     Box(Modifier.fillMaxSize()) {
         IosPageChrome("Team mode", insetTop, onBack) {
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                if (paused) {
+                    IosSectionLabel("Paused")
+                    IosPaperCard {
+                        IosListRow(
+                            title = "Team mode is paused",
+                            detail = "NTL services are switched off in this build: nothing is sent to or received from NTL while arena drops are being fixed. Your saved teams stay on this phone.",
+                            showsChevron = false,
+                        )
+                    }
+                }
                 IosSectionLabel("Team mode")
                 IosPaperCard {
                     IosListRow(
@@ -98,7 +109,7 @@ internal fun IosTeamOverview(
                         }
                     }
                 }
-                Column(Modifier.padding(16.dp)) {
+                if (!paused) Column(Modifier.padding(16.dp)) {
                     when {
                         running -> IosPrimaryAction("Open team chat", IosGlyph.BUBBLES, onClick = onOpenChat)
                         teams.isEmpty() -> IosPrimaryAction("Add a team", IosGlyph.PERSON_3, onClick = onAdd)

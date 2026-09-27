@@ -50,8 +50,12 @@ fun SettingsFoodScreen(
     onBack: () -> Unit,
     onChange: (Setting, List<Float>) -> Unit,
 ) {
-    var mode by remember { mutableIntStateOf(0) }
-    var advanced by remember { mutableStateOf(false) }
+    // Settings search picks the tab, and opens the fold, holding its row.
+    val sought = SettingsFocus.target
+    var mode by remember { mutableIntStateOf(if (sought?.startsWith("assist.") == true) 1 else 0) }
+    var advanced by remember {
+        mutableStateOf(sought != null && !sought.endsWith(".food_type") && settings.any { it.id == sought && it.isFoodSetting() })
+    }
     val group = if (mode == 0) "normal" else "assist"
     val food = settings.filter { it.group == group && it.isFoodSetting() }
     val style = food.firstOrNull { it.id.endsWith(".food_type") }
@@ -129,7 +133,7 @@ fun SettingsFoodScreen(
     }
 }
 
-private fun Setting.isFoodSetting(): Boolean {
+internal fun Setting.isFoodSetting(): Boolean {
     val local = id.substringAfter('.')
     return local.startsWith("food_") || local == "const_food_scale" ||
         local == "uniform_food_color"

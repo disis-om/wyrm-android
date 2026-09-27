@@ -399,7 +399,7 @@ fun CinematicAuthScreen(
                     .then(blurFade())
                     .size(46.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.88f))
+                    .background(Wyrm.Card.copy(alpha = 0.88f))
                     .border(1.dp, Wyrm.Rule, CircleShape)
                     .clickable(onClick = ::goBack),
                 contentAlignment = Alignment.Center,
@@ -699,7 +699,7 @@ private fun ComposerShell(content: @Composable androidx.compose.foundation.layou
             .iosShadow(Wyrm.Ink.copy(alpha = 0.045f), radius = 22.dp, y = 9.dp, corner = 17.dp)
             .height(60.dp)
             .clip(shape)
-            .background(Color.White.copy(alpha = 0.94f))
+            .background(Wyrm.Card.copy(alpha = 0.94f))
             .border(1.dp, Wyrm.Rule, shape)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -738,7 +738,7 @@ private fun AuthField(
         modifier = modifier.focusRequester(requester),
         decorationBox = { inner ->
             Box(contentAlignment = Alignment.CenterStart) {
-                if (value.isEmpty()) Text(placeholder, style = style.copy(color = Color(0x4D3C3C43)))
+                if (value.isEmpty()) Text(placeholder, style = style.copy(color = Wyrm.Quiet.copy(alpha = 0.55f)))
                 inner()
             }
         },

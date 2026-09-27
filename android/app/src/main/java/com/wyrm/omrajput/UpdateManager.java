@@ -265,12 +265,17 @@ final class UpdateManager {
         if (UpdateChannel.isBetaEnabled(activity)) {
             try {
                 UpdateManifest beta = fetchAndVerifyManifest(UpdateChannel.BETA_MANIFEST);
-                if (stable == null || beta.versionCode > stable.versionCode) return beta;
+                if (stable == null || beta.versionCode > stable.versionCode) {
+                    // The prompt says so when what it offers is a beta.
+                    UpdateChannel.setOfferedBeta(activity, true);
+                    return beta;
+                }
             } catch (Exception betaError) {
                 if (stable == null) throw stableError;
             }
         }
         if (stable == null) throw stableError;
+        UpdateChannel.setOfferedBeta(activity, false);
         return stable;
     }
 

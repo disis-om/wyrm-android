@@ -65,6 +65,8 @@ fun UpdatePrompt(
     onLater: () -> Unit,
     onUpdate: () -> Unit,
     onChooseFolder: () -> Unit,
+    beta: Boolean = false,
+    onBetaSettings: () -> Unit = {},
 ) {
     // The card arrives rather than appears: a short spring on scale and a fade,
     // the way a phone raises an alert.
@@ -118,6 +120,7 @@ fun UpdatePrompt(
                     installing -> "ALMOST THERE"
                     downloading -> "UPDATING"
                     backup.saved -> "BACKUP READY"
+                    beta -> "BETA UPDATE AVAILABLE"
                     else -> "UPDATE AVAILABLE"
                 },
                 fontFamily = Wyrm.Body,
@@ -138,6 +141,7 @@ fun UpdatePrompt(
                     installing -> "Restarting"
                     downloading -> "Downloading"
                     backup.saved -> "Backup saved"
+                    beta -> "Wyrm ${state.version} beta"
                     else -> "Wyrm ${state.version}"
                 },
                 fontFamily = Wyrm.Body,
@@ -166,6 +170,47 @@ fun UpdatePrompt(
                 lineHeight = 21.sp,
                 color = Wyrm.Mute,
             )
+
+            val offering = !failed && !backupFailed && !choosingFolder && !backingUp &&
+                !preparingBackup && !downloading && !installing && !backup.saved
+            if (beta && offering) {
+                // A beta says what it is, what that means, and how to stop them.
+                Spacer(Modifier.height(16.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(wyrmRounded(12.dp))
+                        .background(Wyrm.Well)
+                        .padding(14.dp),
+                ) {
+                    Text(
+                        text = "This is a beta update",
+                        fontFamily = Wyrm.Body,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Wyrm.Ink,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Beta updates are early builds: you get new features before everyone else, " +
+                            "but they can have rough edges or bugs. Stable updates come later, for everyone.",
+                        fontFamily = Wyrm.Body,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        color = Wyrm.Mute,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "Don't want beta updates? Turn them off in Settings \u203A Backup \u203A",
+                        fontFamily = Wyrm.Body,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        color = Wyrm.Link,
+                        modifier = Modifier.clickable(onClick = onBetaSettings),
+                    )
+                }
+            }
 
             if (backingUp || preparingBackup || downloading || installing) {
                 Spacer(Modifier.height(20.dp))

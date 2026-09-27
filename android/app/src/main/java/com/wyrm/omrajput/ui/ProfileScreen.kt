@@ -367,7 +367,7 @@ private fun ProfileMenuSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(sheet)
-                    .background(Color(0xF8FCFBFA)),
+                    .background(Wyrm.Card.copy(alpha = 0.97f)),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
@@ -388,7 +388,7 @@ private fun ProfileMenuSheet(
                     .fillMaxWidth()
                     .height(56.dp)
                     .clip(sheet)
-                    .background(Color(0xF8FCFBFA))
+                    .background(Wyrm.Card.copy(alpha = 0.97f))
                     .clickable(onClick = onCancel),
                 contentAlignment = Alignment.Center,
             ) {

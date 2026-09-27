@@ -30,7 +30,6 @@ fun SettingsDisplayScreen(
     onBack: () -> Unit,
     onChange: (Setting, List<Float>) -> Unit,
 ) {
-    var advanced by remember { mutableStateOf(false) }
     val basic = BASIC_IDS.mapNotNull { settings.named(it) }
     val advancedRows = settings.filter { setting ->
         (setting.group == "general" || setting.group.startsWith("general.")) &&
@@ -38,6 +37,8 @@ fun SettingsDisplayScreen(
             setting.id !in BASIC_IDS &&
             setting.label.isNotBlank()
     }
+    // Opened by settings search when the row it points at is inside.
+    var advanced by remember { mutableStateOf(SettingsFocus.wants(advancedRows.map { it.id })) }
     SettingsDrillScaffold(
         title = "Display",
         insetTop = insetTop,

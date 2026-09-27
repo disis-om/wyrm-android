@@ -860,7 +860,7 @@ private fun TeamRow(
             modifier = Modifier
                 .size(26.dp)
                 .clip(wyrmRounded(8.dp))
-                .background(Color(0xFFE6EFE8)),
+                .background(Wyrm.Live.copy(alpha = 0.16f)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -986,7 +986,12 @@ fun FloatingRootTabs(
 @Composable
 private fun FloatingTabLabel(tab: RootTab, chosen: Boolean, badge: Int) {
     val colour by animateColorAsState(
-        targetValue = if (chosen) Wyrm.Ink else Wyrm.TabIdle,
+        // Dark themes flip it: dark ink on the light thumb, light idle tabs.
+        targetValue = when {
+            chosen -> Wyrm.PillInk
+            Wyrm.currentPalette.dark -> Wyrm.Ink
+            else -> Wyrm.TabIdle
+        },
         animationSpec = tween(160),
         label = "tab colour",
     )

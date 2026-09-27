@@ -59,12 +59,16 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.rotateRad
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -102,6 +106,7 @@ private const val TAGS_DISABLED = true
 private enum class SkinSection(val title: String) {
     OVERVIEW("Skin wardrobe"), PRESETS("Default skins"), PATTERN("Pattern"),
     ACCESSORIES("Accessory"), TAGS("Tag"), BACKGROUND("Arena background"),
+    HAIR("Hair"), EARS("Ears"), GLASSES("Glasses"),
 }
 
 private fun Int.rgbColor(): Color = Color(((this shr 16) and 0xFF) / 255f, ((this shr 8) and 0xFF) / 255f, (this and 0xFF) / 255f)
@@ -160,6 +165,9 @@ fun IosSkinScreen(
     val previewGroups = if (editingPattern) List(256) { if (it < customGroups.size) customGroups[it] else -1 } else activeGroups
     val previewColors = if (editingPattern) List(256) { if (it < customGroups.size) customColors[it] else 0 } else activeColors
 
+    // The colour wheel's colour, which Wyrm's patterned beads take.
+    var wheelRgb by remember { mutableIntStateOf(prefs.getInt("air-rgb", 0x808080) and 0xFFFFFF) }
+
     fun savePattern(groups: List<Int>, colors: List<Int>) {
         editingPattern = true
         pattern = groups
@@ -210,6 +218,18 @@ fun IosSkinScreen(
                             IosListRow(SkinSection.TAGS.title, value = if (TAGS_DISABLED) "Coming soon" else SkinCatalog.tags.getOrNull(tag)?.let { "#${it.ntlId}" } ?: "None") { if (!TAGS_DISABLED) enter(SkinSection.TAGS) }
                             IosListRow(SkinSection.BACKGROUND.title, value = SkinCatalog.backgrounds.getOrNull(backgroundId)?.label ?: "Wyrm") { enter(SkinSection.BACKGROUND) }
                         }
+                        // Wyrm's own looks: only this phone sees them.
+                        IosSectionLabel("Wyrm looks")
+                        IosPaperCard {
+                            IosListRow(SkinSection.HAIR.title, value = WyrmLook.hairNames.getOrNull(WyrmLookStore.hair) ?: "None") { enter(SkinSection.HAIR) }
+                            IosListRow(SkinSection.EARS.title, value = WyrmLook.earNames.getOrNull(WyrmLookStore.ears) ?: "None") { enter(SkinSection.EARS) }
+                            IosListRow(SkinSection.GLASSES.title, value = WyrmLook.glassesNames.getOrNull(WyrmLookStore.glasses) ?: "None") { enter(SkinSection.GLASSES) }
+                        }
+                        Text(
+                            "Hair, ears and glasses are Wyrm's own: you see them on your snake, other players don't.",
+                            fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
+                        )
                     }
                     SkinSection.PRESETS -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
@@ -292,7 +312,7 @@ fun IosSkinScreen(
                             label = "wheel-or-beads",
                         ) { wheel ->
                             if (wheel) {
-                                AirWheelPanel(textures, prefs) { kind, rgb ->
+                                AirWheelPanel(textures, prefs, onColour = { wheelRgb = it }) { kind, rgb ->
                                     if (customGroups.size < 256) {
                                         savePattern(customGroups + AirSkin.nearestGroup(rgb), customColors + (AirSkin.marker(kind) or rgb))
                                     }
@@ -301,6 +321,21 @@ fun IosSkinScreen(
                                 BeadGrid(textures) { group ->
                                     if (customGroups.size < 256) savePattern(customGroups + group, customColors + 0)
                                 }
+                            }
+                        }
+                        // Wyrm's own beads; the arena gets each one's nearest slither colour.
+                        IosSectionLabel("Wyrm beads")
+                        Text(
+                            "Patterned beads take the colour wheel's colour. In a match, other players see the nearest slither colour.",
+                            fontFamily = Wyrm.Body,
+                            fontSize = 11.sp,
+                            color = Wyrm.Quiet,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
+                        )
+                        WyrmBeadGrid(textures, wheelRgb) { kind ->
+                            if (customGroups.size < 256) {
+                                val argb = WyrmBeads.argb(kind, wheelRgb)
+                                savePattern(customGroups + AirSkin.nearestGroup(argb and 0xFFFFFF), customColors + argb)
                             }
                         }
                     }
@@ -314,6 +349,64 @@ fun IosSkinScreen(
                                 ImageTile(accessory == item.id, textures?.accessoryThumbnails?.get(item.id), 4.dp) {
                                     accessory = item.id
                                     onPickAccessory(item.id)
+                                }
+                            }
+                        }
+                    }
+                    SkinSection.HAIR -> {
+                        InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
+                        IosSectionLabel("Colour")
+                        Row(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            WyrmLook.hairColours.forEachIndexed { index, (name, rgb) ->
+                                val chosen = WyrmLookStore.hairColour == index
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .aspectRatio(1f)
+                                        .clip(CircleShape)
+                                        .background(WyrmLook.rgbColor(rgb))
+                                        .border(if (chosen) 3.dp else 1.dp, if (chosen) Wyrm.Ink else Wyrm.Rule, CircleShape)
+                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                            WyrmLookStore.pickHairColour(index)
+                                        }
+                                        .semantics { contentDescription = "$name hair" },
+                                )
+                            }
+                        }
+                        IosSectionLabel("Style")
+                        TileGrid(minimum = 70.dp, count = WyrmLook.hairNames.size + 1, fixedColumns = 3) { index ->
+                            if (index == 0) {
+                                SelectionTile(WyrmLookStore.hair < 0, "None") { WyrmLookStore.pickHair(-1) }
+                            } else {
+                                val style = index - 1
+                                LookTile(WyrmLookStore.hair == style, WyrmLook.hairNames[style], onClick = {
+                                    WyrmLookStore.pickHair(style)
+                                }) { r, head ->
+                                    val cells = textures?.looks ?: return@LookTile
+                                    drawWyrmLook(cells, head, r, style, WyrmLookStore.hairRgb, -1, -1) { image, l, t, w, h, tint ->
+                                        drawImageInto(image, l, t, w, h, tint)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    SkinSection.EARS, SkinSection.GLASSES -> {
+                        InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
+                        val ears = shown == SkinSection.EARS
+                        val names = if (ears) WyrmLook.earNames else WyrmLook.glassesNames
+                        val current = if (ears) WyrmLookStore.ears else WyrmLookStore.glasses
+                        TileGrid(minimum = 70.dp, count = names.size + 1, fixedColumns = 3) { index ->
+                            if (index == 0) {
+                                SelectionTile(current < 0, "None") { if (ears) WyrmLookStore.pickEars(-1) else WyrmLookStore.pickGlasses(-1) }
+                            } else {
+                                val style = index - 1
+                                LookTile(current == style, names[style], onClick = {
+                                    if (ears) WyrmLookStore.pickEars(style) else WyrmLookStore.pickGlasses(style)
+                                }) { r, head ->
+                                    val cells = textures?.looks ?: return@LookTile
+                                    drawWyrmLook(cells, head, r, -1, 0, if (ears) style else -1, if (ears) -1 else style) { image, l, t, w, h, tint ->
+                                        drawImageInto(image, l, t, w, h, tint)
+                                    }
                                 }
                             }
                         }
@@ -451,6 +544,38 @@ private fun ImageTile(selected: Boolean, image: ImageBitmap?, inset: Dp, badge: 
     }
 }
 
+/**
+ * A look on a small head, the way the arena wears it: a Wyrm head and eyes,
+ * the hair at rest behind it, and the item's name.
+ */
+@Composable
+private fun LookTile(selected: Boolean, label: String, onClick: () -> Unit, paint: DrawScope.(Float, Offset) -> Unit) {
+    val shape = wyrmRounded(15.dp)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .clip(shape)
+            .background(Wyrm.Card.copy(alpha = 0.92f))
+            .border(if (selected) 2.dp else 1.dp, if (selected) Wyrm.Ink else Wyrm.Rule, shape)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+    ) {
+        Canvas(Modifier.fillMaxSize().padding(bottom = 14.dp)) {
+            // Room for a ponytail behind the head: the head sits right of centre.
+            val r = min(size.width / 7.2f, size.height / 4.8f)
+            val head = Offset(size.width - r * 2.0f, size.height / 2)
+            drawCircle(Color(0xFFF2B84B), r, head)
+            drawCircle(Color.White, r * 0.41f, head + Offset(0.41f * r, -0.45f * r))
+            drawCircle(Color.White, r * 0.41f, head + Offset(0.41f * r, 0.45f * r))
+            drawCircle(Color(0xFF151515), r * 0.24f, head + Offset(0.51f * r, -0.45f * r))
+            drawCircle(Color(0xFF151515), r * 0.24f, head + Offset(0.51f * r, 0.45f * r))
+            paint(r, head)
+        }
+        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 9.5.sp, color = Wyrm.Quiet,
+            maxLines = 1, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp))
+        if (selected) SelectionCheck(Modifier.align(Alignment.TopEnd))
+    }
+}
+
 @Composable
 private fun BackgroundTile(item: SkinBackgroundAsset, image: ImageBitmap?, selected: Boolean, onClick: () -> Unit) {
     val shape = wyrmRounded(16.dp)
@@ -527,6 +652,37 @@ private fun BeadGrid(textures: SkinTextures?, onPick: (Int) -> Unit) {
                                 .padding(5.dp),
                         ) {
                             textures?.beads?.get(group)?.let { image -> Canvas(Modifier.fillMaxSize()) { drawFitted(image) } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Wyrm's own beads (`WyrmBeads`). Patterned ones take the colour wheel's colour. */
+@Composable
+private fun WyrmBeadGrid(textures: SkinTextures?, tint: Int, onPick: (Int) -> Unit) {
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (row in 0 until (WyrmBeads.COUNT + 5) / 6) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (column in 0 until 6) {
+                    val kind = row * 6 + column
+                    Box(Modifier.weight(1f).aspectRatio(1f)) {
+                        if (kind >= WyrmBeads.COUNT) return@Box
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                                .background(Wyrm.Card.copy(alpha = 0.72f))
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onPick(kind) }
+                                .padding(4.dp),
+                        ) {
+                            textures?.wyrmBeads?.get(kind)?.let { image ->
+                                Canvas(Modifier.fillMaxSize()) {
+                                    drawFitted(image, if (WyrmBeads.tinted[kind]) tint.rgbColor() else null)
+                                }
+                            }
                         }
                     }
                 }
@@ -651,6 +807,7 @@ private fun SkinPreview(
             }
             val shadowSize = scale * 102f / 64f
             fun airShadow(codeIndex: Int, alpha: Float) {
+                if (!AirSkin.BEAD_SHADOW) return
                 val shadow = t.airShadow ?: return
                 if (airKind(codeIndex) == null) return
                 val p = point(total - 1 - codeIndex)
@@ -668,8 +825,11 @@ private fun SkinPreview(
                     if (group < 0) continue
                     val argb = colors.getOrElse(codeIndex) { 0 }
                     val air = AirSkin.kind(argb)
-                    val bead = (air?.let { t.airBeads[it] }) ?: t.beads[if (argb == 0) group else 40] ?: continue
+                    val wyrm = WyrmBeads.kind(argb)
+                    val bead = (wyrm?.let { t.wyrmBeads[it] }) ?: (air?.let { t.airBeads[it] })
+                        ?: t.beads[if (argb == 0) group else 40] ?: continue
                     val tint = when {
+                        wyrm != null -> if (WyrmBeads.tinted[wyrm]) argb.rgbColor() else null
                         air != null -> AirSkin.bodyTint(argb).rgbColor()
                         argb != 0 -> argb.rgbColor()
                         else -> null
@@ -712,6 +872,9 @@ private fun SkinPreview(
                 val fit = min(size / image.width, size / image.height)
                 drawImageInto(image, cx - image.width * fit / 2, head.y - image.height * fit / 2, image.width * fit, image.height * fit)
             }
+            // Wyrm looks, placed as platform/android_look.c places them (hair at rest).
+            drawWyrmLook(t.looks, head, scale / 2, WyrmLookStore.hair, WyrmLookStore.hairRgb, WyrmLookStore.ears,
+                WyrmLookStore.glasses) { img, l, tp, w, h, tint -> drawImageInto(img, l, tp, w, h, tint) }
         }
         val tagItem = SkinCatalog.tags.getOrNull(tagId)
         val tagImage = textures?.tags?.get(tagId)
@@ -868,7 +1031,12 @@ private fun Modifier.glassDisc(): Modifier = this
  * values stay in this panel; they are saved when the finger lifts.
  */
 @Composable
-private fun AirWheelPanel(textures: SkinTextures?, prefs: android.content.SharedPreferences, onAdd: (kind: Int, rgb: Int) -> Unit) {
+private fun AirWheelPanel(
+    textures: SkinTextures?,
+    prefs: android.content.SharedPreferences,
+    onColour: (Int) -> Unit = {},
+    onAdd: (kind: Int, rgb: Int) -> Unit,
+) {
     var pointerX by remember { mutableDoubleStateOf(prefs.getFloat("air-pointer-x", 0f).toDouble()) }
     var pointerY by remember { mutableDoubleStateOf(prefs.getFloat("air-pointer-y", 0f).toDouble()) }
     var bezelAngle by remember { mutableDoubleStateOf(prefs.getFloat("air-bezel", 0f).toDouble()) }
@@ -876,30 +1044,14 @@ private fun AirWheelPanel(textures: SkinTextures?, prefs: android.content.Shared
     val pure = AirSkin.pure(pointerX, pointerY)
     val brightness = AirSkin.brightness(bezelAngle)
 
-    // The two beads stand on the left and the wheel sits to their right, so the
-    // whole builder fits without scrolling the page.
+    // The wheel sits on the left and the two beads stand to its right (OM,
+    // 2026-09-28), so the whole builder fits without scrolling the page.
+    val guideText = androidx.compose.ui.text.rememberTextMeasurer()
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 18.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
-            for (kind in 0 until 2) {
-                Box(
-                    Modifier
-                        .size(66.dp)
-                        .glassDisc()
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onAdd(kind, rgb) }
-                        .padding(9.dp),
-                ) {
-                    textures?.airBeads?.get(kind)?.let { image ->
-                        Canvas(Modifier.fillMaxSize()) {
-                            rotate(180f) { drawFitted(image, rgb.rgbColor()) }
-                        }
-                    }
-                }
-            }
-        }
         BoxWithConstraints(Modifier.weight(1f).widthIn(max = 300.dp).aspectRatio(1f)) {
             val side = min(constraints.maxWidth, constraints.maxHeight).toFloat()
             val unitPx = side / (2 * 172f)
@@ -961,6 +1113,7 @@ private fun AirWheelPanel(textures: SkinTextures?, prefs: android.content.Shared
                                 .putFloat("air-bezel", bezelAngle.toFloat())
                                 .putInt("air-rgb", rgb)
                                 .apply()
+                            onColour(rgb)
                         }
                     },
             ) {
@@ -994,6 +1147,7 @@ private fun AirWheelPanel(textures: SkinTextures?, prefs: android.content.Shared
                     (if (brightness > 0) Color.White else Color.Black).copy(alpha = kotlin.math.abs(brightness).toFloat().coerceIn(0f, 1f)),
                     (128 * 1.005 * unitPx).toFloat(), centre,
                 )
+                drawWheelGuides(centre, unitPx.toFloat(), guideText)
                 fun knob(at: Offset, diameter: Float) {
                     val r = diameter / 2
                     drawCircle(Color.Black.copy(alpha = 0.25f), r, at + Offset(0f, 2.dp.toPx()))
@@ -1010,6 +1164,66 @@ private fun AirWheelPanel(textures: SkinTextures?, prefs: android.content.Shared
                 )
             }
         }
+        Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+            for (kind in 0 until 2) {
+                Box(
+                    Modifier
+                        .size(66.dp)
+                        .glassDisc()
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onAdd(kind, rgb) }
+                        .padding(9.dp),
+                ) {
+                    textures?.airBeads?.get(kind)?.let { image ->
+                        Canvas(Modifier.fillMaxSize()) {
+                            rotate(180f) { drawFitted(image, rgb.rgbColor()) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Accessibility marks on the wheel (OM, 2026-09-28), as `WyrmAirWheelGuides`
+ * on iOS, so a colour can be found again: a faint 12 x 12 grid over the colour
+ * disc, and a clock face round the bezel: a dash every 6 degrees, a longer one
+ * every 30 with its hour, 1 to 12. The numbers keep one size at any wheel size.
+ */
+private fun DrawScope.drawWheelGuides(centre: Offset, unitPx: Float, measurer: androidx.compose.ui.text.TextMeasurer) {
+    val r = (AirSkin.WHEEL_RADIUS * unitPx).toFloat()
+    val cell = 2 * r / 12
+    val disc = Path().apply { addOval(androidx.compose.ui.geometry.Rect(centre, r)) }
+    val hair = 0.5.dp.toPx()
+    clipPath(disc) {
+        for (i in 1 until 12) {
+            val o = -r + i * cell
+            // Dark then light, so the grid shows on every hue.
+            drawLine(Color.Black.copy(alpha = 0.10f), Offset(centre.x + o, centre.y - r), Offset(centre.x + o, centre.y + r), hair)
+            drawLine(Color.Black.copy(alpha = 0.10f), Offset(centre.x - r, centre.y + o), Offset(centre.x + r, centre.y + o), hair)
+            drawLine(Color.White.copy(alpha = 0.12f), Offset(centre.x + o + hair, centre.y - r), Offset(centre.x + o + hair, centre.y + r), hair)
+            drawLine(Color.White.copy(alpha = 0.12f), Offset(centre.x - r, centre.y + o + hair), Offset(centre.x + r, centre.y + o + hair), hair)
+        }
+    }
+    val inner = ((AirSkin.WHEEL_RADIUS + AirSkin.BEZEL_WIDTH) * unitPx).toFloat() + 2.dp.toPx()
+    for (step in 0 until 60) {
+        val a = step / 60f * 2f * Math.PI.toFloat() - Math.PI.toFloat() / 2f
+        val long = step % 5 == 0
+        val reach = inner + (if (long) 6.dp else 3.dp).toPx()
+        drawLine(
+            if (long) Wyrm.Mute else Wyrm.Quiet.copy(alpha = 0.55f),
+            Offset(centre.x + cos(a) * inner, centre.y + sin(a) * inner),
+            Offset(centre.x + cos(a) * reach, centre.y + sin(a) * reach),
+            (if (long) 1.3.dp else 0.8.dp).toPx(),
+        )
+    }
+    val labelRadius = inner + 14.dp.toPx()
+    val style = TextStyle(fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 9.sp, color = Wyrm.Mute)
+    for (hour in 1..12) {
+        val a = hour / 12f * 2f * Math.PI.toFloat() - Math.PI.toFloat() / 2f
+        val layout = measurer.measure(hour.toString(), style)
+        val at = Offset(centre.x + cos(a) * labelRadius, centre.y + sin(a) * labelRadius)
+        drawText(layout, topLeft = at - Offset(layout.size.width / 2f, layout.size.height / 2f))
     }
 }
 

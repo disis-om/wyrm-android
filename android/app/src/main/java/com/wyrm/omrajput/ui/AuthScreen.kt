@@ -199,12 +199,13 @@ internal fun GoogleInkButton(label: String, enabled: Boolean, onClick: () -> Uni
                 .background(Color.White),
             contentAlignment = Alignment.Center,
         ) {
+            // The chip is always white, so its letter is always dark.
             Text(
                 text = "G",
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = Wyrm.Ink,
+                color = Color(0xFF37352F),
             )
         }
         Text(

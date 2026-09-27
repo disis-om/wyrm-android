@@ -66,6 +66,7 @@ static const char* packaged_assets[] = {
     "textures/home_navigation_icons.png",
     "textures/wyrm_tags.png",
     "textures/arrow_skins.png",
+    "textures/wyrm_accessories.png",
     "textures/tex_atlas_8k.png",
     "textures/vlither_enhanced_logo.png",
 };

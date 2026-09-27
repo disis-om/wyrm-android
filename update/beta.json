@@ -3,15 +3,15 @@
   "source": "github",
   "productName": "Wyrm",
   "packageName": "com.wyrm.omrajput",
-  "versionCode": 621,
-  "versionName": "6.2.1",
+  "versionCode": 622,
+  "versionName": "6.2.2",
   "minimumVersionCode": 0,
   "mandatory": false,
-  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v6.2.1/Wyrm-v6.2.1.apk",
-  "apkSize": 56065488,
-  "sha256": "4b1c22a7ad23f14140f9797b45fc776f35f9883a83059a53a01dd26b50cd7004",
-  "publishedAt": "2026-09-26T21:51:23Z",
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v6.2.2/Wyrm-v6.2.2.apk",
+  "apkSize": 56822377,
+  "sha256": "614f2d36776732b61d7ba3b5ba5bc9adc67ce33cafc745ab6a953350966ac8f9",
+  "publishedAt": "2026-09-27T08:49:25Z",
   "headline": "A new version of Wyrm",
   "author": "OM Rajput",
-  "releaseNotes": ["First beta of the new Wyrm.", "Liquid Glass tab bar that folds while you scroll.", "Beta updates switch in Settings > Backup.", "Arena drops fixed: tags are off until Wyrm serves its own."]
+  "releaseNotes": ["Image arrows from Wyrm iOS, with a picker and live preview.", "Seamless Liquid Glass tab bar fold.", "Update now button, and Back up before updating is now a switch.", "Team mode redesigned like Wyrm iOS: saved teams behind the gear, FPS, ping and leaderboard in the roster, cleaner names and chat.", "Slider and switch labels are no longer cut off; pages no longer tuck under the header.", "Lobby: Home replaces Quick settings. Colour wheel knob turns only when held."]
 }

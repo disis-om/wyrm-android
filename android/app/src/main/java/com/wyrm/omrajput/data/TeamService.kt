@@ -105,7 +105,7 @@ data class TeamPresence(
  * One request does everything: it reports where this player is and returns the
  * whole team, chat included. There is no login, no socket and no second call —
  * the credentials ride along on every request. The protocol is written down in
- * ntl-team-protocol.md, and this is the only place in the app that knows it.
+ * ARCHITECTURE.md §8 (Team Mode), and this is the only place in the app that knows it.
  *
  * The cadence is four seconds because that is what the service is used to. It
  * is slower than the arena moves, so a teammate's marker is a few seconds
@@ -631,7 +631,7 @@ class TeamService(context: Context) {
            command, which sends the id and the hashed password here and shows
            the player whatever comes back — "ok" when it is theirs. Still not
            watched on the wire, so the first real id and password are the test.
-           See ntl-tags.md. */
+           See ARCHITECTURE.md §8 (tags). */
         private const val TAG_ENDPOINT = "https://ntl-slither.com/tags/tag"
         /* The tag service refuses anything that does not say it came from the
            game. Watched on the wire, not read out of the mod — see claimTag. */

@@ -142,10 +142,16 @@ public final class WyrmActivity extends SDLActivity {
     private static native void nativeCloseTeamChat(float seconds);
     private static native String nativeUpdateSnapshot();
     private static native void nativeUpdateAction(int action);
+    private static native void nativeSetArrowSkin(int skin, float brightness);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Image arrows: the saved choice reaches the engine before the first frame.
+        com.wyrm.omrajput.ui.ArrowSkinStore.attach(this, (skin, brightness) -> {
+            try { nativeSetArrowSkin(skin, brightness); } catch (UnsatisfiedLinkError ignored) { }
+            return kotlin.Unit.INSTANCE;
+        });
 
         /*
          * Nobody moves the screen for the keyboard except us.

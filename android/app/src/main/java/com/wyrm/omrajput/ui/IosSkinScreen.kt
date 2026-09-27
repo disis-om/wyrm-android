@@ -306,12 +306,12 @@ fun IosSkinScreen(
                     }
                     SkinSection.ACCESSORIES -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
-                        TileGrid(minimum = 70.dp, count = SkinCatalog.accessories.size + 1) { index ->
+                        TileGrid(minimum = 70.dp, count = SkinCatalog.accessories.size + 1, fixedColumns = 4) { index ->
                             if (index == 0) {
                                 SelectionTile(accessory < 0, "None") { accessory = -1; onPickAccessory(-1) }
                             } else {
                                 val item = SkinCatalog.accessories[index - 1]
-                                ImageTile(accessory == item.id, textures?.accessoryThumbnails?.get(item.id), 8.dp) {
+                                ImageTile(accessory == item.id, textures?.accessoryThumbnails?.get(item.id), 4.dp) {
                                     accessory = item.id
                                     onPickAccessory(item.id)
                                 }
@@ -340,7 +340,7 @@ fun IosSkinScreen(
                     }
                     SkinSection.BACKGROUND -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
-                        TileGrid(minimum = 104.dp, count = SkinCatalog.backgrounds.size, aspect = null) { index ->
+                        TileGrid(minimum = 104.dp, count = SkinCatalog.backgrounds.size, aspect = null, fixedColumns = 3) { index ->
                             val item = SkinCatalog.backgrounds[index]
                             BackgroundTile(item, textures?.backgrounds?.get(item.id), backgroundId == item.id) {
                                 backgroundId = item.id
@@ -379,10 +379,17 @@ private fun InlineHeader(title: String, onBack: () -> Unit) {
 
 /** SwiftUI `LazyVGrid(.adaptive(minimum:), spacing: 10)` inside 16 dp margins. */
 @Composable
-private fun TileGrid(minimum: Dp, count: Int, aspect: Float? = 1f, cell: @Composable (Int) -> Unit) {
+private fun TileGrid(
+    minimum: Dp,
+    count: Int,
+    aspect: Float? = 1f,
+    fixedColumns: Int? = null,
+    cell: @Composable (Int) -> Unit,
+) {
     BoxWithConstraints(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
         val spacing = 10.dp
-        val columns = max(1, ((maxWidth + spacing) / (minimum + spacing)).toInt())
+        // Accessories 4 and backgrounds 3 on every phone, as OM chose.
+        val columns = fixedColumns ?: max(1, ((maxWidth + spacing) / (minimum + spacing)).toInt())
         Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
             for (row in 0 until (count + columns - 1) / columns) {
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
@@ -611,8 +618,8 @@ private fun SkinPreview(
         val head = Offset(x + scale * 0.5f + step * (segmentsPerRow - 1), headY)
         val unit = scale / 29f
 
-        // The chosen arena background, faint, fading out from the centre.
-        textures?.backgrounds?.get(backgroundId)?.let { image ->
+        // No arena background behind the snake: the preview is the skin alone (OM).
+        if (false) textures?.backgrounds?.get(backgroundId)?.let { image ->
             Canvas(Modifier.fillMaxSize()) {
                 // iOS masks the 13% image with a radial gradient from 10 pt
                 // (opaque) through 0.42 at the midpoint to clear at 56% of the
@@ -869,8 +876,31 @@ private fun AirWheelPanel(textures: SkinTextures?, prefs: android.content.Shared
     val pure = AirSkin.pure(pointerX, pointerY)
     val brightness = AirSkin.brightness(bezelAngle)
 
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        BoxWithConstraints(Modifier.padding(horizontal = 20.dp).widthIn(max = 300.dp).fillMaxWidth().aspectRatio(1f)) {
+    // The two beads stand on the left and the wheel sits to their right, so the
+    // whole builder fits without scrolling the page.
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+            for (kind in 0 until 2) {
+                Box(
+                    Modifier
+                        .size(66.dp)
+                        .glassDisc()
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onAdd(kind, rgb) }
+                        .padding(9.dp),
+                ) {
+                    textures?.airBeads?.get(kind)?.let { image ->
+                        Canvas(Modifier.fillMaxSize()) {
+                            rotate(180f) { drawFitted(image, rgb.rgbColor()) }
+                        }
+                    }
+                }
+            }
+        }
+        BoxWithConstraints(Modifier.weight(1f).widthIn(max = 300.dp).aspectRatio(1f)) {
             val side = min(constraints.maxWidth, constraints.maxHeight).toFloat()
             val unitPx = side / (2 * 172f)
             val centre = Offset(constraints.maxWidth / 2f, constraints.maxHeight / 2f)
@@ -881,14 +911,21 @@ private fun AirWheelPanel(textures: SkinTextures?, prefs: android.content.Shared
                     .pointerInput(unitPx) {
                         awaitEachGesture {
                             val down = awaitFirstDown()
-                            down.consume()
                             val sx = ((down.position.x - centre.x) / unitPx).toDouble()
                             val sy = ((down.position.y - centre.y) / unitPx).toDouble()
+                            val knobX = cos(bezelAngle) * AirSkin.BEZEL_POINTER_RADIUS
+                            val knobY = sin(bezelAngle) * AirSkin.BEZEL_POINTER_RADIUS
+                            // The brightness knob turns only when it is the thing
+                            // held; anywhere else on the ring the touch is left to
+                            // the page, so scrolling never spins it.
                             drag = when {
                                 hypot(sx - pointerX, sy - pointerY) <= 30 -> Triple(0, pointerX, pointerY)
                                 sqrt(sx * sx + sy * sy) <= AirSkin.WHEEL_RADIUS -> Triple(0, sx, sy)
-                                else -> Triple(1, 0.0, 0.0)
+                                hypot(sx - knobX, sy - knobY) <= 34 -> Triple(1, 0.0, 0.0)
+                                else -> null
                             }
+                            if (drag == null) return@awaitEachGesture
+                            down.consume()
                             fun apply(position: Offset) {
                                 val current = drag ?: return
                                 if (current.first == 0) {
@@ -971,23 +1008,6 @@ private fun AirWheelPanel(textures: SkinTextures?, prefs: android.content.Shared
                     centre + Offset((cos(bezelAngle) * AirSkin.BEZEL_POINTER_RADIUS * unitPx).toFloat(), (sin(bezelAngle) * AirSkin.BEZEL_POINTER_RADIUS * unitPx).toFloat()),
                     (42 * unitPx).toFloat(),
                 )
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-            for (kind in 0 until 2) {
-                Box(
-                    Modifier
-                        .size(66.dp)
-                        .glassDisc()
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onAdd(kind, rgb) }
-                        .padding(9.dp),
-                ) {
-                    textures?.airBeads?.get(kind)?.let { image ->
-                        Canvas(Modifier.fillMaxSize()) {
-                            rotate(180f) { drawFitted(image, rgb.rgbColor()) }
-                        }
-                    }
-                }
             }
         }
     }

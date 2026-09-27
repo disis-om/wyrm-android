@@ -1,5 +1,7 @@
 package com.wyrm.omrajput.ui
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
@@ -35,6 +37,8 @@ fun SettingsBotScreen(
         insetBottom = insetBottom,
         onBack = onBack,
     ) {
+        // Clear of the header rule, as on iOS.
+        Spacer(Modifier.height(18.dp))
         SettingsCard {
             Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 15.dp, bottom = 15.dp)) {
                 Text(

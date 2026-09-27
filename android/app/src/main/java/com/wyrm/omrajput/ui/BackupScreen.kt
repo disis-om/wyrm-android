@@ -64,6 +64,8 @@ fun BackupScreen(
     onCheckUpdate: () -> Unit = {},
     betaUpdates: Boolean = false,
     onBetaUpdates: (Boolean) -> Unit = {},
+    backupFirst: Boolean = true,
+    onBackupFirst: (Boolean) -> Unit = {},
     onInstall: () -> Unit = {},
     onOpenInstalledNotes: () -> Unit = {},
     onOpenAvailableNotes: () -> Unit = {},
@@ -99,6 +101,8 @@ fun BackupScreen(
         insetBottom = insetBottom,
         onBack = onBack,
     ) {
+        // Clear of the header rule, as on iOS.
+        Spacer(Modifier.height(18.dp))
         SettingsCard {
             Column(modifier = Modifier.padding(16.dp, 16.dp, 14.dp, 16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -187,6 +191,39 @@ fun BackupScreen(
             }
         }
 
+        // An update that is ready, or on its way in, gets its own card and a
+        // real button rather than only a row label.
+        val updating = update.busy && update.status != 1
+        if (update.available || updating) {
+            SettingsSectionLabel("Update")
+            SettingsCard {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = if (update.version.isNotBlank()) "Wyrm ${update.version} is ready" else "A new Wyrm is ready",
+                        fontFamily = Wyrm.Body,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 18.sp,
+                        color = Wyrm.Ink,
+                    )
+                    if (update.detail.isNotBlank()) {
+                        Text(
+                            text = update.detail,
+                            fontFamily = Wyrm.Body,
+                            fontSize = 13.sp,
+                            color = Wyrm.Quiet,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    PaperPrimaryButton(
+                        label = if (updating) update.title.ifBlank { "Updating…" } else "Update now",
+                        enabled = !updating,
+                        onClick = onInstall,
+                    )
+                }
+            }
+        }
+
         SettingsSectionLabel("Version")
         SettingsCard {
             SettingsValueRow("Wyrm", installedVersion.ifBlank { "—" }, first = true)
@@ -202,6 +239,13 @@ fun BackupScreen(
                 on = betaUpdates,
                 first = false,
                 onToggle = onBetaUpdates,
+            )
+            SettingsBoolRow(
+                title = "Back up before updating",
+                detail = "Saves skins, controls and settings to your backup folder first.",
+                on = backupFirst,
+                first = false,
+                onToggle = onBackupFirst,
             )
             if (settingsVersion.isNotBlank()) {
                 SettingsValueRow("Settings format", "v$settingsVersion", first = false)
@@ -241,7 +285,7 @@ fun BackupScreen(
             }
         }
         SettingsCaption(
-            "Before an update, Wyrm creates a dated backup in the folder you choose. " +
+            "With Back up before updating on, Wyrm creates a dated backup in the folder you choose. " +
                 "Team credentials are included only as Android-Keystore ciphertext.",
         )
     }

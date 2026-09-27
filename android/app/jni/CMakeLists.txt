@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(VlitherEnhanced LANGUAGES C CXX)
 
-set(WYRM_APP_VERSION "0.1.0" CACHE STRING "Wyrm application version")
+# APP_VERSION comes from ../.cxx-version/wyrm_version.h, written by build.gradle.
 
 get_filename_component(VLITHER_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 
@@ -24,13 +24,13 @@ add_library(main SHARED ${VLITHER_C_SOURCES} ${VLITHER_CXX_SOURCES})
 
 target_compile_features(main PRIVATE c_std_11 cxx_std_17)
 target_compile_definitions(main PRIVATE
-    APP_VERSION="${WYRM_APP_VERSION}"
     SETTINGS_VERSION="2.8"
     CIMGUI_NO_EXPORT
     CGLM_FORCE_DEPTH_ZERO_TO_ONE
     VLITHER_ANDROID=1)
 target_include_directories(main PRIVATE
     "${VLITHER_ROOT}/app/src"
+    "${CMAKE_CURRENT_LIST_DIR}/../.cxx-version"
     "${VLITHER_ROOT}/thermite/include"
     "${VLITHER_ROOT}/thermite/src"
     "${VLITHER_ROOT}/android-sdl/include")

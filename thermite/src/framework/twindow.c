@@ -3,6 +3,14 @@
 
 #include "../core/tenv.h"
 #include "../util/tdarray.h"
+#if defined(__has_include)
+#if __has_include("wyrm_version.h")
+#include "wyrm_version.h"
+#endif
+#endif
+#ifndef APP_VERSION
+#define APP_VERSION "dev"
+#endif
 
 #ifdef VLITHER_ANDROID
 #include <SDL3/SDL.h>

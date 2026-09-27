@@ -4,6 +4,7 @@
 #include "../user.h"
 #ifdef VLITHER_ANDROID
 #include "../platform/android_startup.h"
+#include "../platform/android_arrows.h"
 #endif
 
 #define BACKGROUND_LOGICAL_WIDTH 4096.0f
@@ -195,6 +196,7 @@ renderer* renderer_create(tenv* env) {
   r->tags_descriptor = igImplVulkan_AddTexture(
       r->linear_sampler, r->tags_tex->view,
       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  android_arrows_create(r, ctx);
 
   vkCreateRenderPass(
       ctx->device,
@@ -526,6 +528,7 @@ void renderer_destroy(renderer* r, tcontext* ctx) {
     igImplVulkan_RemoveTexture(r->logo_descriptor);
   if (r->home_icons_descriptor)
     igImplVulkan_RemoveTexture(r->home_icons_descriptor);
+  android_arrows_destroy(ctx);
   if (r->tags_descriptor) igImplVulkan_RemoveTexture(r->tags_descriptor);
   destroy_texture(ctx, r->tags_tex);
   destroy_texture(ctx, r->home_icons_tex);

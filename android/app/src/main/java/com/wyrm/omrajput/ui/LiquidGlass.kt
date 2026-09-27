@@ -23,11 +23,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -249,12 +251,26 @@ fun LiquidSwitch(
             },
         contentAlignment = Alignment.CenterStart,
     ) {
-        // The lens refracts this: the track on the row's own card colour, a
-        // little larger than the track so the swollen thumb has something to bend.
+        // The track as seen, exactly its own size, so nothing beside it is painted over.
+        Box(
+            Modifier
+                .align(Alignment.Center)
+                .requiredSize(trackW, trackH)
+                .drawBehind {
+                    val colour = lerp(offTrack, tint, fraction.value)
+                    drawRoundRect(
+                        color = if (enabled) colour else colour.copy(alpha = colour.alpha * 0.5f),
+                        cornerRadius = CornerRadius(size.height / 2f),
+                    )
+                },
+        )
+        // The lens refracts this, never shown: the track on the row's own card
+        // colour, a little larger so the swollen thumb has something to bend.
         Box(
             Modifier
                 .align(Alignment.Center)
                 .requiredSize(trackW + 20.dp, trackH + 20.dp)
+                .alpha(0f)
                 .layerBackdrop(trackBackdrop)
                 .drawBehind {
                     drawRect(surface)
@@ -426,10 +442,33 @@ fun LiquidSlider(
             },
     ) {
         val run = maxWidth - thumbW
+        // The track as seen: only the slider's own 34 dp, so it never paints over
+        // the label above it (the padded copy below used to cut labels in half).
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    val th = trackH.toPx()
+                    val top = (size.height - th) / 2f
+                    val radius = CornerRadius(th / 2f)
+                    drawRoundRect(trackFill, Offset(0f, top), Size(size.width, th), radius)
+                    val thumbPx = thumbW.toPx()
+                    val filled = thumbPx / 2f + (size.width - thumbPx) * animatedFraction.value
+                    drawRoundRect(
+                        if (enabled) active else active.copy(alpha = 0.35f),
+                        Offset(0f, top),
+                        Size(filled.coerceAtLeast(th), th),
+                        radius,
+                    )
+                },
+        )
+        // What the lens reads, never shown: the track on the card colour with a
+        // margin, so a lifted thumb bends the card rather than empty space.
         Box(
             Modifier
                 .align(Alignment.Center)
                 .requiredSize(maxWidth + 24.dp, 34.dp + 24.dp)
+                .alpha(0f)
                 .layerBackdrop(trackBackdrop)
                 .drawBehind {
                     drawRect(surface)
@@ -645,39 +684,105 @@ fun LiquidTabBar(
     // on that circle (or scrolling back up) unfolds it.
     val fold = remember { Animatable(if (collapsed) 1f else 0f) }
     LaunchedEffect(collapsed) { fold.animateTo(if (collapsed) 1f else 0f, iosSpring(0.42f, 0.78f)) }
-    val pageBackdrop = LocalPageBackdrop.current
-    Box(modifier.fillMaxWidth()) {
-        if (fold.value < 0.999f) {
-            ExpandedLiquidTabBar(
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        // Resting open, the real bar with its pill and drag. Anything else is one
+        // piece of glass whose width and height run from the bar to a 56 dp
+        // circle: the same glass the whole way, so it never swaps or blinks.
+        if (fold.value <= 0.001f) {
+            ExpandedLiquidTabBar(tabs = tabs, selected = selected, onSelect = onSelect)
+        } else {
+            FoldingTabGlass(
                 tabs = tabs,
                 selected = selected,
-                onSelect = onSelect,
-                modifier = Modifier.graphicsLayer {
-                    val f = fold.value
-                    alpha = 1f - f
-                    val s = lerp(1f, 0.82f, f)
-                    scaleX = s
-                    scaleY = s
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
-                },
+                fold = fold.value,
+                fullWidth = maxWidth - 36.dp,
+                onExpand = onExpand,
             )
         }
-        if (fold.value > 0.001f) {
+    }
+}
+
+/**
+ * The bar mid-fold and folded. The tabs stay laid out at full width inside the
+ * shrinking glass, so they slide out under its trailing edge and fade instead
+ * of squeezing; the chosen tab fades up in the circle as it closes.
+ */
+@Composable
+private fun FoldingTabGlass(
+    tabs: List<LiquidTab>,
+    selected: Int,
+    fold: Float,
+    fullWidth: Dp,
+    onExpand: () -> Unit,
+) {
+    val pageBackdrop = LocalPageBackdrop.current
+    val container = Wyrm.Paper.copy(alpha = 0.4f)
+    val restingThumb = Wyrm.Ink.copy(alpha = if (Wyrm.currentPalette.dark) 0.16f else 0.1f)
+    val width = androidx.compose.ui.unit.lerp(fullWidth, 56.dp, fold)
+    val height = androidx.compose.ui.unit.lerp(64.dp, 56.dp, fold)
+    val barAlpha = (1f - fold / 0.5f).coerceIn(0f, 1f)
+    val iconAlpha = ((fold - 0.55f) / 0.45f).coerceIn(0f, 1f)
+    Box(
+        Modifier
+            .padding(start = 18.dp)
+            .width(width)
+            .height(height)
+            .drawBackdrop(
+                backdrop = pageBackdrop,
+                shape = { WyrmCapsule },
+                effects = {
+                    vibrancy()
+                    blur(8.dp.toPx())
+                    val lens = minOf(24.dp.toPx(), height.toPx() / 2f - 2.dp.toPx())
+                    lens(lens, lens)
+                },
+                shadow = { Shadow(radius = 14.dp, offset = DpOffset(0.dp, 6.dp), color = Color.Black.copy(alpha = 0.07f)) },
+                onDrawSurface = {
+                    if (!glassAvailable) drawRect(Wyrm.TabBar)
+                    drawRect(container)
+                },
+            )
+            .clip(WyrmCapsule)
+            .clickable(enabled = fold >= 0.98f, interactionSource = null, indication = null, role = Role.Button) { onExpand() },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        if (barAlpha > 0f) {
+            val tabWidth = (fullWidth - 8.dp) / tabs.size.coerceAtLeast(1)
             Box(
                 Modifier
-                    .padding(start = 18.dp)
-                    .align(Alignment.CenterStart)
+                    .requiredWidth(fullWidth)
+                    .height(64.dp)
+                    .graphicsLayer { alpha = barAlpha }
+                    .padding(4.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Box(
+                    Modifier
+                        .offset(x = tabWidth * selected)
+                        .width(tabWidth)
+                        .height(56.dp)
+                        .clip(WyrmCapsule)
+                        .background(restingThumb),
+                )
+                Row(Modifier.fillMaxWidth().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                    tabs.forEachIndexed { index, tab ->
+                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            tab.content(index == selected)
+                        }
+                    }
+                }
+            }
+        }
+        if (iconAlpha > 0f) {
+            Box(
+                Modifier
                     .size(56.dp)
                     .graphicsLayer {
-                        val f = fold.value
-                        alpha = f
-                        val s = lerp(0.6f, 1f, f)
+                        alpha = iconAlpha
+                        val s = lerp(0.7f, 1f, iconAlpha)
                         scaleX = s
                         scaleY = s
-                    }
-                    .liquidGlass(backdrop = pageBackdrop, shape = WyrmCapsule, tint = Wyrm.Paper.copy(alpha = 0.4f))
-                    .clip(WyrmCapsule)
-                    .clickable(interactionSource = null, indication = null, role = Role.Button) { onExpand() },
+                    },
                 contentAlignment = Alignment.Center,
             ) { tabs.getOrNull(selected)?.content?.invoke(true) }
         }

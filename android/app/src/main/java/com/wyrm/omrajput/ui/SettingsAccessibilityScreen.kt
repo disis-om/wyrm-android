@@ -55,7 +55,7 @@ fun SettingsAccessibilityScreen(
         insetBottom = insetBottom,
         onBack = onBack,
     ) {
-        SettingsSectionLabel("Themes", top = 0.dp)
+        SettingsSectionLabel("Themes", top = 18.dp)
         SettingsCard {
             WyrmThemeId.entries.forEachIndexed { index, theme ->
                 ThemeChoiceRow(

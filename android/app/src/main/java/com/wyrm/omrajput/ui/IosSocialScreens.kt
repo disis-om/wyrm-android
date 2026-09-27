@@ -439,7 +439,7 @@ fun IosGlobalChatScreen(
 }
 
 @Composable
-private fun ColumnScope.IosChatPage(
+internal fun ColumnScope.IosChatPage(
     messages: List<ChatMessage>,
     meId: String,
     showsAuthors: Boolean,

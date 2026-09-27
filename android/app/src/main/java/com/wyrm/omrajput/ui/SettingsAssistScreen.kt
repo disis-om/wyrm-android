@@ -67,6 +67,8 @@ fun SettingsAssistScreen(
         insetBottom = insetBottom,
         onBack = onBack,
     ) {
+        // Clear of the header rule, as on iOS.
+        Spacer(Modifier.height(18.dp))
         SettingsCard {
             Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 15.dp, bottom = 15.dp)) {
                 Text(

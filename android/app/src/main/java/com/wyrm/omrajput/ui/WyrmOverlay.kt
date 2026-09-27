@@ -405,6 +405,7 @@ class WyrmOverlay(private val activity: Activity) :
     /** The root tab bar folded into its circle, as iOS minimizes it on scroll. */
     private var rootBarCollapsed by mutableStateOf(false)
     private var betaUpdates by mutableStateOf(com.wyrm.omrajput.UpdateChannel.isBetaEnabled(activity))
+    private var backupFirst by mutableStateOf(com.wyrm.omrajput.UpdateChannel.isBackupBeforeUpdate(activity))
     private var arenaNativePortBusySeen = false
     /* Compose state, not a plain field: the Play button reads it. As a plain
        field its release changed nothing Compose could see, so after a match the
@@ -1310,6 +1311,11 @@ class WyrmOverlay(private val activity: Activity) :
                                 betaUpdates = enabled
                                 com.wyrm.omrajput.UpdateChannel.setBetaEnabled(activity, enabled)
                                 host?.onUpdateAction(0)
+                            },
+                            backupFirst = backupFirst,
+                            onBackupFirst = { enabled ->
+                                backupFirst = enabled
+                                com.wyrm.omrajput.UpdateChannel.setBackupBeforeUpdate(activity, enabled)
                             },
                             onInstall = ::startUpdate,
                             onOpenInstalledNotes = {

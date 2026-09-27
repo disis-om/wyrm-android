@@ -156,6 +156,11 @@ final class UpdateManager {
             checkForUpdates(true);
             return;
         }
+        // The player can turn the backup off in Settings › Backup.
+        if (!UpdateChannel.isBackupBeforeUpdate(activity)) {
+            beginDownload(manifest);
+            return;
+        }
         if (settingsPayload == null || settingsPayload.length == 0) {
             emitError("Backup preparation failed",
                     "Current settings could not be captured, so the update was not started.");

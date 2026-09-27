@@ -219,21 +219,15 @@ private fun LobbyReadyRoom(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                LobbyPaperButton(
-                    label = "Quick settings",
-                    icon = R.drawable.ic_wyrm_tune,
-                    modifier = Modifier.width(176.dp),
-                    enabled = !entering,
-                    onClick = onQuickSettings,
-                )
-                Spacer(Modifier.weight(1f))
+                // Quick settings is gone from the lobby (OM); Home takes its place.
                 LobbyPaperButton(
                     label = "Home",
                     icon = R.drawable.ic_wyrm_home,
-                    modifier = Modifier.width(112.dp),
+                    modifier = Modifier.width(128.dp),
                     enabled = !entering,
                     onClick = onHome,
                 )
+                Spacer(Modifier.weight(1f))
                 LobbyPaperButton(
                     label = "Play with AI",
                     icon = R.drawable.ic_play_assist,

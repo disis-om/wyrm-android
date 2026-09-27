@@ -63,6 +63,8 @@ fun SettingsFoodScreen(
         insetBottom = insetBottom,
         onBack = onBack,
     ) {
+        // Clear of the header rule, as on iOS.
+        Spacer(Modifier.height(18.dp))
         SettingsCard {
             Column(Modifier.padding(14.dp)) {
                 Text(

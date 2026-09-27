@@ -33,6 +33,9 @@ data class TeamMember(
     val y: Int,
     val bot: Boolean,
     val version: String,
+    /** From the player's own NTL status line (`dt`), when their client sends one. */
+    val fps: Int? = null,
+    val ping: Int? = null,
 ) {
     /** In a match at all — the service says `_GAME_MENU_` when they are not. */
     val playing: Boolean get() = arena.isNotEmpty() && arena != MENU_ARENA
@@ -430,6 +433,9 @@ class TeamService(context: Context) {
                 rawNick.take(8).all { it.isLetterOrDigit() } &&
                 rawNick.drop(8).isNotBlank()
             val identity = if (hasIdentity) rawNick.take(8) else ""
+            // NTL's status line: "FPS: 60 @ 42(40) ms @ 12 K/m", URL-encoded.
+            val status = decode(runCatching { java.net.URLDecoder.decode(row.optString("dt"), "UTF-8") }
+                .getOrDefault(row.optString("dt")))
             val name = decode(if (hasIdentity) rawNick.drop(8) else rawNick)
                 .ifBlank { "Teammate" }
 
@@ -447,6 +453,8 @@ class TeamService(context: Context) {
                 y = coordinate(row.optString("valy")),
                 bot = row.optInt("bot") != 0 || row.optBoolean("bot", false),
                 version = row.optString("ver"),
+                fps = STATUS_FPS.find(status)?.groupValues?.get(1)?.toIntOrNull(),
+                ping = STATUS_PING.find(status)?.groupValues?.get(1)?.toIntOrNull(),
             )
 
             val key = identity.ifEmpty { name }
@@ -616,6 +624,8 @@ class TeamService(context: Context) {
 
     companion object {
         private val ENTITY = Regex("""&[a-zA-Z]{2,8};|&#\d{2,5};""")
+        private val STATUS_FPS = Regex("""FPS:\s*(\d+)""")
+        private val STATUS_PING = Regex("""@\s*(\d+)\s*(?:\(\d+\))?\s*ms""")
         private const val ENDPOINT = "https://ntl-slither.com/slither/ntlplay-mt.php"
         /* Where a private tag is checked. Read out of the mod's own `!tag`
            command, which sends the id and the hashed password here and shows

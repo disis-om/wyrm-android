@@ -106,32 +106,33 @@ fun TeamScreen(
             onCancel = { if (teams.isNotEmpty()) onStartAdding(false) else onBack() },
             onSave = onAddTeam,
         )
-        enabled && tab == TeamTab.CHAT -> TeamChatPage(
-            teamName = teams.getOrNull(activeTeam)?.name.orEmpty().ifBlank { "Team" },
-            members = state.members,
+        // Chat and the roster are drawn as Wyrm iOS draws them (TeamIos.kt).
+        enabled && tab == TeamTab.CHAT -> IosTeamChat(
             messages = messages,
             myName = myName,
             draft = draft,
             sending = sending,
             insetTop = insetTop,
-            insetBottom = bottom,
+            insetBottom = insetBottom,
             onBack = { onTabChange(TeamTab.TEAM) },
             onDraftChange = onDraftChange,
             onSend = onSend,
         )
-        else -> TeamRosterPage(
+        else -> IosTeamOverview(
             enabled = enabled,
-            onEnabled = onEnabled,
             state = state,
             teams = teams,
             activeTeam = activeTeam,
             myArena = myArena,
-            backLabel = backLabel,
             insetTop = insetTop,
             insetBottom = insetBottom,
             onBack = onBack,
+            onEnabled = onEnabled,
             onSelectTeam = onSelectTeam,
-            onAdd = { onStartAdding(true) },
+            onAdd = {
+                if (!enabled) onEnabled(true)
+                onStartAdding(true)
+            },
             onOpenChat = { onTabChange(TeamTab.CHAT) },
             onForget = onForget,
             onJoinArena = onJoinArena,

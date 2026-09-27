@@ -8,6 +8,7 @@
 #include "../game/ai_mode.h"
 #include "../game/ui_overlay.h"
 #include "../platform/android_team.h"
+#include "../platform/android_arrows.h"
 #include "mobile_hotkeys.h"
 #include "../user.h"
 
@@ -777,6 +778,11 @@ static void draw_arrow(tenv* env, ImDrawList* dl) {
   /* The player's own opacity setting scaled by where the arrow is in its own
      fade, so releasing the finger takes it out rather than cutting it. */
   float alpha = cfg->opacity * (env->usr->mobile_controls.arrow_opacity / 0.85f);
+  /* An image arrow keeps its own colours: only its fade applies. */
+  if (android_arrows_draw(dl, ax, ay, dx, dy, length,
+                          env->usr->mobile_controls.arrow_opacity / 0.85f))
+    return;
+  float brightness = android_arrow_brightness();
   mobile_arrow_shape shape = arrow_shape(env->usr->usrs.arrow_style);
   ImVec2 points[8];
   for (int i = 0; i < shape.count; ++i) {
@@ -789,8 +795,9 @@ static void draw_arrow(tenv* env, ImDrawList* dl) {
   /* Keep Current on the exact fill call it shipped with. The new silhouettes
    * have deliberate shoulders/notches, so a centre fan preserves those cuts
    * instead of letting a convex fill bridge over them. */
-  ImU32 fill =
-      color_u32(arrow->color[0], arrow->color[1], arrow->color[2], alpha);
+  ImU32 fill = color_u32(arrow->color[0] * brightness,
+                         arrow->color[1] * brightness,
+                         arrow->color[2] * brightness, alpha);
   if (env->usr->usrs.arrow_style == MOBILE_ARROW_CURRENT) {
     ImDrawList_AddConvexPolyFilled(dl, points, shape.count, fill);
   } else {

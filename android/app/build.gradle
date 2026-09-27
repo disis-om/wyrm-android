@@ -18,6 +18,19 @@ if (hasReleaseSigning) {
     signingPropertiesFile.withInputStream { signingProperties.load(it) }
 }
 
+/*
+ * The version reaches C through a header, not a CMake argument. An argument is
+ * part of the CMake configuration hash, so every new version compiled the whole
+ * engine again from nothing (about 18 minutes); a header only rebuilds the two
+ * files that print it. `.cxx-version` is ignored like `.cxx`.
+ */
+def wyrmVersionHeader = file('.cxx-version/wyrm_version.h')
+def wyrmVersionText = "#pragma once\n#define APP_VERSION \"${wyrmVersionName}\"\n"
+if (!wyrmVersionHeader.exists() || wyrmVersionHeader.text != wyrmVersionText) {
+    wyrmVersionHeader.parentFile.mkdirs()
+    wyrmVersionHeader.text = wyrmVersionText
+}
+
 /**
  * Carries the privacy policy into the app.
  *
@@ -54,7 +67,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments "-DANDROID_PLATFORM=android-26", "-DANDROID_STL=c++_shared", "-DWYRM_APP_VERSION=${wyrmVersionName}"
+                arguments "-DANDROID_PLATFORM=android-26", "-DANDROID_STL=c++_shared"
                 abiFilters 'arm64-v8a'
             }
         }

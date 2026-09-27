@@ -67,14 +67,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wyrm.omrajput.data.Setting
 import com.composables.icons.lucide.R as LucideR
+import kotlin.math.roundToInt
 
-private data class ArrowOption(val label: String, val points: List<Offset>)
+internal data class ArrowOption(val label: String, val points: List<Offset>)
 
 enum class ControlsTab { SNAKE, ON_SCREEN_BUTTONS }
 
 /* Mirrored in `mobile_controls.c`: the preview and the arena are deliberately
  * fed the same normalized silhouettes rather than two artistic guesses. */
-private val ArrowOptions = listOf(
+internal val ArrowOptions = listOf(
     ArrowOption(
         "CLASSIC",
         listOf(
@@ -112,6 +113,10 @@ private val ArrowOptions = listOf(
         listOf(Offset(0.82f, 0f), Offset(-0.64f, -0.26f), Offset(-0.64f, 0.26f)),
     ),
 )
+
+internal fun arrowOptionLabel(index: Int): String =
+    ArrowOptions.getOrNull(index)?.label?.replace('\n', ' ')?.lowercase()
+        ?.replaceFirstChar { it.uppercase() } ?: "Arrow ${index + 1}"
 
 /**
  * Spec page 10 — Settings › Controls.
@@ -162,6 +167,7 @@ fun ControlsScreen(
     val arrowRows = settings.filter { it.group == "controls.arrow" }
     var zoomOpen by remember { mutableStateOf(false) }
     var behaviourOpen by remember { mutableStateOf(false) }
+    var arrowPickerOpen by remember { mutableStateOf(false) }
 
     SettingsDrillScaffold(
         title = "Controls",
@@ -191,6 +197,8 @@ fun ControlsScreen(
                 arrowStyle = arrowStyle,
                 arrowSize = arrowSize,
                 arrowColor = arrowColor,
+                arrowSkin = ArrowSkinStore.skin,
+                arrowBrightness = ArrowSkinStore.brightness,
             )
         }
 
@@ -273,13 +281,38 @@ fun ControlsScreen(
             opacity?.let { SettingTypedRow(it, first = first, onChange = onChange) }
         }
 
-        if (arrowSteering && arrowRows.isNotEmpty()) {
+        if (arrowSteering) {
             SettingsSectionLabel("Basic · arrow")
             SettingsCard {
-                arrowRows.forEachIndexed { index, setting ->
-                    SettingTypedRow(setting = setting, first = index == 0, onChange = onChange)
+                // The picker replaces the style row; colour only tints the drawn arrows.
+                ArrowStyleRow(arrowStyleSetting, arrowColor, first = true) { arrowPickerOpen = true }
+                arrowRows.filter { it.id != "arrow.style" && it.id != "arrow.color" }.forEach { setting ->
+                    SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                }
+                SettingsSliderRow(
+                    title = "Brightness",
+                    valueText = "${(ArrowSkinStore.brightness * 100).roundToInt()}%",
+                    detail = "",
+                    value = ArrowSkinStore.brightness,
+                    range = 0.2f..1f,
+                    steps = 0,
+                    first = false,
+                    onChange = { ArrowSkinStore.updateBrightness(it) },
+                )
+                if (ArrowSkinStore.skin < 0) {
+                    arrowRows.firstOrNull { it.id == "arrow.color" }?.let { setting ->
+                        SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                    }
                 }
             }
+        }
+        if (arrowPickerOpen) {
+            ArrowPickerSheet(
+                styleSetting = arrowStyleSetting,
+                colour = arrowColor,
+                onPickStyle = { index -> arrowStyleSetting?.let { onChange(it, listOf(index.toFloat())) } },
+                onClose = { arrowPickerOpen = false },
+            )
         }
 
         if (zoomRows.isNotEmpty()) {
@@ -655,6 +688,8 @@ private fun ControlsPreview(
     arrowStyle: Int,
     arrowSize: Float,
     arrowColor: Color,
+    arrowSkin: Int = -1,
+    arrowBrightness: Float = 1f,
 ) {
     Box(
         modifier = Modifier
@@ -681,7 +716,16 @@ private fun ControlsPreview(
                 )
             }
         }
-        if (showArrow) {
+        if (showArrow && arrowSkin >= 0) {
+            // An image arrow, sized as the arena sizes it: a square 1.44 x its length.
+            ArrowGlyph(
+                codeStyle = arrowStyle,
+                imageSkin = arrowSkin,
+                colour = arrowColor,
+                brightness = arrowBrightness,
+                modifier = Modifier.align(Alignment.Center).size((52f * 1.44f * arrowSize).dp),
+            )
+        } else if (showArrow) {
             Canvas(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 18.dp)) {
                 drawArrowShape(
                     style = arrowStyle,
@@ -736,7 +780,7 @@ internal fun PreviewPositioned(position: Offset, content: @Composable () -> Unit
     }
 }
 
-private fun DrawScope.drawArrowShape(
+internal fun DrawScope.drawArrowShape(
     style: Int,
     length: Float,
     width: Float,

@@ -10,8 +10,10 @@
 #   tools/publish-release.sh [--beta] 6.2.1 621 "What changed" ["second note"...]
 #
 # Stable writes update/latest.json, which every install reads. --beta writes
-# update/beta.json and marks the release as a pre-release, so only players who
-# turned on "Beta updates" are offered it. Beta = 6.2.x patch steps; stable
+# update/beta.json, so only players who turned on "Beta updates" are offered it.
+# The channel is decided by those manifests alone: the GitHub release is always
+# marked Latest (titled "(beta)" for a beta), because GitHub's repo page shows
+# only tags while every release is a pre-release. Beta = 6.2.x patch steps; stable
 # moves the major/minor. Ask OM before any beta release.
 #
 # The private signing key never leaves ./release-signing, which is not in the
@@ -22,7 +24,7 @@ CHANNEL=latest
 PRERELEASE=()
 if [ "${1:-}" = "--beta" ]; then
     CHANNEL=beta
-    PRERELEASE=(--prerelease)
+    PRERELEASE=(--latest)
     shift
 fi
 

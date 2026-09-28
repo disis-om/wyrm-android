@@ -2,6 +2,7 @@ package com.wyrm.omrajput.ui
 
 import android.content.Context
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
@@ -9,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
+import kotlin.math.roundToInt
 
 /**
  * Wyrm looks: hair, ears and glasses (OM, 2026-09-28), as `WyrmLook` on iOS.
@@ -32,11 +34,34 @@ internal object WyrmLook {
         "Heart", "Cat-eye", "Flower", "Pastel", "Nerd", "Sparkle",
         "Aviator", "Pixel", "Cyber visor", "Evil visor", "Steampunk", "Punk",
     )
-    /** Hair tints: the hair art is light grey and takes one of these. */
-    val hairColours = listOf(
-        "Brown" to 0x96603A, "Cream" to 0xF6E4C4, "Purple" to 0xAA7DF0,
-        "Pink" to 0xFF8FC0, "White" to 0xFFFFFF, "Black" to 0x46464E,
+    /**
+     * The hair colour slider (OM, 2026-09-28: one slider, not six beads). The
+     * hair art is light grey and takes the colour at the slider's position.
+     */
+    val hairStops = listOf(
+        0.00f to 0x2A2A30, 0.12f to 0x4A2E1A, 0.22f to 0x96603A, 0.32f to 0xB0452A,
+        0.40f to 0xE07A30, 0.48f to 0xF2D28A, 0.54f to 0xF6E4C4, 0.60f to 0xFFFFFF,
+        0.70f to 0xFF8FC0, 0.78f to 0xAA7DF0, 0.86f to 0x5A8CF0, 0.93f to 0x3EC6C0,
+        1.00f to 0x4CC05A,
     )
+
+    /** The colour at [tone] (0..1) along [hairStops]. */
+    fun hairTone(tone: Float): Int {
+        val t = tone.coerceIn(0f, 1f)
+        val next = hairStops.indexOfFirst { it.first >= t }.coerceAtLeast(1)
+        val (a, ca) = hairStops[next - 1]
+        val (b, cb) = hairStops[next]
+        val f = if (b > a) ((t - a) / (b - a)).coerceIn(0f, 1f) else 0f
+        fun mix(shift: Int): Int {
+            val x = (ca shr shift) and 0xFF
+            val y = (cb shr shift) and 0xFF
+            return (x + (y - x) * f).roundToInt().coerceIn(0, 255) shl shift
+        }
+        return mix(16) or mix(8) or mix(0)
+    }
+
+    /** Where the six old hair colours sit on the slider, for saved looks. */
+    val oldHairTones = floatArrayOf(0.22f, 0.54f, 0.78f, 0.70f, 0.60f, 0.0f)
 
     const val CAP_SIDE = 4.4f
     const val CAP_BACK = 0.6f
@@ -63,7 +88,8 @@ object WyrmLookStore {
 
     var hair by mutableIntStateOf(-1)
         private set
-    var hairColour by mutableIntStateOf(0)
+    /** The hair colour slider's position, 0..1 along `WyrmLook.hairStops`. */
+    var hairTone by mutableFloatStateOf(0.22f)
         private set
     var ears by mutableIntStateOf(-1)
         private set
@@ -73,7 +99,7 @@ object WyrmLookStore {
     private var prefs: android.content.SharedPreferences? = null
     private var sink: ((Int, Int, Int, Int) -> Unit)? = null
 
-    val hairRgb: Int get() = WyrmLook.hairColours.getOrNull(hairColour)?.second ?: 0x96603A
+    val hairRgb: Int get() = WyrmLook.hairTone(hairTone)
 
     /** Called once by the activity; publishes the saved look to the engine. */
     @JvmStatic
@@ -81,7 +107,11 @@ object WyrmLookStore {
         val store = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs = store
         hair = store.getInt("hair", -1).takeIf { it in WyrmLook.hairNames.indices } ?: -1
-        hairColour = store.getInt("hair_colour", 0).coerceIn(0, WyrmLook.hairColours.lastIndex)
+        hairTone = if (store.contains("hair_tone")) {
+            store.getFloat("hair_tone", 0.22f).coerceIn(0f, 1f)
+        } else {
+            WyrmLook.oldHairTones.getOrElse(store.getInt("hair_colour", 0)) { 0.22f }
+        }
         ears = store.getInt("ears", -1).takeIf { it in WyrmLook.earNames.indices } ?: -1
         glasses = store.getInt("glasses", -1).takeIf { it in WyrmLook.glassesNames.indices } ?: -1
         sink = publish
@@ -89,12 +119,12 @@ object WyrmLookStore {
     }
 
     fun pickHair(style: Int) { hair = if (style in WyrmLook.hairNames.indices) style else -1; save() }
-    fun pickHairColour(index: Int) { hairColour = index.coerceIn(0, WyrmLook.hairColours.lastIndex); save() }
+    fun pickHairTone(tone: Float) { hairTone = tone.coerceIn(0f, 1f); save() }
     fun pickEars(style: Int) { ears = if (style in WyrmLook.earNames.indices) style else -1; save() }
     fun pickGlasses(style: Int) { glasses = if (style in WyrmLook.glassesNames.indices) style else -1; save() }
 
     private fun save() {
-        prefs?.edit()?.putInt("hair", hair)?.putInt("hair_colour", hairColour)?.putInt("ears", ears)
+        prefs?.edit()?.putInt("hair", hair)?.putFloat("hair_tone", hairTone)?.putInt("ears", ears)
             ?.putInt("glasses", glasses)?.apply()
         publish()
     }

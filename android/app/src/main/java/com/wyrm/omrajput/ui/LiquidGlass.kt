@@ -722,8 +722,8 @@ private fun FoldingTabGlass(
 ) {
     val pageBackdrop = LocalPageBackdrop.current
     val container = Wyrm.Paper.copy(alpha = 0.4f)
-    // Dark themes flip the tabs (OM): a light thumb under dark ink, light idle tabs.
-    val restingThumb = if (Wyrm.currentPalette.dark) Wyrm.PillThumb else Wyrm.Ink.copy(alpha = 0.1f)
+    // A light, see-through pill over the chosen tab; its ink shows through (OM).
+    val restingThumb = Wyrm.TabThumb
     val width = androidx.compose.ui.unit.lerp(fullWidth, 56.dp, fold)
     val height = androidx.compose.ui.unit.lerp(64.dp, 56.dp, fold)
     val barAlpha = (1f - fold / 0.5f).coerceIn(0f, 1f)
@@ -789,10 +789,9 @@ private fun FoldingTabGlass(
                         scaleX = s
                         scaleY = s
                     }
-                    // Dark themes: the chosen icon is dark ink, so it keeps its light thumb.
                     .padding(4.dp)
                     .clip(WyrmCapsule)
-                    .background(if (Wyrm.currentPalette.dark) restingThumb else Color.Transparent),
+                    .background(restingThumb),
                 contentAlignment = Alignment.Center,
             ) { tabs.getOrNull(selected)?.content?.invoke(true) }
         }
@@ -816,8 +815,8 @@ private fun ExpandedLiquidTabBar(
     // tap on Settings could move the pill without ever opening Settings.
     val chosen by rememberUpdatedState(selected)
     val container = Wyrm.Paper.copy(alpha = 0.4f)
-    // Dark themes flip the tabs (OM): a light thumb under dark ink, light idle tabs.
-    val restingThumb = if (Wyrm.currentPalette.dark) Wyrm.PillThumb else Wyrm.Ink.copy(alpha = 0.1f)
+    // A light, see-through pill over the chosen tab; its ink shows through (OM).
+    val restingThumb = Wyrm.TabThumb
 
     BoxWithConstraints(
         modifier = modifier

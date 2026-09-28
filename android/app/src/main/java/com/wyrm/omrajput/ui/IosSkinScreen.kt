@@ -39,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -106,7 +107,7 @@ private const val TAGS_DISABLED = true
 private enum class SkinSection(val title: String) {
     OVERVIEW("Skin wardrobe"), PRESETS("Default skins"), PATTERN("Pattern"),
     ACCESSORIES("Accessory"), TAGS("Tag"), BACKGROUND("Arena background"),
-    HAIR("Hair"), EARS("Ears"), GLASSES("Glasses"),
+    WYRM_ACCESSORIES("Wyrm accessories"),
 }
 
 private fun Int.rgbColor(): Color = Color(((this shr 16) and 0xFF) / 255f, ((this shr 8) and 0xFF) / 255f, (this and 0xFF) / 255f)
@@ -218,18 +219,14 @@ fun IosSkinScreen(
                             IosListRow(SkinSection.TAGS.title, value = if (TAGS_DISABLED) "Coming soon" else SkinCatalog.tags.getOrNull(tag)?.let { "#${it.ntlId}" } ?: "None") { if (!TAGS_DISABLED) enter(SkinSection.TAGS) }
                             IosListRow(SkinSection.BACKGROUND.title, value = SkinCatalog.backgrounds.getOrNull(backgroundId)?.label ?: "Wyrm") { enter(SkinSection.BACKGROUND) }
                         }
-                        // Wyrm's own looks: only this phone sees them.
-                        IosSectionLabel("Wyrm looks")
+                        // Wyrm's own looks (hair, ears, glasses): only this phone sees them.
+                        IosSectionLabel("Wyrm accessories")
                         IosPaperCard {
-                            IosListRow(SkinSection.HAIR.title, value = WyrmLook.hairNames.getOrNull(WyrmLookStore.hair) ?: "None") { enter(SkinSection.HAIR) }
-                            IosListRow(SkinSection.EARS.title, value = WyrmLook.earNames.getOrNull(WyrmLookStore.ears) ?: "None") { enter(SkinSection.EARS) }
-                            IosListRow(SkinSection.GLASSES.title, value = WyrmLook.glassesNames.getOrNull(WyrmLookStore.glasses) ?: "None") { enter(SkinSection.GLASSES) }
+                            val worn = listOf(WyrmLookStore.hair, WyrmLookStore.ears, WyrmLookStore.glasses).count { it >= 0 }
+                            IosListRow(SkinSection.WYRM_ACCESSORIES.title, value = if (worn == 0) "None" else "$worn on") {
+                                enter(SkinSection.WYRM_ACCESSORIES)
+                            }
                         }
-                        Text(
-                            "Hair, ears and glasses are Wyrm's own: you see them on your snake, other players don't.",
-                            fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet,
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
-                        )
                     }
                     SkinSection.PRESETS -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
@@ -325,13 +322,6 @@ fun IosSkinScreen(
                         }
                         // Wyrm's own beads; the arena gets each one's nearest slither colour.
                         IosSectionLabel("Wyrm beads")
-                        Text(
-                            "Patterned beads take the colour wheel's colour. In a match, other players see the nearest slither colour.",
-                            fontFamily = Wyrm.Body,
-                            fontSize = 11.sp,
-                            color = Wyrm.Quiet,
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
-                        )
                         WyrmBeadGrid(textures, wheelRgb) { kind ->
                             if (customGroups.size < 256) {
                                 val argb = WyrmBeads.argb(kind, wheelRgb)
@@ -353,59 +343,48 @@ fun IosSkinScreen(
                             }
                         }
                     }
-                    SkinSection.HAIR -> {
+                    SkinSection.WYRM_ACCESSORIES -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
-                        IosSectionLabel("Colour")
-                        Row(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            WyrmLook.hairColours.forEachIndexed { index, (name, rgb) ->
-                                val chosen = WyrmLookStore.hairColour == index
-                                Box(
-                                    Modifier
-                                        .weight(1f)
-                                        .aspectRatio(1f)
-                                        .clip(CircleShape)
-                                        .background(WyrmLook.rgbColor(rgb))
-                                        .border(if (chosen) 3.dp else 1.dp, if (chosen) Wyrm.Ink else Wyrm.Rule, CircleShape)
-                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                            WyrmLookStore.pickHairColour(index)
-                                        }
-                                        .semantics { contentDescription = "$name hair" },
-                                )
-                            }
+                        // Hair, ears and glasses, one tab each; big pictures like the
+                        // original accessories, no names (OM, 2026-09-28).
+                        var lookTab by rememberSaveable { mutableIntStateOf(0) }
+                        Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)) {
+                            PaperSegmented(options = listOf("Hair", "Ears", "Glasses"), selected = lookTab, onSelect = { lookTab = it })
                         }
-                        IosSectionLabel("Style")
-                        TileGrid(minimum = 70.dp, count = WyrmLook.hairNames.size + 1, fixedColumns = 3) { index ->
-                            if (index == 0) {
-                                SelectionTile(WyrmLookStore.hair < 0, "None") { WyrmLookStore.pickHair(-1) }
-                            } else {
-                                val style = index - 1
-                                LookTile(WyrmLookStore.hair == style, WyrmLook.hairNames[style], onClick = {
-                                    WyrmLookStore.pickHair(style)
-                                }) { r, head ->
-                                    val cells = textures?.looks ?: return@LookTile
-                                    drawWyrmLook(cells, head, r, style, WyrmLookStore.hairRgb, -1, -1) { image, l, t, w, h, tint ->
-                                        drawImageInto(image, l, t, w, h, tint)
+                        when (lookTab) {
+                            0 -> {
+                                Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 14.dp)) {
+                                    Text("Hair colour", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Wyrm.Quiet)
+                                    Spacer(Modifier.height(8.dp))
+                                    GradientTrack(
+                                        fraction = WyrmLookStore.hairTone,
+                                        brush = Brush.horizontalGradient(*WyrmLook.hairStops.map { (at, rgb) -> at to WyrmLook.rgbColor(rgb) }.toTypedArray()),
+                                        onPick = WyrmLookStore::pickHairTone,
+                                    )
+                                }
+                                TileGrid(minimum = 70.dp, count = WyrmLook.hairNames.size + 1, fixedColumns = 4) { index ->
+                                    if (index == 0) {
+                                        SelectionTile(WyrmLookStore.hair < 0, "None") { WyrmLookStore.pickHair(-1) }
+                                    } else {
+                                        val style = index - 1
+                                        ImageTile(WyrmLookStore.hair == style, textures?.lookThumbnails?.get(style), 6.dp,
+                                            tint = WyrmLook.rgbColor(WyrmLookStore.hairRgb)) { WyrmLookStore.pickHair(style) }
                                     }
                                 }
                             }
-                        }
-                    }
-                    SkinSection.EARS, SkinSection.GLASSES -> {
-                        InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
-                        val ears = shown == SkinSection.EARS
-                        val names = if (ears) WyrmLook.earNames else WyrmLook.glassesNames
-                        val current = if (ears) WyrmLookStore.ears else WyrmLookStore.glasses
-                        TileGrid(minimum = 70.dp, count = names.size + 1, fixedColumns = 3) { index ->
-                            if (index == 0) {
-                                SelectionTile(current < 0, "None") { if (ears) WyrmLookStore.pickEars(-1) else WyrmLookStore.pickGlasses(-1) }
-                            } else {
-                                val style = index - 1
-                                LookTile(current == style, names[style], onClick = {
-                                    if (ears) WyrmLookStore.pickEars(style) else WyrmLookStore.pickGlasses(style)
-                                }) { r, head ->
-                                    val cells = textures?.looks ?: return@LookTile
-                                    drawWyrmLook(cells, head, r, -1, 0, if (ears) style else -1, if (ears) -1 else style) { image, l, t, w, h, tint ->
-                                        drawImageInto(image, l, t, w, h, tint)
+                            else -> {
+                                val ears = lookTab == 1
+                                val names = if (ears) WyrmLook.earNames else WyrmLook.glassesNames
+                                val current = if (ears) WyrmLookStore.ears else WyrmLookStore.glasses
+                                TileGrid(minimum = 70.dp, count = names.size + 1, fixedColumns = 4) { index ->
+                                    if (index == 0) {
+                                        SelectionTile(current < 0, "None") { if (ears) WyrmLookStore.pickEars(-1) else WyrmLookStore.pickGlasses(-1) }
+                                    } else {
+                                        val style = index - 1
+                                        val cell = (if (ears) 16 else 28) + style
+                                        ImageTile(current == style, textures?.lookThumbnails?.get(cell), 6.dp) {
+                                            if (ears) WyrmLookStore.pickEars(style) else WyrmLookStore.pickGlasses(style)
+                                        }
                                     }
                                 }
                             }
@@ -523,7 +502,14 @@ private fun SelectionTile(selected: Boolean, label: String, onClick: () -> Unit)
 }
 
 @Composable
-private fun ImageTile(selected: Boolean, image: ImageBitmap?, inset: Dp, badge: String? = null, onClick: () -> Unit) {
+private fun ImageTile(
+    selected: Boolean,
+    image: ImageBitmap?,
+    inset: Dp,
+    badge: String? = null,
+    tint: Color? = null,
+    onClick: () -> Unit,
+) {
     val shape = wyrmRounded(15.dp)
     Box(
         Modifier
@@ -534,44 +520,12 @@ private fun ImageTile(selected: Boolean, image: ImageBitmap?, inset: Dp, badge: 
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
     ) {
         if (image != null) {
-            Canvas(Modifier.fillMaxSize().padding(inset)) { drawFitted(image) }
+            Canvas(Modifier.fillMaxSize().padding(inset)) { drawFitted(image, tint) }
         }
         if (badge != null) {
             Text(badge, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 7.5.sp, color = Wyrm.Quiet,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
         }
-        if (selected) SelectionCheck(Modifier.align(Alignment.TopEnd))
-    }
-}
-
-/**
- * A look on a small head, the way the arena wears it: a Wyrm head and eyes,
- * the hair at rest behind it, and the item's name.
- */
-@Composable
-private fun LookTile(selected: Boolean, label: String, onClick: () -> Unit, paint: DrawScope.(Float, Offset) -> Unit) {
-    val shape = wyrmRounded(15.dp)
-    Box(
-        Modifier
-            .fillMaxSize()
-            .clip(shape)
-            .background(Wyrm.Card.copy(alpha = 0.92f))
-            .border(if (selected) 2.dp else 1.dp, if (selected) Wyrm.Ink else Wyrm.Rule, shape)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
-    ) {
-        Canvas(Modifier.fillMaxSize().padding(bottom = 14.dp)) {
-            // Room for a ponytail behind the head: the head sits right of centre.
-            val r = min(size.width / 7.2f, size.height / 4.8f)
-            val head = Offset(size.width - r * 2.0f, size.height / 2)
-            drawCircle(Color(0xFFF2B84B), r, head)
-            drawCircle(Color.White, r * 0.41f, head + Offset(0.41f * r, -0.45f * r))
-            drawCircle(Color.White, r * 0.41f, head + Offset(0.41f * r, 0.45f * r))
-            drawCircle(Color(0xFF151515), r * 0.24f, head + Offset(0.51f * r, -0.45f * r))
-            drawCircle(Color(0xFF151515), r * 0.24f, head + Offset(0.51f * r, 0.45f * r))
-            paint(r, head)
-        }
-        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 9.5.sp, color = Wyrm.Quiet,
-            maxLines = 1, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp))
         if (selected) SelectionCheck(Modifier.align(Alignment.TopEnd))
     }
 }

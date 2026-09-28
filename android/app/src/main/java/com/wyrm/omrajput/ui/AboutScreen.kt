@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -111,15 +112,21 @@ internal object AboutInfo {
     )
 }
 
-/** The page's own colours: the same at every theme, on purpose (`WyrmNight` on iOS). */
+/**
+ * The page's colours, from the player's theme (OM, 2026-09-28: the page must
+ * follow the chosen theme). Gold is the page's accent, deeper on light themes
+ * so it reads on paper; text on gold is always dark. `WyrmNight` on iOS.
+ */
 internal object Night {
-    val Sky = Color(0xFF0E100F)
-    val Card = Color.White.copy(alpha = 0.055f)
-    val Rule = Color.White.copy(alpha = 0.10f)
-    val Ink = Color(0xFFF2F0E8)
-    val Mute = Color(0xFFBAB5AD)
-    val Quiet = Color(0xFF8C8A82)
-    val Gold = Color(0xFFE3BA6B)
+    val Sky: Color get() = Wyrm.Paper
+    val Card: Color get() = Wyrm.Card
+    val Rule: Color get() = Wyrm.Rule
+    val Ink: Color get() = Wyrm.Ink
+    val Mute: Color get() = Wyrm.Mute
+    val Quiet: Color get() = Wyrm.Quiet
+    val Well: Color get() = Wyrm.Well
+    val Gold: Color get() = if (Wyrm.Paper.luminance() < 0.45f) Color(0xFFE3BA6B) else Color(0xFFB07A1E)
+    val OnGold = Color(0xFF1C1A16)
     val Discord = Color(0xFF5865F2)
 }
 
@@ -327,7 +334,7 @@ private fun Chapter(numeral: String, title: String, text: String, last: Boolean 
                     .clip(CircleShape)
                     .background(Night.Gold),
                 contentAlignment = Alignment.Center,
-            ) { Text(numeral, fontFamily = Wyrm.Display, fontSize = 15.sp, color = Night.Sky) }
+            ) { Text(numeral, fontFamily = Wyrm.Display, fontSize = 15.sp, color = Night.OnGold) }
             Box(
                 Modifier
                     .width(1.5.dp)
@@ -364,7 +371,7 @@ private fun ProductCard(product: AboutInfo.Product, highlight: Boolean, delayMs:
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(
-            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.07f)),
+            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(Night.Well),
             contentAlignment = Alignment.Center,
         ) {
             Icon(painterResource(product.icon), contentDescription = null,
@@ -487,7 +494,7 @@ private fun Coffee(onCopy: () -> Unit, onPay: () -> Unit) = Section {
             Modifier
                 .height(40.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.08f))
+                .background(Night.Well)
                 .clickable(onClick = onCopy)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -507,10 +514,10 @@ private fun Coffee(onCopy: () -> Unit, onPay: () -> Unit) = Section {
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(painterResource(LucideR.drawable.lucide_ic_coffee), contentDescription = null, tint = Night.Sky,
+            Icon(painterResource(LucideR.drawable.lucide_ic_coffee), contentDescription = null, tint = Night.OnGold,
                 modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Pay with a UPI app", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.5.sp, color = Night.Sky)
+            Text("Pay with a UPI app", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.5.sp, color = Night.OnGold)
         }
     }
 }

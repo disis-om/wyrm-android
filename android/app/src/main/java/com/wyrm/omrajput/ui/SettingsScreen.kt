@@ -874,7 +874,7 @@ private fun ShadeTrack(
 }
 
 @Composable
-private fun GradientTrack(fraction: Float, brush: Brush, onPick: (Float) -> Unit) {
+internal fun GradientTrack(fraction: Float, brush: Brush, onPick: (Float) -> Unit) {
     val density = LocalDensity.current
     var width by remember { mutableFloatStateOf(1f) }
     val knob = 26.dp

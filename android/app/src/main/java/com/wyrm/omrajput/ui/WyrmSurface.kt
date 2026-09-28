@@ -353,6 +353,13 @@ object Wyrm {
     /** The light thumb under [PillInk] in the dark themes. */
     val PillThumb: Color get() = palette.ink.copy(alpha = 0.9f)
 
+    /**
+     * The tab bar's resting pill (OM, 2026-09-28): a light, see-through
+     * capsule in every theme. It is drawn over the tab's icon and label, which
+     * keep the theme's ink, so an opaque light pill hid them in the dark themes.
+     */
+    val TabThumb: Color get() = palette.ink.copy(alpha = if (palette.dark) 0.14f else 0.07f)
+
     fun contentOn(background: Color): Color {
         val luminance = background.luminance()
         val darkContrast = (luminance + 0.05f) / 0.05f

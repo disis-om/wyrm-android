@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -37,6 +38,8 @@ class SkinTextures(
     val wyrmBeads: Map<Int, ImageBitmap> = emptyMap(),
     /** Wyrm looks (`WyrmLook`): the 8 x 8 cells of wyrm_accessories.png. */
     val looks: Map<Int, ImageBitmap> = emptyMap(),
+    /** Each look cell cut to its art and turned to face up, for the picker tiles. */
+    val lookThumbnails: Map<Int, ImageBitmap> = emptyMap(),
 ) {
     companion object {
         private val lock = Mutex()
@@ -62,6 +65,36 @@ class SkinTextures(
         }.getOrNull()
 
         /** iOS `crop`: fractions of the sheet, floored origin, rounded size, clipped. */
+        /**
+         * A look cell cut to its visible art and turned a quarter left, so what
+         * faces the snake's front faces up: glasses sit level, ears stand on top.
+         */
+        private fun lookThumbnail(cell: Bitmap): Bitmap? {
+            val w = cell.width
+            val h = cell.height
+            val pixels = IntArray(w * h)
+            cell.getPixels(pixels, 0, w, 0, 0, w, h)
+            var minX = w
+            var minY = h
+            var maxX = -1
+            var maxY = -1
+            for (y in 0 until h) for (x in 0 until w) {
+                if ((pixels[y * w + x] ushr 24) > 16) {
+                    if (x < minX) minX = x
+                    if (x > maxX) maxX = x
+                    if (y < minY) minY = y
+                    if (y > maxY) maxY = y
+                }
+            }
+            if (maxX < 0) return null
+            val pad = 3
+            val left = max(0, minX - pad)
+            val top = max(0, minY - pad)
+            val cut = Bitmap.createBitmap(cell, left, top, min(w, maxX + pad + 1) - left, min(h, maxY + pad + 1) - top)
+            val turn = android.graphics.Matrix().apply { postRotate(-90f) }
+            return Bitmap.createBitmap(cut, 0, 0, cut.width, cut.height, turn, true)
+        }
+
         private fun crop(image: Bitmap, x: Double, y: Double, width: Double, height: Double): Bitmap? {
             val left = floor(x * image.width).toInt()
             val top = floor(y * image.height).toInt()
@@ -128,10 +161,12 @@ class SkinTextures(
                 decode(context, path, 520)?.let { background.id to it.asImageBitmap() }
             }.toMap()
             val lookSheet = decode(context, "textures/wyrm_accessories.png", 2048)
-            val looks = if (lookSheet == null) emptyMap() else (0 until 40).mapNotNull { cell ->
-                crop(lookSheet, (cell % 8) / 8.0, (cell / 8) / 8.0, 1.0 / 8, 1.0 / 8)?.let { cell to it.asImageBitmap() }
+            val lookCells = if (lookSheet == null) emptyMap() else (0 until 40).mapNotNull { cell ->
+                crop(lookSheet, (cell % 8) / 8.0, (cell / 8) / 8.0, 1.0 / 8, 1.0 / 8)?.let { cell to it }
             }.toMap()
-            return SkinTextures(beads, airBeads, airShadow, airWheel, accessories, accessoryThumbs, tags, tagThumbs, backgrounds, wyrmBeads, looks)
+            val looks = lookCells.mapValues { it.value.asImageBitmap() }
+            val lookThumbs = lookCells.mapNotNull { (cell, bitmap) -> lookThumbnail(bitmap)?.let { cell to it.asImageBitmap() } }.toMap()
+            return SkinTextures(beads, airBeads, airShadow, airWheel, accessories, accessoryThumbs, tags, tagThumbs, backgrounds, wyrmBeads, looks, lookThumbs)
         }
     }
 }

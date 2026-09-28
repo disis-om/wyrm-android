@@ -986,12 +986,9 @@ fun FloatingRootTabs(
 @Composable
 private fun FloatingTabLabel(tab: RootTab, chosen: Boolean, badge: Int) {
     val colour by animateColorAsState(
-        // Dark themes flip it: dark ink on the light thumb, light idle tabs.
-        targetValue = when {
-            chosen -> Wyrm.PillInk
-            Wyrm.currentPalette.dark -> Wyrm.Ink
-            else -> Wyrm.TabIdle
-        },
+        // The chosen tab in the theme's ink under a see-through pill; the rest
+        // faded (OM, 2026-09-28), in every theme.
+        targetValue = if (chosen) Wyrm.Ink else Wyrm.TabIdle,
         animationSpec = tween(160),
         label = "tab colour",
     )

@@ -97,7 +97,7 @@ data class ServerNotification(
     val read: Boolean,
 )
 
-private class ApiException(val status: Int, message: String) : Exception(message)
+internal class ApiException(val status: Int, message: String) : Exception(message)
 
 /* Diagnostic kill switch. While true every backend call fails like a network
    outage (IOException, never 401), so the saved session stays signed in and
@@ -338,6 +338,72 @@ class WyrmRepository(context: Context, baseUrl: String) {
         callBinary("/v1/me/avatar", "PUT", "image/jpeg", bytes).toPlayer(api)
     }
 
+    /* ---------------------------------------------------------- trails */
+
+    suspend fun trails(cursor: String?, author: String? = null): TrailPage = withContext(Dispatchers.IO) {
+        val query = buildString {
+            append("/v1/trails?limit=20")
+            cursor?.let { append("&cursor=").append(java.net.URLEncoder.encode(it, "UTF-8")) }
+            author?.let { append("&author=").append(it) }
+        }
+        val response = call(query)
+        val rows = response.optJSONArray("trails")
+        TrailPage(
+            trails = (0 until (rows?.length() ?: 0)).map { rows!!.getJSONObject(it).toTrail(api) },
+            nextCursor = response.optString("nextCursor").takeIf { it.isNotBlank() && it != "null" },
+        )
+    }
+
+    suspend fun trail(id: String): Trail = withContext(Dispatchers.IO) {
+        call("/v1/trails/$id").getJSONObject("trail").toTrail(api)
+    }
+
+    /** One JPEG, already resized in the app; `progress` runs 0..1 as it goes up. */
+    suspend fun uploadTrailMedia(bytes: ByteArray, progress: (Float) -> Unit): String = withContext(Dispatchers.IO) {
+        callBinary("/v1/trails/media", "PUT", "image/jpeg", bytes, progress).getString("id")
+    }
+
+    /** A photo trail with both ids, or a text trail with neither. */
+    suspend fun createTrail(caption: String, photoId: String?, thumbId: String?): Trail = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("caption", caption)
+        if (photoId != null && thumbId != null) body.put("photoId", photoId).put("thumbId", thumbId)
+        call("/v1/trails", method = "POST", body = body).getJSONObject("trail").toTrail(api)
+    }
+
+    suspend fun likeTrail(id: String, liked: Boolean): TrailLike = withContext(Dispatchers.IO) {
+        val response = call("/v1/trails/$id/like", method = if (liked) "PUT" else "DELETE")
+        TrailLike(response.optBoolean("liked"), response.optInt("likeCount"))
+    }
+
+    suspend fun deleteTrail(id: String) = withContext(Dispatchers.IO) {
+        call("/v1/trails/$id", method = "DELETE")
+        Unit
+    }
+
+    suspend fun reportTrail(id: String, reason: String) = withContext(Dispatchers.IO) {
+        call("/v1/trails/$id/report", method = "POST", body = JSONObject().put("reason", reason))
+        Unit
+    }
+
+    suspend fun trailComments(id: String): TrailCommentPage = withContext(Dispatchers.IO) {
+        val response = call("/v1/trails/$id/comments?limit=40")
+        val rows = response.optJSONArray("comments")
+        TrailCommentPage(
+            comments = (0 until (rows?.length() ?: 0)).map { rows!!.getJSONObject(it).toTrailComment(api) },
+            nextCursor = response.optString("nextCursor").takeIf { it.isNotBlank() && it != "null" },
+        )
+    }
+
+    suspend fun replyToTrail(id: String, body: String): TrailReply = withContext(Dispatchers.IO) {
+        val response = call("/v1/trails/$id/comments", method = "POST", body = JSONObject().put("body", body))
+        TrailReply(response.getJSONObject("comment").toTrailComment(api), response.optInt("commentCount"))
+    }
+
+    suspend fun deleteTrailReply(id: String, commentId: String) = withContext(Dispatchers.IO) {
+        call("/v1/trails/$id/comments/$commentId", method = "DELETE")
+        Unit
+    }
+
     /** Back to a drawn avatar. */
     suspend fun removeAvatar(): ApiPlayer = withContext(Dispatchers.IO) {
         call("/v1/me/avatar", method = "DELETE").toPlayer(api)
@@ -572,6 +638,7 @@ class WyrmRepository(context: Context, baseUrl: String) {
         method: String,
         contentType: String,
         body: ByteArray,
+        progress: ((Float) -> Unit)? = null,
     ): JSONObject {
         if (WYRM_BACKEND_DISCONNECTED) throw java.io.IOException("Wyrm backend disconnected")
         val connection = (URL("$api$path").openConnection() as HttpURLConnection).apply {
@@ -586,7 +653,16 @@ class WyrmRepository(context: Context, baseUrl: String) {
             session?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
         return try {
-            connection.outputStream.use { it.write(body) }
+            connection.outputStream.use { out ->
+                // In slices, so an upload can say how far it has got.
+                var sent = 0
+                while (sent < body.size) {
+                    val next = minOf(body.size, sent + 16 * 1024)
+                    out.write(body, sent, next - sent)
+                    sent = next
+                    progress?.invoke(sent.toFloat() / body.size)
+                }
+            }
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()

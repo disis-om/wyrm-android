@@ -84,6 +84,8 @@ fun SocialScreen(
     /** Pull to refresh: everything Social shows, and every page behind it. */
     onRefresh: (done: () -> Unit) -> Unit = { onAppear(); it() },
     onOpenGlobalChat: (Rect) -> Unit = onOpenMessages,
+    /** Trails at the top of Social (`TrailsTeaser`). */
+    trailsTeaser: (@Composable () -> Unit)? = null,
     onTabNotifications: (Rect) -> Unit,
     onTabPlay: (Rect) -> Unit,
     onTabSkin: (Rect) -> Unit,
@@ -110,6 +112,7 @@ fun SocialScreen(
         ) {
             // Wyrm iOS › Social: one card of destinations, then the circle.
             IosScreenHeader(kicker = "Arena", title = "Social")
+            trailsTeaser?.invoke()
             IosPaperCard {
                 IosListRow(
                     title = "Leaderboard",

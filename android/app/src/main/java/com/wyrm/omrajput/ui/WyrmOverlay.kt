@@ -173,7 +173,12 @@ class WyrmOverlay(private val activity: Activity) :
     private var shown by mutableStateOf(false)
     private var insetTop by mutableStateOf(0.dp)
     private var insetBottom by mutableStateOf(0.dp)
-    private val repository = WyrmRepository(activity, BuildConfig.WYRM_API_URL)
+    private val repository = WyrmRepository(activity, BuildConfig.WYRM_API_URL).also {
+        TrailsStore.repository = it
+        TrailImages.attach(activity)
+    }
+    /** The trail open on Route.TRAIL. */
+    private var trailOpenId by mutableStateOf("")
     private val voiceRepository = VoiceRepository(activity, BuildConfig.WYRM_API_URL)
     private val socialCache = SocialCache(activity)
     private val voicePreferences = VoicePreferences(activity)
@@ -443,7 +448,7 @@ class WyrmOverlay(private val activity: Activity) :
         SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_BACKUP,
         SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT,
         CHAT, THREAD, PLAYER, CONNECTIONS, TEAM, VOICE, ARENA_CHAT, PRIVACY, NOTIFICATIONS,
-        GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT;
+        GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT, TRAILS, TRAIL, TRAIL_STUDIO;
 
         /**
          * Whether this screen was reached from a row on Home.
@@ -1263,6 +1268,30 @@ class WyrmOverlay(private val activity: Activity) :
                             },
                         )
 
+                        Route.TRAILS -> TrailsFeedScreen(
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onBack = { panelOpen = false },
+                            onNew = { route = Route.TRAIL_STUDIO },
+                            onOpen = { id -> trailOpenId = id; route = Route.TRAIL },
+                            onAuthor = { id -> openPlayer(id) },
+                        )
+
+                        Route.TRAIL -> TrailDetailScreen(
+                            trailId = trailOpenId,
+                            meId = profile.id,
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onBack = { route = Route.TRAILS },
+                            onAuthor = { id -> openPlayer(id) },
+                        )
+
+                        Route.TRAIL_STUDIO -> TrailStudioScreen(
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onClose = { route = Route.TRAILS },
+                        )
+
                         Route.ABOUT -> AboutScreen(
                             appVersion = BuildConfig.VERSION_NAME,
                             insetTop = insetTop,
@@ -1884,6 +1913,7 @@ class WyrmOverlay(private val activity: Activity) :
             onAppear = {},
             onRefresh = { done ->
                 if (interactive) {
+                    TrailsStore.refresh()
                     scope.launch {
                         bootstrapSession()
                         refreshProfile(force = true)
@@ -1891,6 +1921,14 @@ class WyrmOverlay(private val activity: Activity) :
                     }
                 } else {
                     done()
+                }
+            },
+            trailsTeaser = {
+                TrailsTeaser {
+                    if (interactive) {
+                        tabRoot = Route.SOCIAL
+                        openPanel(Rect.Zero) { route = Route.TRAILS }
+                    }
                 }
             },
             onOpenLeaderboard = { origin ->
@@ -2850,6 +2888,8 @@ class WyrmOverlay(private val activity: Activity) :
             Route.CONNECTIONS -> Route.CONNECTIONS
             Route.NOTIFICATIONS -> Route.NOTIFICATIONS
             Route.SOCIAL -> Route.SOCIAL
+            Route.TRAILS -> Route.TRAILS
+            Route.TRAIL -> Route.TRAIL
             else -> Route.LEADERBOARD
         }
         formError = ""

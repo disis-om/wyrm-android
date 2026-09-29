@@ -232,12 +232,13 @@ private fun LobbyReadyRoom(
                     label = "Play with AI",
                     icon = R.drawable.ic_play_assist,
                     modifier = Modifier.width(142.dp),
-                    enabled = nickname.isNotBlank() && !entering,
+                    // A blank name is allowed: the arena shows no name (OM).
+                    enabled = !entering,
                     onClick = onPlayAi,
                 )
                 LobbyPlayButton(
                     entering = entering,
-                    enabled = address.isNotBlank() && nickname.isNotBlank() && !entering,
+                    enabled = address.isNotBlank() && !entering,
                     modifier = Modifier.width(180.dp),
                     onClick = onPlay,
                 )
@@ -305,7 +306,7 @@ private fun LobbyName(
             ),
             keyboardActions = KeyboardActions(onDone = {
                 focusManager.clearFocus()
-                if (nickname.isNotBlank()) onDone()
+                onDone()
             }),
             modifier = Modifier
                 .fillMaxWidth()

@@ -282,7 +282,8 @@ static void draw_ready_room(tenv* env, ui_safe_area safe, float dp) {
   if (lobby_glass_button(usr, "home", "Home", (ImVec2){home_w, glass_h}, dp))
     lobby_go_home(env);
   igSameLine(0, gap);
-  bool can_play = usrs->nickname[0] && server_address_is_valid(usrs->ipv4);
+  /* A blank name is allowed: the arena shows no name (OM, 2026-09-30). */
+  bool can_play = server_address_is_valid(usrs->ipv4);
   igSetCursorPosY(btn_y);
   if (lobby_play_button(usr, "PLAY", (ImVec2){play_w, play_h}, can_play, dp))
     ui_lobby_play(env);

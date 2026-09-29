@@ -164,6 +164,8 @@ void game_loop(tenv* env) {
           arena_taint_mark(usrs->ipv4);
           android_home_arena_refused(
               usrs->ipv4, (int)(arena_taint_remaining(usrs->ipv4) / 1000));
+          /* Ours, not the arena's: a report must say it was a timeout. */
+          android_home_arena_note_timeout();
           game_fail_connection(gdata, "configuration timeout");
         }
         if (gdata->arena_ready) input_team_protected(env);

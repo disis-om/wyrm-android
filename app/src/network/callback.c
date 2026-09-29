@@ -80,31 +80,72 @@ void decode_secret(const uint8_t* packet, size_t packet_len, uint8_t* result) {
   }
 }
 
+/*
+ * How many (count, colour) runs a join may carry: NTL's limit. NTL cuts its
+ * skin block to 300 bytes (`cb.slice(0,300)` in main-mt.js), which is the
+ * 8-byte header plus 146 pairs, and arenas take that from NTL players every
+ * day. Live, one arena (OM, 2026-09-29/30): skin blocks of 102, 200, 256, 300
+ * and 400 bytes were admitted; 500 bytes (a 533-540-byte join) closed the
+ * socket before configuration. That 500-byte block was the arena drop.
+ */
+#define WYRM_JOIN_SKIN_MAX_RUNS 146
+
+/* The colours the official client lets a custom skin use. */
+static bool skin_colour_allowed(int cg) {
+  return (cg >= 0 && cg <= 35) || cg == 37 || cg == 39 || cg == 41;
+}
+
+/*
+ * The run list for the join: official colours only, one repeat of the
+ * pattern, at most WYRM_JOIN_SKIN_MAX_RUNS runs. The arena repeats a pattern
+ * along the body, so one repeat looks the same to everyone else; iOS hands
+ * over its motif repeated to 256 beads, and this folds that back. Our own
+ * snake still draws the whole design (see the own-snake block in 's').
+ * Empty when nothing valid is left: the join then goes out as a preset one.
+ */
 uint8_t* get_skin_compressed(tuser_data* usr) {
   user_settings* usrs = &usr->usrs;
-
-  int skin_len = strlen(usrs->skin_code);
   uint8_t* reduced = tdarray_create(uint8_t);
-  uint8_t sequence_count = 0;
 
-  for (int i = 0; i < skin_len; i++) {
-    uint8_t cg_id = get_cg_id(&usr->gdata, usrs->skin_code[i]);
+  uint8_t groups[MAX_SKIN_CODE_LEN];
+  int count = 0;
+  for (int i = 0; i < MAX_SKIN_CODE_LEN && usrs->skin_code[i]; i++) {
+    int cg = get_cg_id(&usr->gdata, usrs->skin_code[i]);
+    if (skin_colour_allowed(cg)) groups[count++] = (uint8_t)cg;
+  }
+  if (!count) return reduced;
 
-    /* A run byte cannot spell 256. Flush 255 before incrementing so a
-     * 256-bead solid skin becomes [255, colour], [1, colour], never [0]. */
-    if (sequence_count == UINT8_MAX) {
-      tdarray_push(&reduced, &sequence_count);
-      tdarray_push(&reduced, &cg_id);
-      sequence_count = 0;
+  /* The smallest period p with groups[i] == groups[i - p] for every i >= p. */
+  int period = count;
+  for (int p = 1; p < count; p++) {
+    bool repeats = true;
+    for (int i = p; i < count; i++) {
+      if (groups[i] != groups[i - p]) {
+        repeats = false;
+        break;
+      }
     }
-    sequence_count++;
-
-    if (usrs->skin_code[i + 1] != usrs->skin_code[i]) {
-      tdarray_push(&reduced, &sequence_count);
-      tdarray_push(&reduced, &cg_id);
-      sequence_count = 0;
+    if (repeats) {
+      period = p;
+      break;
     }
   }
+
+  int runs = 0;
+  int i = 0;
+  while (i < period && runs < WYRM_JOIN_SKIN_MAX_RUNS) {
+    uint8_t cg = groups[i];
+    int n = 1;
+    while (i + n < period && groups[i + n] == cg && n < UINT8_MAX) n++;
+    uint8_t run = (uint8_t)n;
+    tdarray_push(&reduced, &run);
+    tdarray_push(&reduced, &cg);
+    runs++;
+    i += n;
+  }
+  if (i < period)
+    SDL_Log("Wyrm arena: custom skin trimmed for the join — %d of %d beads "
+            "in one repeat, %d stripes", i, period, runs);
   return reduced;
 }
 
@@ -408,13 +449,20 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
     uint8_t* skin_compressed = NULL;
     int skin_compressed_len = 0;
 
-    if (usrs->custom_skin) {
+    /* The skin tail is the web client's format. The AIR client sends typed
+       `custom_skin2` blocks instead, which Wyrm does not encode, so an AIR
+       join goes out as a preset one. A tail with no runs is not sent either:
+       receivers need at least one pair. */
+    bool web_persona = persona == arena_persona_get(ARENA_PERSONA_WEB);
+    if (usrs->custom_skin && web_persona) {
       skin_compressed = get_skin_compressed(usr);
       skin_compressed_len = tdarray_length(skin_compressed);
-      ba = malloc(8 + 20 + nick_len + 8 + skin_compressed_len);
-    } else {
-      ba = malloc(8 + 20 + nick_len);
+      if (!skin_compressed_len) {
+        tdarray_destroy(skin_compressed);
+        skin_compressed = NULL;
+      }
     }
+    ba = malloc(8 + 20 + nick_len + (skin_compressed ? 8 + skin_compressed_len : 0));
 
     ba[0] = 115;
     ba[1] = 30;
@@ -439,7 +487,7 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
     ba[m] = usrs->accessory;
     m++;
 
-    if (usrs->custom_skin) {
+    if (skin_compressed) {
       ba[m++] = 255;
       ba[m++] = 255;
       ba[m++] = 255;
@@ -459,6 +507,13 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
 
     arena_send(c, ba, m);
     free(ba);
+    int skin_bytes = skin_compressed_len ? 8 + skin_compressed_len : 0;
+    android_home_arena_join_sent(m, skin_bytes, skin_compressed_len / 2,
+                                 nick_len, usrs->custom_skin);
+    SDL_Log("Wyrm arena: join fields accessory=%d custom_skin=%d skin_runs=%d "
+            "skin_bytes=%d nickname_bytes=%d packet_bytes=%d",
+            (int)usrs->accessory, usrs->custom_skin ? 1 : 0,
+            skin_compressed_len / 2, skin_bytes, nick_len, m);
     SDL_Log("Wyrm arena: answered the challenge as '%s' (client %u)",
             persona->name, (unsigned)persona->version);
   } else if (cmd == 'a') {
@@ -711,6 +766,18 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
       o.yy = sny;
       o.cv = cv % NUM_DEFAULT_SKINS;
       o.cusk = skl != 0;
+      /* Our own snake keeps the whole design we chose. The join carries at
+         most one bounded repeat of it, and `cusk_data` above holds the arena's
+         echo of that; drawn from the echo, our snake would show the trimmed
+         wire copy instead of the player's own look. */
+      if (o.local_player && usrs->custom_skin) {
+        o.cusk_len = 0;
+        for (int k = 0; k < MAX_SKIN_CODE_LEN && usrs->skin_code[k]; k++) {
+          int cg = get_cg_id(gdata, usrs->skin_code[k]);
+          if (cg >= 0) o.cusk_data[o.cusk_len++] = (uint8_t)cg;
+        }
+        o.cusk = o.cusk_len > 0;
+      }
       o.sc = 1;
       o.ssp = gdata->data.nsp1 + gdata->data.nsp2 * o.sc;
       o.fsp = o.ssp + .1;
@@ -1512,6 +1579,20 @@ void server_callback(struct mg_connection* c, int ev, void* ev_data) {
        and `input()` sends its ping down it, and both were doing that to memory
        that had been handed back — the kind of damage the heap notices much
        later, on another thread, freeing something else entirely. */
+    /* Where in the handshake the socket died, for the log and a report. */
+    const char* phase = !c->is_websocket ? "before WebSocket upgrade" :
+        !gdata->persona_tested ? "before challenge" :
+        !gdata->arena_ready ? "after challenge, before configuration" :
+        !gdata->join_spawned ? "after configuration, before spawn" :
+        "after spawn";
+    SDL_Log("Wyrm arena: socket closed in phase '%s' after %llums", phase,
+            (unsigned long long)(SDL_GetTicks() - gdata->attempt_started_ms));
+    /* Turned away before a snake existed (and not by us): a drop report of
+       its own. The refusal handling in loop.c is unchanged. Every post-spawn
+       report needs `join_spawned`, so the two never fire for one socket. */
+    if (c->is_websocket && !gdata->join_spawned && !gdata->ai_mode &&
+        !gdata->closed_by_us && !gdata->leaving && !gdata->restart_req)
+      android_home_arena_prespawn_close(env, phase);
     gdata->connection = NULL;
     if (gdata->arena_ready && gdata->curr_screen == PLAYING &&
         !gdata->leaving && !gdata->restart_req) {

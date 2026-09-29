@@ -13,6 +13,7 @@
 #include "../network/server.h"
 #include "../network/arena_persona.h"
 #include "../network/arena_protocol.h"
+#include "../network/arena_trace.h"
 #include "../game/ai_mode.h"
 #include "../game/ui_overlay.h"
 #include "../ui/lobby.h"
@@ -60,6 +61,15 @@ static char drop_close_reason[124] = {0};
 static char drop_error_text[160] = {0};
 static bool drop_errored = false;
 static bool drop_reported = false;
+/* Per socket: what the join carried, and whether a pre-spawn report went. */
+static bool prespawn_reported = false;
+static bool drop_timed_out = false;
+static bool join_was_sent = false;
+static int join_packet_bytes = 0;
+static int join_skin_bytes = 0;
+static int join_skin_runs = 0;
+static int join_nick_bytes = 0;
+static bool join_custom_skin = false;
 
 static bool get_activity(JNIEnv** out_env, jclass* out_class) {
   *out_env = (JNIEnv*)SDL_GetAndroidJNIEnv();
@@ -246,7 +256,25 @@ void android_home_arena_socket_opened(void) {
   drop_close_reason[0] = '\0';
   drop_error_text[0] = '\0';
   drop_errored = false;
+  prespawn_reported = false;
+  drop_timed_out = false;
+  join_was_sent = false;
+  join_packet_bytes = join_skin_bytes = join_skin_runs = join_nick_bytes = 0;
+  join_custom_skin = false;
 }
+
+void android_home_arena_join_sent(int packet_bytes, int skin_bytes,
+                                  int skin_runs, int nick_bytes,
+                                  bool custom_skin) {
+  join_was_sent = true;
+  join_packet_bytes = packet_bytes;
+  join_skin_bytes = skin_bytes;
+  join_skin_runs = skin_runs;
+  join_nick_bytes = nick_bytes;
+  join_custom_skin = custom_skin;
+}
+
+void android_home_arena_note_timeout(void) { drop_timed_out = true; }
 
 void android_home_arena_close_frame(const char* payload, size_t len) {
   if (!payload || len < 2) {
@@ -394,6 +422,78 @@ static void arena_drop_report(tenv* env, const char* reason, int death_code) {
       jni, activity_class, "setArenaDropFromNative", "(Ljava/lang/String;)V");
   if (!method) {
     /* An older shell has no drop card; the match ends as it always did. */
+    (*jni)->ExceptionClear(jni);
+    (*jni)->DeleteLocalRef(jni, activity_class);
+    return;
+  }
+  jstring text = (*jni)->NewStringUTF(jni, packed);
+  if (text) {
+    (*jni)->CallStaticVoidMethod(jni, activity_class, method, text);
+    clear_exception(jni);
+    (*jni)->DeleteLocalRef(jni, text);
+  } else {
+    clear_exception(jni);
+  }
+  (*jni)->DeleteLocalRef(jni, activity_class);
+}
+
+void android_home_arena_prespawn_close(tenv* env, const char* phase) {
+  if (!env || prespawn_reported) return;
+  game_data* gdata = &env->usr->gdata;
+  user_settings* settings = &env->usr->usrs;
+  if (gdata->ai_mode || gdata->join_spawned || gdata->closed_by_us ||
+      gdata->leaving || gdata->restart_req)
+    return;
+  prespawn_reported = true;
+
+  uint64_t now = SDL_GetTicks();
+  long long since_dial = gdata->attempt_started_ms && now >= gdata->attempt_started_ms
+      ? (long long)(now - gdata->attempt_started_ms) : -1;
+  const char* reason = drop_timed_out ? "prespawn_timeout"
+                       : drop_errored ? "prespawn_error" : "prespawn_closed";
+  char arena[MAX_IPV4_LEN + 1];
+  drop_copy_text(arena, sizeof(arena), settings->ipv4, strlen(settings->ipv4));
+  char persona[48];
+  const char* persona_name = arena_persona_get(gdata->persona)->name;
+  drop_copy_text(persona, sizeof(persona), persona_name,
+                 persona_name ? strlen(persona_name) : 0);
+  char phase_text[64];
+  drop_copy_text(phase_text, sizeof(phase_text), phase, phase ? strlen(phase) : 0);
+  char traffic[320] = {0};
+  arena_trace_summary(traffic, sizeof(traffic));
+  char trace[240];
+  drop_copy_text(trace, sizeof(trace), traffic, strlen(traffic));
+
+  char packed[1024];
+  size_t used = 0;
+  packed[0] = '\0';
+  drop_put(packed, sizeof(packed), &used, "dropReason", reason);
+  drop_put(packed, sizeof(packed), &used, "phase", phase_text);
+  drop_put_int(packed, sizeof(packed), &used, "msSinceDial", since_dial);
+  drop_put_int(packed, sizeof(packed), &used, "joinSent", join_was_sent ? 1 : 0);
+  drop_put_int(packed, sizeof(packed), &used, "joinBytes", join_packet_bytes);
+  drop_put_int(packed, sizeof(packed), &used, "customSkin", join_custom_skin ? 1 : 0);
+  drop_put_int(packed, sizeof(packed), &used, "skinBytes", join_skin_bytes);
+  drop_put_int(packed, sizeof(packed), &used, "skinRuns", join_skin_runs);
+  drop_put_int(packed, sizeof(packed), &used, "nickBytes", join_nick_bytes);
+  drop_put_int(packed, sizeof(packed), &used, "closeCode", drop_close_code);
+  drop_put(packed, sizeof(packed), &used, "closeReason", drop_close_reason);
+  drop_put(packed, sizeof(packed), &used, "errorText", drop_error_text);
+  drop_put(packed, sizeof(packed), &used, "lifeSec", "0");
+  drop_put_int(packed, sizeof(packed), &used, "connectsLastMin",
+               server_connects_last_minute());
+  drop_put(packed, sizeof(packed), &used, "persona", persona);
+  drop_put(packed, sizeof(packed), &used, "arena", arena);
+  drop_put(packed, sizeof(packed), &used, "trace", trace);
+  SDL_Log("Wyrm arena: turned away %s (%s) — join %d bytes, skin %d runs",
+          phase_text, reason, join_packet_bytes, join_skin_runs);
+
+  JNIEnv* jni = NULL;
+  jclass activity_class = NULL;
+  if (!get_activity(&jni, &activity_class)) return;
+  jmethodID method = (*jni)->GetStaticMethodID(
+      jni, activity_class, "setArenaDropFromNative", "(Ljava/lang/String;)V");
+  if (!method) {
     (*jni)->ExceptionClear(jni);
     (*jni)->DeleteLocalRef(jni, activity_class);
     return;
@@ -883,6 +983,20 @@ void android_home_arena_drop(tenv* env) { (void)env; }
 void android_home_arena_fast_death(tenv* env, int death_code) {
   (void)env;
   (void)death_code;
+}
+void android_home_arena_join_sent(int packet_bytes, int skin_bytes,
+                                  int skin_runs, int nick_bytes,
+                                  bool custom_skin) {
+  (void)packet_bytes;
+  (void)skin_bytes;
+  (void)skin_runs;
+  (void)nick_bytes;
+  (void)custom_skin;
+}
+void android_home_arena_note_timeout(void) {}
+void android_home_arena_prespawn_close(tenv* env, const char* phase) {
+  (void)env;
+  (void)phase;
 }
 
 #endif

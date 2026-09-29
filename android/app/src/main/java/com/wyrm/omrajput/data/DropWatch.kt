@@ -155,7 +155,9 @@ object DropWatch {
                 // lands a moment after the socket died.
                 val switched = changesSince(detectedAt - lifeMs - 1_000)
                 val facts = LinkedHashMap<String, String>()
-                for (key in NATIVE_KEYS) facts[key] = native[key].orEmpty()
+                // Only what the engine sent: a pre-spawn report and an in-match
+                // one carry different keys, and a report may hold at most 40.
+                for (key in NATIVE_KEYS) native[key]?.let { facts[key] = it }
                 facts["arenaId"] = arena?.id?.toString().orEmpty()
                 facts["arenaCluster"] = arena?.cluster?.toString().orEmpty()
                 facts["arenaPlayers"] = arena?.players?.toString().orEmpty()
@@ -168,6 +170,9 @@ object DropWatch {
                     netChanges = switched,
                     connectsLastMin = native["connectsLastMin"]?.toIntOrNull() ?: 0,
                     lifeSec = lifeSec.toDoubleOrNull() ?: 0.0,
+                    prespawn = native["dropReason"].orEmpty().startsWith("prespawn"),
+                    customSkin = native["customSkin"] == "1",
+                    skinRuns = native["skinRuns"]?.toIntOrNull() ?: 0,
                 )
                 facts["hint"] = hint
                 facts["droppedAt"] = droppedAt
@@ -271,13 +276,27 @@ object DropWatch {
     }
 
     /** The first reason that fits, and what the card says about it. Same order and copy as iOS. */
-    internal fun hintFor(internetMs: String, netChanges: Int, connectsLastMin: Int, lifeSec: Double): Pair<String, String> = when {
+    internal fun hintFor(
+        internetMs: String,
+        netChanges: Int,
+        connectsLastMin: Int,
+        lifeSec: Double,
+        prespawn: Boolean = false,
+        customSkin: Boolean = false,
+        skinRuns: Int = 0,
+    ): Pair<String, String> = when {
         internetMs == "fail" -> "no_internet" to
             "Your internet dropped. Check Wi-Fi or mobile data and pick the arena again."
         netChanges > 0 -> "network_switch" to
             "Your connection switched during the match (Wi-Fi and mobile data). Stay on one network while playing."
         connectsLastMin >= 20 -> "ip_penalty" to
             "You joined many times in a minute, so the arena is resting you. Wait a minute and try once."
+        // The join itself was turned down: a skin pattern past NTL's 146
+        // stripes (300 bytes) was the cause until 6.2.7 trimmed it.
+        prespawn && customSkin && skinRuns > 146 -> "skin_too_long" to
+            "Your skin pattern was too long for the arena. Update Wyrm, or pick a simpler pattern."
+        prespawn -> "join_refused" to
+            "The arena turned the join down before your snake appeared. Try another arena; sending the report helps us see why."
         lifeSec < 15 -> "same_wifi" to
             "Another slither app on the same Wi-Fi (on a PC or another phone) can make the arena drop you. Close it, or switch to mobile data."
         else -> "arena_closed" to
@@ -287,6 +306,8 @@ object DropWatch {
     private val NATIVE_KEYS = listOf(
         "dropReason", "deathPacket", "dialToSpawnMs", "closeCode", "closeReason", "errorText", "lifeSec", "score", "length", "kills",
         "pingMs", "lagging", "fps", "lastPacketAgoMs", "connectsLastMin", "persona", "protocol", "arena",
+        // Pre-spawn reports: where the handshake died and what the join carried.
+        "phase", "msSinceDial", "joinSent", "joinBytes", "customSkin", "skinBytes", "skinRuns", "nickBytes", "trace",
     )
 
     /** `key=value` lines from the engine. */

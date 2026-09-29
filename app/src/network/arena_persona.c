@@ -31,7 +31,7 @@ static const arena_persona personas[NUM_ARENA_PERSONAS] = {
 const arena_persona* arena_persona_get(int index) {
   /* A persona index survives in the settings file, and a file written by a
      build that knew about more of them must not walk off the end of this. */
-  if (index < 0 || index >= NUM_ARENA_PERSONAS) index = ARENA_PERSONA_AIR;
+  if (index < 0 || index >= NUM_ARENA_PERSONAS) index = ARENA_PERSONA_WEB;
   return personas + index;
 }
 

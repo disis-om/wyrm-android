@@ -38,6 +38,13 @@ internal val notificationGroups = listOf(
         ),
     ),
     NotificationGroup(
+        "Trails",
+        listOf(
+            NotificationChoice("trail_like", "Beads on your trails", "When someone gives a trail you posted a bead."),
+            NotificationChoice("trail_reply", "Replies to your trails", "When someone replies to a trail you posted."),
+        ),
+    ),
+    NotificationGroup(
         "Wyrm",
         listOf(
             NotificationChoice("notice", "Notices", "Maintenance, downtime and important alerts."),
@@ -45,6 +52,7 @@ internal val notificationGroups = listOf(
             NotificationChoice("event", "Battledome events", "Scheduled events, start times and arena addresses."),
             NotificationChoice("update", "Updates", "New versions and their changelogs."),
             NotificationChoice("feature", "New features", "What has been added or changed inside Wyrm."),
+            NotificationChoice("support", "Replies from Wyrm", "Answers to your reports, ideas and questions."),
         ),
     ),
     NotificationGroup(

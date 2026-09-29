@@ -214,7 +214,7 @@ fun CinematicAuthScreen(
     val actionTitle = when (stage) {
         AuthStage.CREATE_USERNAME, AuthStage.LOGIN_USERNAME -> "Continue"
         AuthStage.CREATE_PASSWORD -> "Next"
-        AuthStage.LOGIN_PASSWORD -> "Login"
+        AuthStage.LOGIN_PASSWORD -> "Log in"
         AuthStage.CREATE_CONFIRMATION -> "Create account"
         else -> "Continue"
     }
@@ -415,7 +415,7 @@ fun CinematicAuthScreen(
             enter = fadeIn(iosSpring<Float>(0.58f, 0.86f)) + scaleIn(iosSpring<Float>(0.58f, 0.86f), initialScale = 0.985f),
             exit = fadeOut(iosSpring<Float>(0.58f, 0.86f)) + scaleOut(iosSpring<Float>(0.58f, 0.86f), targetScale = 0.985f),
             modifier = Modifier
-                .align(Alignment.BottomCenter)
+                .align(Alignment.BottomEnd)
                 .padding(horizontal = 16.dp)
                 .padding(bottom = actionBottom),
         ) {
@@ -479,25 +479,26 @@ private fun Landing(
             modifier = Modifier.padding(top = 11.dp),
         )
         Spacer(Modifier.weight(1f).heightIn(min = 18.dp))
-        IosPrimaryAction(title = "Create Wyrm account", glyph = IosGlyph.ARROW_RIGHT, onClick = onCreate)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onLogin),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Login", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = Wyrm.Link)
-        }
+        // The welcome pair, as on Wyrm iOS (OM, 2026-09-29): one solid capsule
+        // for the new player, a ghost capsule for the returning one, then the
+        // privacy line with its link, where consent is given.
+        WelcomeCapsule("Create account", filled = true, onClick = onCreate)
+        Spacer(Modifier.height(10.dp))
+        WelcomeCapsule("Log in", filled = false, onClick = onLogin)
         Text(
-            text = "Privacy",
+            text = androidx.compose.ui.text.buildAnnotatedString {
+                append("By continuing, you agree to Wyrm's ")
+                pushStyle(androidx.compose.ui.text.SpanStyle(color = Wyrm.Link, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))
+                append("Privacy Policy")
+                pop()
+            },
             fontFamily = Wyrm.Body,
-            fontSize = 12.5.sp,
-            color = Wyrm.Quiet.copy(alpha = 0.7f),
+            fontSize = 12.sp,
+            color = Wyrm.Quiet,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 2.dp)
+                .padding(top = 14.dp)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPrivacy),
         )
     }
@@ -772,28 +773,51 @@ private fun MatchLabel(text: String, glyph: IosGlyph, colour: Color) {
     }
 }
 
-/** `WyrmAuthKeyboardAction`: 54 tall, 15 corners, title left and an arrow right. */
+/**
+ * `WyrmAuthKeyboardAction` (OM, 2026-09-29: the full-width block felt
+ * aggressive): a compact pill riding the keyboard at the right, where the thumb
+ * already is. Ink when it can go, a quiet well while it cannot.
+ */
 @Composable
 private fun KeyboardAction(title: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val shape = wyrmRounded(15.dp)
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Row(
         modifier = modifier
-            .fillMaxWidth()
-            .iosShadow(Wyrm.Ink.copy(alpha = if (enabled) 0.18f else 0f), radius = 18.dp, y = 8.dp, corner = 15.dp)
-            .height(54.dp)
-            .clip(shape)
-            .background(if (enabled) Wyrm.Ink else Wyrm.Ink.copy(alpha = 0.34f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                enabled = enabled,
-                onClick = onClick,
-            )
-            .padding(horizontal = 18.dp),
+            .graphicsLayer { val s = if (pressed) 0.96f else 1f; scaleX = s; scaleY = s }
+            .iosShadow(Wyrm.Ink.copy(alpha = if (enabled) 0.14f else 0f), radius = 12.dp, y = 5.dp, corner = 23.dp)
+            .height(46.dp)
+            .clip(CircleShape)
+            .background(if (enabled) Wyrm.Ink else Wyrm.Well)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
+            .padding(start = 20.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.OnInk, modifier = Modifier.weight(1f))
-        IosIcon(IosGlyph.ARROW_RIGHT, Wyrm.OnInk, size = 18.dp, weight = 2.4f)
+        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
+            color = if (enabled) Wyrm.OnInk else Wyrm.Quiet)
+        IosIcon(IosGlyph.ARROW_RIGHT, if (enabled) Wyrm.OnInk else Wyrm.Quiet, size = 15.dp, weight = 2.2f)
+    }
+}
+
+/** The welcome screen's buttons: a solid ink capsule, or a ghost one with a hairline. */
+@Composable
+private fun WelcomeCapsule(title: String, filled: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { val s = if (pressed) 0.975f else 1f; scaleX = s; scaleY = s }
+            .then(if (filled) Modifier.iosShadow(Wyrm.Ink.copy(alpha = 0.16f), radius = 14.dp, y = 6.dp, corner = 26.dp) else Modifier)
+            .height(52.dp)
+            .clip(CircleShape)
+            .then(if (filled) Modifier.background(Wyrm.Ink) else Modifier.border(1.5.dp, Wyrm.Ink.copy(alpha = 0.22f), CircleShape))
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(title, fontFamily = Wyrm.Body, fontWeight = if (filled) FontWeight.Bold else FontWeight.SemiBold, fontSize = 16.sp,
+            color = if (filled) Wyrm.OnInk else Wyrm.Ink)
     }
 }
 

@@ -423,6 +423,35 @@ class WyrmRepository(context: Context, baseUrl: String) {
         Unit
     }
 
+    /* ------------------------------------------------- badges and support */
+
+    /** The ten profile badges (`backend/src/badges.mjs`). */
+    suspend fun badges(id: String): BadgeBook = withContext(Dispatchers.IO) {
+        call("/v1/players/$id/badges").toBadgeBook()
+    }
+
+    /** A Help & feedback report or a crash report. Signed in or not. */
+    suspend fun submitSupport(
+        kind: String,
+        message: String,
+        context: Map<String, String>,
+        stack: String = "",
+        logs: String = "",
+    ): String = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("kind", kind)
+            .put("message", message.take(4000))
+            .put("context", JSONObject(context.mapValues { it.value.take(300) }.entries.take(40).associate { it.key to it.value }))
+        if (stack.isNotBlank()) body.put("stack", SupportRedact.clean(stack).takeLast(60_000))
+        if (logs.isNotBlank()) body.put("logs", SupportRedact.clean(logs).takeLast(120_000))
+        call("/v1/support/reports", method = "POST", body = body).optString("id")
+    }
+
+    suspend fun mySupport(): List<SupportReport> = withContext(Dispatchers.IO) {
+        val rows = call("/v1/me/support").optJSONArray("reports")
+        (0 until (rows?.length() ?: 0)).map { rows!!.getJSONObject(it).toSupportReport() }
+    }
+
     /* -------------------------------------------------------------- social */
 
     /** Another player, as everyone else sees them, plus where you stand. */

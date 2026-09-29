@@ -143,9 +143,25 @@ sealed interface TrailPostPhase {
     val busy: Boolean get() = this is Preparing || this is Uploading
 }
 
+/** One profile's trail grid: what is loaded, and where the next page starts. */
+data class AuthorTrails(
+    val trails: List<Trail> = emptyList(),
+    val cursor: String? = null,
+    val reachedEnd: Boolean = false,
+    val loaded: Boolean = false,
+    val loading: Boolean = false,
+    val failed: Boolean = false,
+)
+
 object TrailsStore {
     var repository: WyrmRepository? = null
+    /** The last good answers, per account (OM, 2026-09-29): see [refresh]. */
+    var cache: com.wyrm.omrajput.data.SocialCache? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /** Trails opened from outside the feed (a grid, an alert): an old one never jumps to its top. */
+    val loose = mutableStateMapOf<String, Trail>()
+    /** Each profile's grid, by player id. */
+    val authors = mutableStateMapOf<String, AuthorTrails>()
 
     val trails = mutableStateListOf<Trail>()
     var loading by mutableStateOf(false); private set
@@ -162,11 +178,47 @@ object TrailsStore {
     private var cursor: String? = null
     private val liking = mutableSetOf<String>()
 
-    fun trail(id: String): Trail? = trails.firstOrNull { it.id == id }
+    fun trail(id: String): Trail? =
+        trails.firstOrNull { it.id == id } ?: loose[id] ?: authors.values.firstNotNullOfOrNull { entry -> entry.trails.firstOrNull { it.id == id } }
 
+    /** One change, applied wherever this trail is shown. */
+    private fun patch(id: String, change: (Trail) -> Trail) {
+        val i = trails.indexOfFirst { it.id == id }
+        if (i >= 0) trails[i] = change(trails[i])
+        loose[id]?.let { loose[id] = change(it) }
+        for ((key, entry) in authors.toMap()) {
+            if (entry.trails.any { it.id == id }) {
+                authors[key] = entry.copy(trails = entry.trails.map { if (it.id == id) change(it) else it })
+            }
+        }
+    }
+
+    private fun persistFeed() { cache?.saveTrails("feed", trails.take(20)) }
+
+    /** Sign-out: "liked" and "mine" belong to the account that signed out. */
+    fun reset() {
+        trails.clear()
+        loose.clear()
+        authors.clear()
+        comments.clear()
+        cursor = null
+        reachedEnd = false
+        loaded = false
+        error = ""
+        liking.clear()
+    }
+
+    /**
+     * Stale-while-revalidate: the last first page paints at once from the
+     * cache, the network answer replaces it in place (same ids keep their
+     * spot), and a placeholder is only ever seen on the very first open.
+     */
     fun refresh(done: () -> Unit = {}) {
         val repo = repository ?: return done()
         if (loading) return done()
+        if (!loaded && trails.isEmpty()) {
+            cache?.trails("feed")?.takeIf { it.isNotEmpty() }?.let { trails.addAll(it); loaded = true }
+        }
         loading = true
         scope.launch {
             try {
@@ -177,6 +229,7 @@ object TrailsStore {
                 reachedEnd = page.nextCursor == null
                 error = ""
                 prefetch(page.trails)
+                persistFeed()
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (failure: Exception) {
@@ -212,12 +265,62 @@ object TrailsStore {
         }
     }
 
+    /** The trail fresh from the server, wherever it is shown. One not in the feed stays out of it. */
     fun reload(id: String) {
         val repo = repository ?: return
         scope.launch {
             runCatching { repo.trail(id) }.getOrNull()?.let { fresh ->
-                val index = trails.indexOfFirst { it.id == id }
-                if (index >= 0) trails[index] = fresh else trails.add(0, fresh)
+                val shown = trails.any { it.id == id } || authors.values.any { entry -> entry.trails.any { it.id == id } }
+                if (!shown) loose[id] = fresh
+                patch(id) { fresh }
+            }
+        }
+    }
+
+    /** A player's trails for their profile grid, cached per player. */
+    fun loadAuthor(id: String) {
+        val repo = repository ?: return
+        if (id.isBlank()) return
+        if (authors[id] == null) {
+            val cached = cache?.trails("author_$id")
+            authors[id] = if (cached != null) AuthorTrails(trails = cached, loaded = true) else AuthorTrails()
+        }
+        if (authors[id]?.loading == true) return
+        authors[id] = authors[id]!!.copy(loading = true)
+        scope.launch {
+            try {
+                val page = repo.trails(null, author = id)
+                authors[id] = AuthorTrails(trails = page.trails, cursor = page.nextCursor,
+                    reachedEnd = page.nextCursor == null, loaded = true)
+                cache?.saveTrails("author_$id", page.trails.take(30))
+                TrailImages.prefetch(page.trails.mapNotNull { it.thumbUrl })
+            } catch (cancel: CancellationException) {
+                authors[id]?.let { authors[id] = it.copy(loading = false) }
+                throw cancel
+            } catch (_: Exception) {
+                authors[id]?.let { authors[id] = it.copy(loading = false, loaded = true, failed = it.trails.isEmpty()) }
+            }
+        }
+    }
+
+    fun loadMoreAuthor(id: String, afterId: String) {
+        val repo = repository ?: return
+        val entry = authors[id] ?: return
+        val next = entry.cursor ?: return
+        if (afterId != entry.trails.lastOrNull()?.id || entry.reachedEnd || entry.loading) return
+        authors[id] = entry.copy(loading = true)
+        scope.launch {
+            try {
+                val page = repo.trails(next, author = id)
+                val current = authors[id] ?: return@launch
+                val known = current.trails.map { it.id }.toSet()
+                authors[id] = current.copy(trails = current.trails + page.trails.filter { it.id !in known },
+                    cursor = page.nextCursor, reachedEnd = page.nextCursor == null, loading = false)
+            } catch (cancel: CancellationException) {
+                authors[id]?.let { authors[id] = it.copy(loading = false) }
+                throw cancel
+            } catch (_: Exception) {
+                authors[id]?.let { authors[id] = it.copy(loading = false) }
             }
         }
     }
@@ -225,20 +328,19 @@ object TrailsStore {
     /** On screen at once; the server's count wins when it answers. */
     fun toggleLike(id: String) {
         val repo = repository ?: return
-        val index = trails.indexOfFirst { it.id == id }
-        if (index < 0 || id in liking) return
-        val next = !trails[index].liked
-        trails[index] = trails[index].copy(liked = next, likeCount = max(0, trails[index].likeCount + if (next) 1 else -1))
+        val current = trail(id) ?: return
+        if (id in liking) return
+        val next = !current.liked
+        patch(id) { it.copy(liked = next, likeCount = max(0, it.likeCount + if (next) 1 else -1)) }
         liking += id
         scope.launch {
             try {
                 val result = repo.likeTrail(id, next)
-                val i = trails.indexOfFirst { it.id == id }
-                if (i >= 0) trails[i] = trails[i].copy(liked = result.liked, likeCount = result.likeCount)
+                patch(id) { it.copy(liked = result.liked, likeCount = result.likeCount) }
+                persistFeed()
             } catch (failure: Exception) {
                 if (failure is CancellationException) throw failure
-                val i = trails.indexOfFirst { it.id == id }
-                if (i >= 0) trails[i] = trails[i].copy(liked = !next, likeCount = max(0, trails[i].likeCount + if (next) -1 else 1))
+                patch(id) { it.copy(liked = !next, likeCount = max(0, it.likeCount + if (next) -1 else 1)) }
             } finally {
                 liking -= id
             }
@@ -273,6 +375,8 @@ object TrailsStore {
                     repo.createTrail(words, photoId, thumbId)
                 }
                 trails.add(0, trail)
+                authors[trail.author.playerId]?.let { authors[trail.author.playerId] = it.copy(trails = listOf(trail) + it.trails) }
+                persistFeed()
                 pendingImage = null
                 pendingActive = false
                 posting = TrailPostPhase.Posted
@@ -308,6 +412,11 @@ object TrailsStore {
         return try {
             repo.deleteTrail(id)
             trails.removeAll { it.id == id }
+            loose.remove(id)
+            for ((key, entry) in authors.toMap()) {
+                if (entry.trails.any { it.id == id }) authors[key] = entry.copy(trails = entry.trails.filterNot { it.id == id })
+            }
+            persistFeed()
             toast = "Trail deleted"
             true
         } catch (cancel: CancellationException) {
@@ -336,8 +445,7 @@ object TrailsStore {
             try {
                 val posted = repo.replyToTrail(id, body)
                 comments[id] = (comments[id].orEmpty()) + posted.comment
-                val i = trails.indexOfFirst { it.id == id }
-                if (i >= 0) trails[i] = trails[i].copy(commentCount = posted.commentCount)
+                patch(id) { it.copy(commentCount = posted.commentCount) }
                 done(true)
             } catch (cancel: CancellationException) {
                 throw cancel
@@ -354,8 +462,7 @@ object TrailsStore {
             try {
                 repo.deleteTrailReply(id, commentId)
                 comments[id] = comments[id].orEmpty().filterNot { it.id == commentId }
-                val i = trails.indexOfFirst { it.id == id }
-                if (i >= 0) trails[i] = trails[i].copy(commentCount = max(0, trails[i].commentCount - 1))
+                patch(id) { it.copy(commentCount = max(0, it.commentCount - 1)) }
             } catch (failure: Exception) {
                 if (failure is CancellationException) throw failure
                 toast = message(failure)

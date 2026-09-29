@@ -30,6 +30,9 @@ object NotificationPreferences {
         "achievement",
         "rank",
         "backup",
+        "trail_like",
+        "trail_reply",
+        "support",
     )
 
     /** A new kind starts enabled so an older client preference file cannot hide it forever. */
@@ -86,4 +89,7 @@ fun NotificationKind.preferenceKey(): String = when (this) {
     NotificationKind.ACHIEVEMENT -> "achievement"
     NotificationKind.RANK -> "rank"
     NotificationKind.BACKUP -> "backup"
+    NotificationKind.TRAIL_LIKE -> "trail_like"
+    NotificationKind.TRAIL_REPLY -> "trail_reply"
+    NotificationKind.SUPPORT -> "support"
 }

@@ -85,6 +85,8 @@ internal fun SettingsDrillScaffold(
     onTrailing: (() -> Unit)? = null,
     sectionTabs: (@Composable () -> Unit)? = null,
     contentOnly: Boolean = false,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     if (contentOnly) {
@@ -147,14 +149,20 @@ internal fun SettingsDrillScaffold(
                 .height(1.dp)
                 .background(Wyrm.Rule),
         )
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .adjustViewport()
-                .verticalScroll(rememberScrollState()),
-        ) {
-            content()
-            Spacer(Modifier.height(24.dp + insetBottom.coerceAtLeast(8.dp)))
+        val body: @Composable (Modifier) -> Unit = { modifier ->
+            Column(
+                modifier = modifier
+                    .adjustViewport()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                content()
+                Spacer(Modifier.height(24.dp + insetBottom.coerceAtLeast(8.dp)))
+            }
+        }
+        if (onRefresh != null) {
+            IosRefreshable(refreshing, onRefresh, Modifier.weight(1f).fillMaxWidth()) { body(Modifier.fillMaxSize()) }
+        } else {
+            body(Modifier.weight(1f))
         }
     }
 }

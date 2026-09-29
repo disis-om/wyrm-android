@@ -147,6 +147,8 @@ public final class WyrmActivity extends SDLActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // First: read how the last run ended, then arm the crash watch.
+        com.wyrm.omrajput.data.CrashWatch.install(this);
         super.onCreate(savedInstanceState);
         // Image arrows: the saved choice reaches the engine before the first frame.
         com.wyrm.omrajput.ui.ArrowSkinStore.attach(this, (skin, brightness) -> {
@@ -465,6 +467,10 @@ public final class WyrmActivity extends SDLActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        // Compose launchers (the Trails studio's picker and camera) first.
+        if (overlay != null && overlay.dispatchActivityResult(requestCode, resultCode, data)) {
+            return;
+        }
         if (requestCode == REQUEST_PROFILE_PHOTO) {
             Uri picked = resultCode == Activity.RESULT_OK && data != null ? data.getData() : null;
             if (picked != null) {
@@ -538,6 +544,9 @@ public final class WyrmActivity extends SDLActivity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions,
                                            int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (overlay != null && overlay.dispatchPermissionResult(requestCode, permissions, grantResults)) {
+            return;
+        }
         if (requestCode == REQUEST_POST_NOTIFICATIONS) {
             if (overlay != null) overlay.onNotificationPermissionChanged();
             return;

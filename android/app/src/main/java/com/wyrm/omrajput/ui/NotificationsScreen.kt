@@ -230,7 +230,7 @@ private fun NotificationCard(
                 Box(Modifier.size(7.dp).clip(WyrmCapsule).background(if (notification.read) Color.Transparent else Wyrm.Live))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = notification.kind.name.replace('_', ' '),
+                    text = alertLabel(notification.kind),
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.Bold,
                     fontSize = 9.5.sp,
@@ -257,13 +257,34 @@ private fun NotificationCard(
                     Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = Wyrm.Ink)
                 }
             }
+            alertActionTitle(notification)?.let { action ->
+                Text("$action ›", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Link)
+            }
         }
     }
 }
 
+/** The kind in tracked caps, as Wyrm iOS words it (`WyrmAlertRouting.label`). */
+private fun alertLabel(kind: NotificationKind): String = when (kind) {
+    NotificationKind.TRAIL_LIKE -> "BEAD ON YOUR TRAIL"
+    NotificationKind.TRAIL_REPLY -> "TRAIL REPLY"
+    NotificationKind.SUPPORT -> "FROM WYRM"
+    else -> kind.name.replace('_', ' ')
+}
+
+/** Where a tap on the card leads, when it leads somewhere (`WyrmAlertRouting.actionTitle`). */
+private fun alertActionTitle(n: WyrmNotification): String? = when (n.kind) {
+    NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY -> if (n.trailId.isNullOrBlank()) null else "View trail"
+    NotificationKind.SUPPORT -> "See your reports"
+    NotificationKind.FOLLOW -> if (n.actorId.isNullOrBlank()) null else "View profile"
+    else -> null
+}
+
 /** The detail rows iOS lists under an alert, from whatever the alert carries. */
 private fun alertMeta(n: WyrmNotification): List<Pair<String, String>> = buildList {
-    n.actorName?.takeIf { it.isNotBlank() }?.let { add("From" to it) }
+    // The trail and support alerts already say who, in their own words.
+    val saysWho = n.kind == NotificationKind.TRAIL_LIKE || n.kind == NotificationKind.TRAIL_REPLY || n.kind == NotificationKind.SUPPORT
+    if (!saysWho) n.actorName?.takeIf { it.isNotBlank() }?.let { add("From" to it) }
     n.eventOrganizer?.takeIf { it.isNotBlank() }?.let { add("Organizer" to it) }
     n.startsAt?.takeIf { it.isNotBlank() }?.let { add("Starts" to it.replace('T', ' ').take(16)) }
     n.serverAddress?.takeIf { it.isNotBlank() }?.let { add("Server" to it) }

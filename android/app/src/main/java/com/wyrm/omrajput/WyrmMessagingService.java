@@ -187,9 +187,11 @@ public class WyrmMessagingService extends FirebaseMessagingService {
         if ("dm".equals(kind) || "invite".equals(kind) || "voice_invite".equals(kind)) {
             return CHANNEL_MESSAGES;
         }
-        if ("follow".equals(kind) || "achievement".equals(kind) || "rank".equals(kind)) {
+        if ("follow".equals(kind) || "achievement".equals(kind) || "rank".equals(kind)
+                || "trail_like".equals(kind) || "trail_reply".equals(kind)) {
             return CHANNEL_SOCIAL;
         }
+        // "support" (a reply from Wyrm) arrives with the notices.
         if ("backup".equals(kind)) return CHANNEL_RECEIPTS;
         return CHANNEL_ALERTS;
     }

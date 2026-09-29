@@ -968,10 +968,17 @@ fun FloatingRootTabs(
     modifier: Modifier = Modifier,
     collapsed: Boolean = false,
     onExpand: () -> Unit = {},
+    /** Unseen replies from Wyrm (Help & feedback), on the Settings tab. */
+    settingsBadge: Int = 0,
 ) {
     val order = RootTab.entries
     val tabs = order.map { tab ->
-        LiquidTab { chosen -> FloatingTabLabel(tab, chosen, if (tab == RootTab.NOTIFICATIONS) unreadNotifications else 0) }
+        val badge = when (tab) {
+            RootTab.NOTIFICATIONS -> unreadNotifications
+            RootTab.SETTINGS -> settingsBadge
+            else -> 0
+        }
+        LiquidTab { chosen -> FloatingTabLabel(tab, chosen, badge) }
     }
     LiquidTabBar(
         tabs = tabs,

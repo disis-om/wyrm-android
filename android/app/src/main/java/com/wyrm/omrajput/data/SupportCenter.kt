@@ -121,7 +121,11 @@ enum class SupportKind(val key: String, val title: String, val pageTitle: String
 
     companion object {
         fun of(key: String): SupportKind = values().firstOrNull { it.key == key } ?: BUG
-        fun title(key: String): String = if (key == "crash") "Crash" else values().firstOrNull { it.key == key }?.title ?: "Report"
+        fun title(key: String): String = when (key) {
+            "crash" -> "Crash"
+            "drop" -> "Arena drop"
+            else -> values().firstOrNull { it.key == key }?.title ?: "Report"
+        }
     }
 }
 
@@ -160,17 +164,39 @@ object SupportContext {
     )
 
     /**
+     * Wyrm's own log tags: the engine (SDL_Log is `SDL/APP`), the SDL shell,
+     * and the Java/Kotlin side. `AndroidRuntime` carries a Java crash's stack.
+     */
+    private val OWN_TAGS = listOf("SDL/APP", "SDL", "Wyrm", "WyrmMessaging", "WyrmUpdater", "WyrmBackup", "AndroidRuntime")
+
+    private fun logcat(vararg args: String): String = runCatching {
+        val process = ProcessBuilder(listOf("logcat", "-d", "-v", "time") + args)
+            .redirectErrorStream(true)
+            .start()
+        val text = process.inputStream.bufferedReader().use { it.readText() }
+        process.destroy()
+        text
+    }.getOrDefault("")
+
+    /**
      * The newest lines of this app's own log. Android lets an app read only
      * its own lines, and the buffer still holds the last run's for a while.
+     *
+     * Wyrm's own tags come first, so system noise cannot push them out, then
+     * the general tail in whatever room is left. The whole stays under [limit]
+     * (the backend keeps the last 120 KB, so going over would cut the focused
+     * block, not the tail).
      */
-    suspend fun recentLog(maxLines: Int = 600): String = withContext(Dispatchers.IO) {
+    suspend fun recentLog(maxLines: Int = 600, limit: Int = 100_000): String = withContext(Dispatchers.IO) {
         runCatching {
-            val process = ProcessBuilder("logcat", "-d", "-v", "time", "-t", maxLines.toString())
-                .redirectErrorStream(true)
-                .start()
-            val text = process.inputStream.bufferedReader().use { it.readText() }
-            process.destroy()
-            SupportRedact.clean(text).takeLast(100_000)
+            val focusedHead = "--- Wyrm's own log ---\n"
+            val tailHead = "\n--- Everything (newest lines) ---\n"
+            val focused = SupportRedact.clean(
+                logcat("-t", "2000", "-s", *OWN_TAGS.map { "$it:V" }.toTypedArray()),
+            ).takeLast(limit * 3 / 5)
+            val room = (limit - focusedHead.length - focused.length - tailHead.length).coerceAtLeast(0)
+            val tail = SupportRedact.clean(logcat("-t", maxLines.toString())).takeLast(room)
+            (focusedHead + focused + tailHead + tail).take(limit)
         }.getOrDefault("")
     }
 }
@@ -380,10 +406,20 @@ object SupportStore {
         private set
     private var seenRevision by mutableStateOf(0)
 
+    /**
+     * The last real screen before Help & feedback, for a manual report.
+     * The overlay writes it on every route change outside Help.
+     */
+    @Volatile var screenBefore: String = "Launch"
+
     fun attach(context: Context, repository: WyrmRepository, cache: SocialCache) {
         appContext = context.applicationContext
         this.repository = repository
         this.cache = cache
+        // The cached reports at launch, so the Settings badge shows at once.
+        if (repository.hasSession && reports.isEmpty()) {
+            cache.supportReports()?.let { reports = it; loaded = true }
+        }
     }
 
     private fun stamp(report: SupportReport) = "${report.id}|${report.updatedAt}"

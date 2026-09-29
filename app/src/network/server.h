@@ -19,6 +19,9 @@ void server_poll(tenv* env);
 void server_destroy(tenv* env);
 bool server_address_is_valid(const char* address);
 
+/** How many sockets `server_connect` opened in the last 60 s (drop reports). */
+int server_connects_last_minute(void);
+
 /**
  * The one way anything reaches the arena.
  *

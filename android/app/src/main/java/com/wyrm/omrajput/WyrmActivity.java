@@ -149,6 +149,8 @@ public final class WyrmActivity extends SDLActivity {
     protected void onCreate(Bundle savedInstanceState) {
         // First: read how the last run ended, then arm the crash watch.
         com.wyrm.omrajput.data.CrashWatch.install(this);
+        // Arena drop reports: preferences only; the network watch runs while resumed.
+        com.wyrm.omrajput.data.DropWatch.install(this);
         super.onCreate(savedInstanceState);
         // Image arrows: the saved choice reaches the engine before the first frame.
         com.wyrm.omrajput.ui.ArrowSkinStore.attach(this, (skin, brightness) -> {
@@ -452,6 +454,7 @@ public final class WyrmActivity extends SDLActivity {
     protected void onResume() {
         super.onResume();
         if (gameMode != null) gameMode.onResume();
+        com.wyrm.omrajput.data.DropWatch.watchNetwork(this, true);
         if (overlay != null) overlay.onActivityResumed();
         if (updateManager != null) {
             updateManager.resumePendingInstall();
@@ -461,6 +464,7 @@ public final class WyrmActivity extends SDLActivity {
     @Override
     protected void onPause() {
         if (gameMode != null) gameMode.onPause();
+        com.wyrm.omrajput.data.DropWatch.watchNetwork(this, false);
         if (overlay != null) overlay.onActivityPaused();
         super.onPause();
     }
@@ -876,6 +880,24 @@ public final class WyrmActivity extends SDLActivity {
         withActivity(activity -> {
             if (activity.overlay == null) return;
             activity.overlay.arenaRefused(safeArena, seconds);
+        });
+    }
+
+    /**
+     * Called by app/src/platform/android_home.c when the arena dropped a live
+     * snake (not a death, not the player leaving). `packed` is `key=value`
+     * lines; DropWatch adds the network facts and asks about a report.
+     * Engine thread: the overlay hops to the UI thread.
+     */
+    public static void setArenaDropFromNative(String packed) {
+        final String safePacked = safe(packed);
+        if (safePacked.isEmpty()) return;
+        withActivity(activity -> {
+            try {
+                if (activity.overlay != null) activity.overlay.onArenaDrop(safePacked);
+            } catch (RuntimeException error) {
+                Log.w(TAG, "arena drop not recorded", error);
+            }
         });
     }
 

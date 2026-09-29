@@ -1339,6 +1339,9 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
       if (o == my_snake(gdata)) gdata->data.kills = (int)o->kill_count;
     }
   } else if (cmd == 'v') {
+    /* Taken in the first moment after spawning, the snake was dropped by the
+       arena, not killed: reported before the death below makes it one. */
+    android_home_arena_fast_death(env, a[m]);
     if (a[m] == 2) {
       gdata->data.want_close_socket = true;
       gdata->data.victory_message_requested = false;
@@ -1383,6 +1386,8 @@ void server_callback(struct mg_connection* c, int ev, void* ev_data) {
 
   if (ev == MG_EV_OPEN) {
     printf("Connection opened\n");
+    /* A drop report describes this socket only. */
+    android_home_arena_socket_opened();
   } else if (ev == MG_EV_WS_OPEN) {
     printf("Connection established\n");
 
@@ -1473,10 +1478,18 @@ void server_callback(struct mg_connection* c, int ev, void* ev_data) {
       int len = msg->data.len - m;
       got_packet(env, a2, len);
     }
+  } else if (ev == MG_EV_WS_CTL) {
+    /* Only the CLOSE frame matters: its code and reason are the arena's own
+       word on why it hung up, kept for a drop report. Ping and pong are
+       answered by Mongoose itself. */
+    struct mg_ws_message* msg = (struct mg_ws_message*)ev_data;
+    if (msg && (msg->flags & 15) == WEBSOCKET_OP_CLOSE)
+      android_home_arena_close_frame(msg->data.buf, msg->data.len);
   } else if (ev == MG_EV_ERROR) {
     /* Logged rather than printed: stdout goes nowhere on a phone, and this is
        the one line that says why a match ended before it began. */
     SDL_Log("Wyrm arena: '%s' errored — %s", usr->usrs.ipv4, (char*)ev_data);
+    android_home_arena_error((const char*)ev_data);
     if (!gdata->closed_by_us)
       game_fail_connection(gdata, "connection error");
   } else if (ev == MG_EV_CLOSE) {
@@ -1502,6 +1515,8 @@ void server_callback(struct mg_connection* c, int ev, void* ev_data) {
     gdata->connection = NULL;
     if (gdata->arena_ready && gdata->curr_screen == PLAYING &&
         !gdata->leaving && !gdata->restart_req) {
+      /* Before the death: it decides whether this close was a drop. */
+      android_home_arena_drop(env);
       android_home_notify_death(env);
       game_clear_world(gdata);
       gdata->arena_ready = false;

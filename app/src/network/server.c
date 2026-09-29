@@ -17,6 +17,23 @@ void arena_send(struct mg_connection* c, const void* data, size_t len) {
   mg_ws_send(c, data, len, WEBSOCKET_OP_BINARY);
 }
 
+/* When the last dials went out, for drop reports: about 30 connects a minute
+   to one arena gets the IP reset, so the count says whether that was likely.
+   A ring, oldest overwritten; 64 is more than a minute can honestly hold. */
+#define CONNECT_RING 64
+static uint64_t connect_ring[CONNECT_RING];
+static int connect_ring_next = 0;
+
+int server_connects_last_minute(void) {
+  uint64_t now = SDL_GetTicks();
+  int count = 0;
+  for (int i = 0; i < CONNECT_RING; i++) {
+    uint64_t at = connect_ring[i];
+    if (at && now - at <= 60000) count++;
+  }
+  return count;
+}
+
 void server_init(tenv* env) {
   tuser_data* usr = env->usr;
   game_data* gdata = &usr->gdata;
@@ -79,6 +96,8 @@ bool server_connect(tenv* env) {
      against this one, so it has to outlive the world it belongs to. */
   gdata->last_connect_ms = gdata->last_packet_ms;
   gdata->persona_tested = false;
+  connect_ring[connect_ring_next] = gdata->last_connect_ms ? gdata->last_connect_ms : 1;
+  connect_ring_next = (connect_ring_next + 1) % CONNECT_RING;
   /* A browser keeps Host equal to the arena URL and sends the page origin.
      Mongoose already writes Host; adding a second slither.com Host and using
      slither.com (rather than slither.io) made some live arenas reject the HTTP

@@ -2,6 +2,7 @@
 #define ANDROID_HOME_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef struct tenv tenv;
 
@@ -46,6 +47,32 @@ void android_home_publish_state(tenv* env);
  * without the engine having to keep telling it.
  */
 void android_home_arena_refused(const char* endpoint, int seconds);
+
+/*
+ * Arena drops (OM, 2026-09-29).
+ *
+ * A drop is the arena hanging up on a snake that is alive in a match, when it
+ * was not a death, not the player leaving and not a refused entry. The engine
+ * only notices and takes a snapshot; the match still ends exactly as before.
+ * Java (`data/DropWatch.kt`) adds the network facts and asks the player whether
+ * to send a report.
+ */
+
+/** A new socket: forgets the last one's close frame and error. */
+void android_home_arena_socket_opened(void);
+/** The arena's WebSocket CLOSE frame: 2-byte code, then the reason text. */
+void android_home_arena_close_frame(const char* payload, size_t len);
+/** The transport error Mongoose raised for the current socket. */
+void android_home_arena_error(const char* text);
+/**
+ * Called just before `android_home_notify_death` where a close becomes a death.
+ * Decides for itself whether this close is a drop, and snapshots at most once
+ * per life, so the two call sites cannot report one drop twice.
+ */
+void android_home_arena_drop(tenv* env);
+/* A 'v' death packet within a moment of spawning is a drop too. Call it before
+   the 'v' is handled (before `android_home_notify_death`). */
+void android_home_arena_fast_death(tenv* env, int death_code);
 
 /*
  * Death.

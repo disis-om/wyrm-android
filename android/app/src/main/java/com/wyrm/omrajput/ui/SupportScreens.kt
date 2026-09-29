@@ -570,7 +570,11 @@ private fun DropPromptOverlay(
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("ARENA DROP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp,
                         letterSpacing = 1.1.sp, color = DropTint)
-                    Text("${record.arenaLabel} · ${record.lifeSec}s alive", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                    val beforeSpawn = record.facts["dropReason"].orEmpty().startsWith("prespawn")
+                    Text(
+                        if (beforeSpawn) "${record.arenaLabel} · before your snake appeared" else "${record.arenaLabel} · ${record.lifeSec}s alive",
+                        fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
+                    )
                 }
             }
             Text("The arena dropped you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 22.sp,

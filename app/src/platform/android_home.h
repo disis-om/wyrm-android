@@ -73,6 +73,15 @@ void android_home_arena_drop(tenv* env);
 /* A 'v' death packet within a moment of spawning is a drop too. Call it before
    the 'v' is handled (before `android_home_notify_death`). */
 void android_home_arena_fast_death(tenv* env, int death_code);
+/* What the join carried, for a report on a socket that dies before spawn. */
+void android_home_arena_join_sent(int packet_bytes, int skin_bytes,
+                                  int skin_runs, int nick_bytes,
+                                  bool custom_skin);
+/* The configuration timeout closed this socket (our doing, not the arena's). */
+void android_home_arena_note_timeout(void);
+/* The socket closed after the WebSocket upgrade and before our snake spawned,
+   and not because we left. Reports once per socket. */
+void android_home_arena_prespawn_close(tenv* env, const char* phase);
 
 /*
  * Death.

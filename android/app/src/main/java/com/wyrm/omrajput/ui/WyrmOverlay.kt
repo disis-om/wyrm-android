@@ -726,7 +726,7 @@ class WyrmOverlay(private val activity: Activity) :
                             entering = enteringArena || arenaProbeGatePending,
                             insetTop = insetTop,
                             insetBottom = insetBottom,
-                            onNicknameChange = { nickname = it },
+                            onNicknameChange = ::chooseNickname,
                             onPlayAi = {
                                 if (!arenaProbeGatePending) {
                                     lobbyJob?.cancel()
@@ -1948,10 +1948,10 @@ class WyrmOverlay(private val activity: Activity) :
                     if (arenaState.arenas.isEmpty()) refreshArenas()
                 }
             },
-            onNicknameChange = { if (interactive) nickname = it },
+            onNicknameChange = { if (interactive) chooseNickname(it) },
             onNicknameDone = {
                 if (interactive) {
-                    nickname = nickname.trim()
+                    // Sent as typed, blank included: the arena shows it as is (OM).
                     host?.onSetNickname(nickname)
                     syncIngameName()
                 }
@@ -5371,7 +5371,11 @@ class WyrmOverlay(private val activity: Activity) :
         profile = player.toWyrmProfile()
         sessionReady = true
         val stored = player.ingameName.orEmpty()
-        if (nickname.isBlank() && stored.isNotBlank()) nickname = stored
+        // The account's name only seeds a name never chosen: a player who
+        // cleared it on purpose keeps it blank.
+        if (nickname.isBlank() && stored.isNotBlank() && !uiPreferences.getBoolean("nickname_chosen", false)) {
+            nickname = stored
+        }
         registerPushToken()
         refreshNotifications()
         refreshUnreadDmCount()
@@ -5411,6 +5415,14 @@ class WyrmOverlay(private val activity: Activity) :
      * the server refuses is still a perfectly good name to play under. The
      * device's copy is the one that matters.
      */
+    /** The player typed a name (or cleared it): it is theirs from now on. */
+    private fun chooseNickname(name: String) {
+        nickname = name
+        if (!uiPreferences.getBoolean("nickname_chosen", false)) {
+            uiPreferences.edit().putBoolean("nickname_chosen", true).apply()
+        }
+    }
+
     private fun syncIngameName() {
         val name = nickname.trim()
         if (!repository.hasSession || name == profile.ingameName) return

@@ -11,6 +11,8 @@ package com.wyrm.omrajput.data
 enum class NotificationKind {
     NOTICE, BROADCAST, EVENT, UPDATE, FEATURE,
     INVITE, VOICE_INVITE, FOLLOW, ACHIEVEMENT, RANK, BACKUP,
+    // Trails and Help & feedback (OM, 2026-09-29).
+    TRAIL_LIKE, TRAIL_REPLY, SUPPORT,
 }
 
 data class BackupCategory(val name: String, val ok: Boolean)
@@ -31,7 +33,7 @@ data class WyrmNotification(
     /** Raw UTC value, used when local and server rows are merged. */
     val createdAt: String,
     val read: Boolean = false,
-    // INVITE and FOLLOW: who this is about.
+    // INVITE, FOLLOW and the trail kinds: who this is about.
     val actorId: String? = null,
     val actorName: String? = null,
     // VOICE_INVITE: the recipient-bound credential remains on the backend.
@@ -48,6 +50,9 @@ data class WyrmNotification(
     val value: Long? = null,
     val previous: Long? = null,
     val categories: List<BackupCategory> = emptyList(),
+    // TRAIL_LIKE / TRAIL_REPLY: the trail. A push carries only the alert's id,
+    // so a tapped push finds this in the alert's row.
+    val trailId: String? = null,
 )
 
 /**
@@ -72,6 +77,7 @@ fun ServerNotification.toWyrmNotification(): WyrmNotification = WyrmNotification
     version = meta["version"],
     value = meta["value"]?.toLongOrNull() ?: meta["rank"]?.toLongOrNull(),
     previous = meta["previous"]?.toLongOrNull(),
+    trailId = meta["trailId"]?.takeIf { it.isNotBlank() },
 )
 
 /** An unknown future kind still gets the plain announcement card. */
@@ -87,6 +93,9 @@ private fun kindOf(raw: String): NotificationKind = when (raw) {
     "achievement" -> NotificationKind.ACHIEVEMENT
     "rank" -> NotificationKind.RANK
     "backup" -> NotificationKind.BACKUP
+    "trail_like" -> NotificationKind.TRAIL_LIKE
+    "trail_reply" -> NotificationKind.TRAIL_REPLY
+    "support" -> NotificationKind.SUPPORT
     else -> NotificationKind.BROADCAST
 }
 

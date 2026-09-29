@@ -179,6 +179,68 @@ class WyrmOverlay(private val activity: Activity) :
     }
     /** The trail open on Route.TRAIL. */
     private var trailOpenId by mutableStateOf("")
+    /** Where Back from a trail goes: the feed, a profile's grid, or an alert. */
+    private var trailReturn by mutableStateOf(Route.TRAILS)
+    /** Where the Trails studio closes to: the feed, or your profile's "New trail". */
+    private var studioReturn by mutableStateOf(Route.TRAILS)
+
+    // Help & feedback (OM, 2026-09-29).
+    private var supportKind by mutableStateOf(com.wyrm.omrajput.data.SupportKind.BUG)
+    private var supportReturn by mutableStateOf(Route.HELP)
+    /** Your reports: back to Help, or (from an alert) out of the panel. */
+    private var supportReportsReturn by mutableStateOf<Route?>(Route.HELP)
+    /** Where a picked photo lands after the crop: Edit profile, or the profile itself. */
+    private var photoReturn by mutableStateOf(Route.EDIT_PROFILE)
+    /** Only what went wrong with the photo, shown under the grown avatar. */
+    private var photoError by mutableStateOf("")
+
+    /*
+     * SDLActivity is not a ComponentActivity, so Compose's result launchers
+     * (permissions, the photo picker, the system camera) had no registry and
+     * crashed the Trails studio the moment it opened. This registry launches
+     * through the activity; WyrmActivity hands every result back to it.
+     */
+    private val resultRegistry = object : androidx.activity.result.ActivityResultRegistry() {
+        override fun <I, O> onLaunch(
+            requestCode: Int,
+            contract: androidx.activity.result.contract.ActivityResultContract<I, O>,
+            input: I,
+            options: androidx.core.app.ActivityOptionsCompat?,
+        ) {
+            val main = android.os.Handler(android.os.Looper.getMainLooper())
+            contract.getSynchronousResult(activity, input)?.let { ready ->
+                main.post { dispatchResult(requestCode, ready.value) }
+                return
+            }
+            val intent = contract.createIntent(activity, input)
+            val permissions = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
+            try {
+                if (intent.action == permissions.ACTION_REQUEST_PERMISSIONS) {
+                    activity.requestPermissions(intent.getStringArrayExtra(permissions.EXTRA_PERMISSIONS) ?: emptyArray(), requestCode)
+                } else {
+                    activity.startActivityForResult(intent, requestCode, options?.toBundle())
+                }
+            } catch (unavailable: Exception) {
+                main.post { dispatchResult(requestCode, android.app.Activity.RESULT_CANCELED, null) }
+            }
+        }
+    }
+    private val resultOwner = object : androidx.activity.result.ActivityResultRegistryOwner {
+        override val activityResultRegistry get() = resultRegistry
+    }
+
+    /** From WyrmActivity.onActivityResult: true when a Compose launcher asked for it. */
+    fun dispatchActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?): Boolean =
+        resultRegistry.dispatchResult(requestCode, resultCode, data)
+
+    /** From WyrmActivity.onRequestPermissionsResult. */
+    fun dispatchPermissionResult(requestCode: Int, permissions: Array<String>, grants: IntArray): Boolean {
+        val contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
+        val data = android.content.Intent()
+            .putExtra(contract.EXTRA_PERMISSIONS, permissions)
+            .putExtra(contract.EXTRA_PERMISSION_GRANT_RESULTS, grants)
+        return resultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
+    }
     private val voiceRepository = VoiceRepository(activity, BuildConfig.WYRM_API_URL)
     private val socialCache = SocialCache(activity)
     private val voicePreferences = VoicePreferences(activity)
@@ -399,6 +461,8 @@ class WyrmOverlay(private val activity: Activity) :
             .getInt("handover_seconds", 5)
     )
     private var chatReturn by mutableStateOf(Route.HOME)
+    /** A thread opened from a profile's Message goes back to that profile. */
+    private var threadReturn by mutableStateOf(Route.CHAT)
 
     /** The panel behind Home's bell — an operator's broadcasts, newest first. */
     private var notifications by mutableStateOf<List<WyrmNotification>>(emptyList())
@@ -448,7 +512,8 @@ class WyrmOverlay(private val activity: Activity) :
         SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_BACKUP,
         SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT,
         CHAT, THREAD, PLAYER, CONNECTIONS, TEAM, VOICE, ARENA_CHAT, PRIVACY, NOTIFICATIONS,
-        GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT, TRAILS, TRAIL, TRAIL_STUDIO;
+        GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT, TRAILS, TRAIL, TRAIL_STUDIO,
+        HELP, SUPPORT_COMPOSE, SUPPORT_REPORTS;
 
         /**
          * Whether this screen was reached from a row on Home.
@@ -543,6 +608,11 @@ class WyrmOverlay(private val activity: Activity) :
 
     fun attach() {
         AvatarImages.init(activity)
+        // Stale-while-revalidate stores and Help & feedback (OM, 2026-09-29).
+        TrailsStore.cache = socialCache
+        com.wyrm.omrajput.data.BadgeStore.repository = repository
+        com.wyrm.omrajput.data.BadgeStore.cache = socialCache
+        com.wyrm.omrajput.data.SupportStore.attach(activity, repository, socialCache)
         savedStateController.performAttach()
         savedStateController.performRestore(Bundle())
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
@@ -844,6 +914,7 @@ class WyrmOverlay(private val activity: Activity) :
 
                         Route.PROFILE -> IosProfileScreen(
                             own = true,
+                            playerId = profile.id.takeIf { it != "local" }.orEmpty(),
                             displayName = profile.displayName.ifBlank { "Wyrm" },
                             handle = if (profile.username.isBlank()) "" else "@${profile.username}",
                             bio = profile.bio,
@@ -855,19 +926,12 @@ class WyrmOverlay(private val activity: Activity) :
                             following = profile.followingCount,
                             isFollowing = false,
                             followsYou = false,
+                            canMessage = false,
                             refreshing = profileLoading,
                             insetTop = insetTop,
                             insetBottom = insetBottom,
                             onBack = { panelOpen = false },
-                            onEdit = {
-                                formError = ""
-                                renameAllowance = null
-                                route = Route.EDIT_PROFILE
-                                scope.launch {
-                                    runCatching { repository.renameAllowance() }
-                                        .onSuccess { renameAllowance = it }
-                                }
-                            },
+                            onEdit = ::openEditProfile,
                             onRefresh = { refreshProfile(force = true) },
                             onFollowers = {
                                 viewedPlayer = null
@@ -879,6 +943,25 @@ class WyrmOverlay(private val activity: Activity) :
                             },
                             onSignOut = ::signOut,
                             onToggleFollow = {},
+                            onMessage = {},
+                            onOpenTrail = ::openTrail,
+                            onNewTrail = {
+                                studioReturn = Route.PROFILE
+                                route = Route.TRAIL_STUDIO
+                            },
+                            onShare = ::shareProfile,
+                            onChangePhoto = {
+                                photoError = ""
+                                formError = ""
+                                photoReturn = Route.PROFILE
+                                host?.onPickPhoto()
+                            },
+                            onRemovePhoto = {
+                                photoError = ""
+                                removePhoto()
+                            },
+                            photoBusy = formBusy,
+                            photoError = photoError,
                         )
 
                         Route.EDIT_PROFILE -> IosEditProfileScreen(
@@ -899,6 +982,7 @@ class WyrmOverlay(private val activity: Activity) :
                             },
                             onPickPhoto = {
                                 formError = ""
+                                photoReturn = Route.EDIT_PROFILE
                                 host?.onPickPhoto()
                             },
                             onRemovePhoto = ::removePhoto,
@@ -912,7 +996,7 @@ class WyrmOverlay(private val activity: Activity) :
                                     title = "PHOTO",
                                     insetTop = insetTop,
                                     insetBottom = insetBottom,
-                                    onBack = { route = Route.EDIT_PROFILE },
+                                    onBack = { route = photoReturn },
                                 )
                             } else {
                                 PhotoCropScreen(
@@ -923,7 +1007,7 @@ class WyrmOverlay(private val activity: Activity) :
                                     insetBottom = insetBottom,
                                     onCancel = {
                                         pendingPhoto = null
-                                        route = Route.EDIT_PROFILE
+                                        route = photoReturn
                                     },
                                     onConfirm = ::uploadPhoto,
                                 )
@@ -993,9 +1077,13 @@ class WyrmOverlay(private val activity: Activity) :
                             onBack = {
                                 chatJob?.cancel()
                                 draft = ""
-                                chatTab = ChatTab.DIRECT
-                                route = Route.CHAT
-                                pollChat()
+                                if (threadReturn == Route.PLAYER) {
+                                    route = Route.PLAYER
+                                } else {
+                                    chatTab = ChatTab.DIRECT
+                                    route = Route.CHAT
+                                    pollChat()
+                                }
                             },
                         )
 
@@ -1003,6 +1091,7 @@ class WyrmOverlay(private val activity: Activity) :
                             val other = viewedPlayer
                             IosProfileScreen(
                                 own = false,
+                                playerId = other?.id.orEmpty(),
                                 displayName = other?.displayName ?: "Player",
                                 handle = other?.handle.orEmpty(),
                                 bio = other?.bio.orEmpty(),
@@ -1014,6 +1103,7 @@ class WyrmOverlay(private val activity: Activity) :
                                 following = other?.followingCount ?: 0,
                                 isFollowing = other?.isFollowing == true,
                                 followsYou = other?.followsYou == true,
+                                canMessage = other?.canMessage == true,
                                 refreshing = false,
                                 insetTop = insetTop,
                                 insetBottom = insetBottom,
@@ -1022,11 +1112,23 @@ class WyrmOverlay(private val activity: Activity) :
                                     if (route == Route.CHAT) pollChat()
                                 },
                                 onEdit = {},
-                                onRefresh = { other?.let { openPlayer(it.id) } },
+                                onRefresh = { other?.let { refreshPlayer(it.id) } },
                                 onFollowers = { other?.let { openConnections(it.id, "followers") } },
                                 onFollowing = { other?.let { openConnections(it.id, "following") } },
                                 onSignOut = {},
                                 onToggleFollow = ::toggleFollow,
+                                onMessage = {
+                                    other?.takeIf { it.canMessage }?.let { person ->
+                                        openThread(person)
+                                        threadReturn = Route.PLAYER
+                                    }
+                                },
+                                onOpenTrail = ::openTrail,
+                                onNewTrail = {},
+                                onShare = {},
+                                onChangePhoto = {},
+                                onRemovePhoto = {},
+                                ready = other != null,
                                 followBusy = formBusy,
                             )
                         }
@@ -1272,8 +1374,11 @@ class WyrmOverlay(private val activity: Activity) :
                             insetTop = insetTop,
                             insetBottom = insetBottom,
                             onBack = { panelOpen = false },
-                            onNew = { route = Route.TRAIL_STUDIO },
-                            onOpen = { id -> trailOpenId = id; route = Route.TRAIL },
+                            onNew = {
+                                studioReturn = Route.TRAILS
+                                route = Route.TRAIL_STUDIO
+                            },
+                            onOpen = ::openTrail,
                             onAuthor = { id -> openPlayer(id) },
                         )
 
@@ -1282,14 +1387,55 @@ class WyrmOverlay(private val activity: Activity) :
                             meId = profile.id,
                             insetTop = insetTop,
                             insetBottom = insetBottom,
-                            onBack = { route = Route.TRAILS },
+                            onBack = {
+                                if (trailReturn.growsFromHome) route = trailReturn else panelOpen = false
+                            },
                             onAuthor = { id -> openPlayer(id) },
                         )
 
-                        Route.TRAIL_STUDIO -> TrailStudioScreen(
+                        Route.TRAIL_STUDIO -> androidx.compose.runtime.CompositionLocalProvider(
+                            androidx.activity.compose.LocalActivityResultRegistryOwner provides resultOwner,
+                        ) {
+                            TrailStudioScreen(
+                                insetTop = insetTop,
+                                insetBottom = insetBottom,
+                                onClose = { route = studioReturn },
+                            )
+                        }
+
+                        Route.HELP -> HelpCenterScreen(
                             insetTop = insetTop,
                             insetBottom = insetBottom,
-                            onClose = { route = Route.TRAILS },
+                            repository = repository,
+                            onBack = { panelOpen = false },
+                            onCompose = { kind -> openSupportCompose(kind) },
+                            onReports = {
+                                supportReportsReturn = Route.HELP
+                                route = Route.SUPPORT_REPORTS
+                            },
+                        )
+
+                        Route.SUPPORT_COMPOSE -> SupportComposeScreen(
+                            initialKind = supportKind,
+                            signedIn = repository.hasSession,
+                            handle = if (profile.username.isBlank()) "" else "@${profile.username}",
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onBack = { route = supportReturn },
+                            onReports = {
+                                supportReportsReturn = Route.HELP
+                                route = Route.SUPPORT_REPORTS
+                            },
+                        )
+
+                        Route.SUPPORT_REPORTS -> SupportReportsScreen(
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onBack = {
+                                val back = supportReportsReturn
+                                if (back != null) route = back else panelOpen = false
+                            },
+                            onNew = { openSupportCompose(com.wyrm.omrajput.data.SupportKind.BUG) },
                         )
 
                         Route.ABOUT -> AboutScreen(
@@ -1607,6 +1753,25 @@ class WyrmOverlay(private val activity: Activity) :
                     /* Deliberately gone. The engine draws the only connecting
                      * screen there is; this was a second one that appeared
                      * before it and handed over with a visible cut. */
+
+                    // Where the player is, for a crash report.
+                    LaunchedEffect(route) { com.wyrm.omrajput.data.CrashWatch.screen = route.name }
+
+                    // The launch after a crash asks whether to send the report,
+                    // over everything but the arena's own landscape surfaces and
+                    // after any update or backup card has been answered.
+                    if (
+                        !updatePromptVisible &&
+                        whatsNewState == null &&
+                        !backupPromptVisible &&
+                        !backupResultPromptVisible &&
+                        route !in setOf(
+                            Route.LOBBY, Route.DEATH, Route.ARENA_CHAT,
+                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT,
+                        )
+                    ) {
+                        CrashPromptHost(repository = repository, insetBottom = insetBottom, insetTop = insetTop)
+                    }
 
                     // Wyrm iOS's session transition: the W and "Signing you out…".
                     sessionTransitionTitle?.let { WyrmSessionTransition(it) }
@@ -2086,6 +2251,13 @@ class WyrmOverlay(private val activity: Activity) :
                 if (interactive) {
                     tabRoot = Route.SETTINGS
                     openPanel(origin) { route = Route.ABOUT }
+                }
+            },
+            helpValue = com.wyrm.omrajput.data.SupportStore.unseenReplies.let { if (it > 0) "$it new" else "" },
+            onOpenHelp = { origin ->
+                if (interactive) {
+                    tabRoot = Route.SETTINGS
+                    openPanel(origin) { route = Route.HELP }
                 }
             },
             onResetAll = {
@@ -2852,6 +3024,7 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     private fun openThread(other: ApiPlayer) {
+        threadReturn = Route.CHAT
         chatJob?.cancel()
         threadPlayer = other
         threadMessages = emptyList()
@@ -2890,19 +3063,75 @@ class WyrmOverlay(private val activity: Activity) :
             Route.SOCIAL -> Route.SOCIAL
             Route.TRAILS -> Route.TRAILS
             Route.TRAIL -> Route.TRAIL
-            else -> Route.LEADERBOARD
+            // Opened from a root page (an alert tapped on Play, say): back there.
+            else -> if (!route.growsFromHome) route else Route.LEADERBOARD
         }
         formError = ""
-        viewedPlayer = null
+        // The last visit paints at once (no "Player" flash); the server answer replaces it.
+        viewedPlayer = socialCache.player(id)?.value
         route = Route.PLAYER
         scope.launch {
             runCatching { repository.player(id) }
-                .onSuccess { viewedPlayer = it }
+                .onSuccess {
+                    viewedPlayer = it
+                    socialCache.savePlayer(it)
+                }
                 .onFailure {
-                    formError = "That player couldn't be loaded."
-                    route = playerReturn
+                    if (viewedPlayer == null) {
+                        formError = "That player couldn't be loaded."
+                        route = playerReturn
+                    }
                 }
         }
+    }
+
+    /** Pull to refresh on another player's profile: the record again, in place. */
+    private fun refreshPlayer(id: String) {
+        scope.launch {
+            runCatching { repository.player(id) }.onSuccess { fresh ->
+                if (viewedPlayer?.id == id) viewedPlayer = fresh
+                socialCache.savePlayer(fresh)
+            }
+        }
+    }
+
+    /** A trail from the feed, a profile's grid or an alert; Back returns there. */
+    private fun openTrail(id: String) {
+        if (id.isBlank()) return
+        trailOpenId = id
+        trailReturn = if (route == Route.TRAIL) trailReturn else route
+        if (!route.growsFromHome) {
+            // From a root page (Alerts, Play…): the trail opens in the panel.
+            rootTabForRoute(route)?.let { tabRoot = route }
+            panelOrigin = Rect.Zero
+            panelOpen = true
+        }
+        route = Route.TRAIL
+    }
+
+    private fun openSupportCompose(kind: com.wyrm.omrajput.data.SupportKind) {
+        supportKind = kind
+        supportReturn = if (route == Route.SUPPORT_REPORTS) Route.SUPPORT_REPORTS else Route.HELP
+        route = Route.SUPPORT_COMPOSE
+    }
+
+    private fun openEditProfile() {
+        formError = ""
+        renameAllowance = null
+        route = Route.EDIT_PROFILE
+        scope.launch {
+            runCatching { repository.renameAllowance() }
+                .onSuccess { renameAllowance = it }
+        }
+    }
+
+    /** Share profile: Android's share sheet with the player's handle. */
+    private fun shareProfile() {
+        val name = if (profile.username.isBlank()) profile.displayName.ifBlank { "Wyrm" } else "@${profile.username}"
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_TEXT, "Find me on Wyrm: $name")
+        runCatching { activity.startActivity(Intent.createChooser(send, "Share profile")) }
     }
 
     private fun toggleFollow() {
@@ -2914,6 +3143,7 @@ class WyrmOverlay(private val activity: Activity) :
             runCatching { repository.setFollow(other.id, !other.isFollowing) }
                 .onSuccess {
                     viewedPlayer = it
+                    socialCache.savePlayer(it)
                     refreshFollowing()
                     refreshProfile()
                 }
@@ -3612,6 +3842,32 @@ class WyrmOverlay(private val activity: Activity) :
                 first = true,
                 onToggle = ::applyBackupFirst,
             )
+        }
+        out += SettingsSearchEntry(
+            id = "app.crash.auto",
+            title = "Always send crash reports",
+            detail = "If Wyrm closes unexpectedly, the report goes without asking",
+            page = "Help & feedback",
+            keywords = "crash report bug problem feedback support",
+            open = { openSettingsPage(Route.HELP) },
+        ) {
+            SettingsBoolRow(
+                title = "Always send crash reports",
+                detail = "If Wyrm closes unexpectedly, the report goes without asking.",
+                on = com.wyrm.omrajput.data.CrashWatch.autoSend,
+                first = true,
+                onToggle = { com.wyrm.omrajput.data.CrashWatch.applyAutoSend(it) },
+            )
+        }
+        out += SettingsSearchEntry(
+            id = "app.help",
+            title = "Help & feedback",
+            detail = "Report a problem, suggest an idea, ask for help",
+            page = "Settings",
+            keywords = "support bug crash problem idea suggestion feedback contact question faq",
+            open = { openSettingsPage(Route.HELP) },
+        ) {
+            SettingsValueRow(title = "Help & feedback", value = "", first = true, onOpen = { openSettingsPage(Route.HELP) })
         }
         out += SettingsSearchEntry(
             id = "app.notify.all",
@@ -4925,7 +5181,8 @@ class WyrmOverlay(private val activity: Activity) :
         activity.runOnUiThread {
             if (photo == null) {
                 formError = "That image couldn't be opened. Try another."
-                route = Route.EDIT_PROFILE
+                if (photoReturn == Route.PROFILE) photoError = formError
+                route = photoReturn
                 return@runOnUiThread
             }
             pendingPhoto = photo
@@ -4945,7 +5202,7 @@ class WyrmOverlay(private val activity: Activity) :
                     acceptPlayer(player)
                     pendingPhoto = null
                     formBusy = false
-                    route = Route.EDIT_PROFILE
+                    route = photoReturn
                 }
                 .onFailure { error ->
                     formBusy = false
@@ -4970,11 +5227,13 @@ class WyrmOverlay(private val activity: Activity) :
                 .onFailure { error ->
                     formBusy = false
                     formError = readablePhotoError(repository.errorCode(error))
+                    photoError = formError
                 }
         }
     }
 
     private fun openProfile() {
+        photoError = ""
         route = Route.PROFILE
         refreshProfile()
         refreshProfileRanks()
@@ -5005,8 +5264,12 @@ class WyrmOverlay(private val activity: Activity) :
         }
         val cached = socialCache.profile()
         if (!force && cached != null) {
-            profile = cached.value.toWyrmProfile()
-            profileUpdatedAt = cached.savedAt
+            // Only fills an empty screen: the profile in memory can be newer
+            // than the cache (a run's best score lands locally first).
+            if (profile.id.isBlank()) {
+                profile = cached.value.toWyrmProfile()
+                profileUpdatedAt = cached.savedAt
+            }
             if (cached.fresh) return
         }
         scope.launch {
@@ -5057,6 +5320,7 @@ class WyrmOverlay(private val activity: Activity) :
         registerPushToken()
         refreshNotifications()
         refreshUnreadDmCount()
+        com.wyrm.omrajput.data.SupportStore.refresh()
         flushPendingRuns()
         startStatsReconciliation()
         scope.launch {
@@ -5292,6 +5556,12 @@ class WyrmOverlay(private val activity: Activity) :
         voiceState = VoiceScreenState()
         whatsNewBackdropVisible = false
         whatsNewState = null
+        // Nothing of one account is shown to the next.
+        TrailsStore.reset()
+        com.wyrm.omrajput.data.BadgeStore.reset()
+        com.wyrm.omrajput.data.SupportStore.reset()
+        viewedPlayer = null
+        photoError = ""
         route = Route.AUTH
     }
 
@@ -5339,7 +5609,17 @@ class WyrmOverlay(private val activity: Activity) :
         val notification = notifications.firstOrNull { it.id == id } ?: return
         setNotificationRead(id, true)
         when (notification.kind) {
-            NotificationKind.FOLLOW -> notification.actorId?.let(::openPlayer)
+            // Pages that live in the panel open inside it; opened with the
+            // panel shut, they slid in and straight back out again.
+            NotificationKind.FOLLOW -> notification.actorId?.takeIf { it.isNotBlank() }?.let { actor ->
+                if (!route.growsFromHome) openPanel(Rect.Zero) { openPlayer(actor) } else openPlayer(actor)
+            }
+            NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY ->
+                notification.trailId?.let { trail ->
+                    openTrail(trail)
+                    TrailsStore.reload(trail)
+                }
+            NotificationKind.SUPPORT -> openSupportReportsFromAlert()
             NotificationKind.UPDATE -> {
                 tabRoot = Route.SETTINGS
                 backupReturn = Route.SETTINGS
@@ -5531,7 +5811,13 @@ class WyrmOverlay(private val activity: Activity) :
                 openChat()
                 chatTab = ChatTab.DIRECT
             }
-            "follow" -> if (target.actorId.isNotBlank()) openPlayer(target.actorId) else route = Route.HOME
+            "follow" -> if (target.actorId.isNotBlank()) {
+                if (!route.growsFromHome) openPanel(Rect.Zero) { openPlayer(target.actorId) } else openPlayer(target.actorId)
+            } else {
+                route = Route.HOME
+            }
+            // The push carries only the alert's id: the trail is in its row.
+            "trail_like", "trail_reply", "support" -> openAlertById(target.id)
             "invite", "notice", "broadcast", "feature", "update", "event",
             "achievement", "rank", "backup" -> {
                 highlightedNotification = target.id.takeIf { it.isNotBlank() }
@@ -5539,6 +5825,39 @@ class WyrmOverlay(private val activity: Activity) :
             }
             else -> route = Route.HOME
         }
+    }
+
+    /** A tapped push for a trail or a reply from Wyrm: find its alert, then open it as a card tap would. */
+    private fun openAlertById(notificationId: String) {
+        scope.launch {
+            runCatching { repository.notifications() }
+                .onSuccess { rows ->
+                    mergeNotifications(rows.map { it.toWyrmNotification() })
+                    if (notifications.any { it.id == notificationId }) {
+                        openNotificationCard(notificationId)
+                    } else {
+                        highlightedNotification = notificationId.takeIf { it.isNotBlank() }
+                        openNotifications()
+                    }
+                }
+                .onFailure {
+                    highlightedNotification = notificationId.takeIf { it.isNotBlank() }
+                    openNotifications()
+                }
+        }
+    }
+
+    /** Your reports, from an alert: its own page in the panel; Back closes it. */
+    private fun openSupportReportsFromAlert() {
+        supportReportsReturn = null
+        if (!route.growsFromHome) {
+            rootTabForRoute(route)?.let { tabRoot = route }
+            panelOrigin = Rect.Zero
+            panelOpen = true
+        } else {
+            supportReportsReturn = route.takeIf { it == Route.HELP }
+        }
+        route = Route.SUPPORT_REPORTS
     }
 
     private fun openVoiceInviteDeepLink(notificationId: String) {

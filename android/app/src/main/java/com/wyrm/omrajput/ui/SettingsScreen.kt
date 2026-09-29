@@ -118,6 +118,9 @@ fun SettingsScreen(
     onOpenFood: (Rect) -> Unit,
     onOpenBackup: (Rect) -> Unit,
     onOpenAbout: (Rect) -> Unit = {},
+    /** "n new" when Wyrm has replied to a report the player has not opened. */
+    helpValue: String = "",
+    onOpenHelp: (Rect) -> Unit = {},
     onResetAll: () -> Unit,
     onTabNotifications: (Rect) -> Unit,
     onTabPlay: (Rect) -> Unit,
@@ -196,6 +199,10 @@ fun SettingsScreen(
                     onOpenBackup,
                 ),
             ),
+        ),
+        SettingsHubGroup(
+            "Help & feedback",
+            listOf(SettingsHubRow("Help & feedback", "Report a problem, suggest an idea, crash reports", helpValue, onOpenHelp)),
         ),
         SettingsHubGroup(
             "About",

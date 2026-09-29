@@ -21,7 +21,9 @@ class SocialCache(context: Context) {
 
     fun clear() = prefs.edit().clear().apply()
 
-    fun profile(): Entry<ApiPlayer>? = read("profile") { it.player() }
+    // The player sits under "value" (write() wraps it); reading the wrapper
+    // itself failed every time, so the profile never painted from cache.
+    fun profile(): Entry<ApiPlayer>? = read("profile") { it.getJSONObject("value").player() }
     fun saveProfile(player: ApiPlayer) = write("profile", player.json())
 
     fun leaderboard(sort: String): Entry<List<ApiPlayer>>? = read("board_$sort") { root ->
@@ -36,6 +38,31 @@ class SocialCache(context: Context) {
     }
     fun saveVoiceRooms(rooms: List<VoiceRoom>) = write("voice_rooms", JSONArray().apply {
         rooms.forEach { put(it.json()) }
+    })
+
+    /*
+     * Stale-while-revalidate for profiles, trail grids, badges and Help &
+     * feedback (OM, 2026-09-29): a screen paints what it showed last time at
+     * once and the answer replaces it in place. Account-scoped like the rest.
+     */
+    fun player(id: String): Entry<ApiPlayer>? = read("player_$id") { it.getJSONObject("value").player() }
+    fun savePlayer(player: ApiPlayer) = write("player_${player.id}", player.json())
+
+    fun trails(key: String): List<Trail>? = read("trails_$key") { root ->
+        root.getJSONArray("value").objects().map { it.toTrail("") }
+    }?.value
+    fun saveTrails(key: String, trails: List<Trail>) = write("trails_$key", JSONArray().apply {
+        trails.forEach { put(it.toJson()) }
+    })
+
+    fun badges(id: String): BadgeBook? = read("badges_$id") { it.getJSONObject("value").toBadgeBook() }?.value
+    fun saveBadges(id: String, book: BadgeBook) = write("badges_$id", book.toJson())
+
+    fun supportReports(): List<SupportReport>? = read("support_mine") { root ->
+        root.getJSONArray("value").objects().map { it.toSupportReport() }
+    }?.value
+    fun saveSupportReports(reports: List<SupportReport>) = write("support_mine", JSONArray().apply {
+        reports.forEach { put(it.toJson()) }
     })
 
     private fun write(key: String, value: Any) {

@@ -138,6 +138,16 @@
             android:name="com.wyrm.omrajput.voice.VoiceCallService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <!-- The system camera writes a Trails photo here (cache/trails-camera). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.trails"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/trails_camera_paths" />
+        </provider>
     </application>
 
 </manifest>

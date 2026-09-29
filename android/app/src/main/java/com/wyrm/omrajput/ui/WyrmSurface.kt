@@ -53,6 +53,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -395,10 +396,35 @@ object Wyrm {
     val CornerLarge = 26.dp
     val Pill = 999.dp
 
-    val Display = FontFamily(Font(R.font.bodoni_moda, FontWeight.SemiBold))
+    /*
+     * Both faces are variable fonts. Manrope's default instance is ExtraLight
+     * (200), and only Normal and Bold were declared, so body text drew thin and
+     * faded next to Wyrm iOS and every SemiBold label jumped to Bold (OM,
+     * 2026-09-29). Every weight is now its own instance with its axis set
+     * explicitly, a touch heavier than its name: Android rasterises Manrope
+     * lighter than iOS does, and this is what matches the iPhone side by side.
+     */
+    @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+    private fun manrope(weight: FontWeight, axis: Int) =
+        Font(R.font.manrope, weight, variationSettings = FontVariation.Settings(FontVariation.weight(axis)))
+
+    @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+    private fun bodoni(weight: FontWeight, axis: Int) =
+        Font(R.font.bodoni_moda, weight, variationSettings = FontVariation.Settings(FontVariation.weight(axis)))
+
+    val Display = FontFamily(
+        bodoni(FontWeight.Normal, 440),
+        bodoni(FontWeight.Medium, 540),
+        bodoni(FontWeight.SemiBold, 640),
+        bodoni(FontWeight.Bold, 740),
+    )
     val Body = FontFamily(
-        Font(R.font.manrope, FontWeight.Normal),
-        Font(R.font.manrope, FontWeight.Bold),
+        manrope(FontWeight.Light, 360),
+        manrope(FontWeight.Normal, 460),
+        manrope(FontWeight.Medium, 560),
+        manrope(FontWeight.SemiBold, 650),
+        manrope(FontWeight.Bold, 740),
+        manrope(FontWeight.ExtraBold, 800),
     )
 }
 

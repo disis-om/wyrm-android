@@ -92,6 +92,25 @@ internal fun JSONObject.toTrail(base: String): Trail {
     )
 }
 
+/** The same shape the server sends, so a cached trail reads back through [toTrail]. */
+internal fun Trail.toJson(): JSONObject = JSONObject()
+    .put("id", id)
+    .put("kind", kind)
+    .put("caption", caption)
+    .put("photo", photo?.let { JSONObject().put("url", it.url).put("width", it.width).put("height", it.height) } ?: JSONObject.NULL)
+    .put("thumbUrl", thumbUrl ?: JSONObject.NULL)
+    .put("likeCount", likeCount)
+    .put("commentCount", commentCount)
+    .put("liked", liked)
+    .put("mine", mine)
+    .put("createdAt", createdAt)
+    .put("author", JSONObject()
+        .put("playerId", author.playerId)
+        .put("displayName", author.name)
+        .put("username", author.handle.removePrefix("@"))
+        .put("avatarUrl", author.avatarUrl)
+        .put("avatarKey", author.avatarKey))
+
 internal fun JSONObject.toTrailComment(base: String) = TrailComment(
     id = getString("id"),
     body = optString("body"),

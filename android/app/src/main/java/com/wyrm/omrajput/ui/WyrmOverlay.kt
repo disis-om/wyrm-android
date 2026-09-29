@@ -87,6 +87,7 @@ import com.wyrm.omrajput.data.PendingRunStore
 import com.wyrm.omrajput.data.ReleaseNotesRepository
 import com.wyrm.omrajput.data.SavedArenas
 import com.wyrm.omrajput.data.SocialCache
+import com.wyrm.omrajput.data.TRAILS_ENABLED
 import com.wyrm.omrajput.data.WyrmNotification
 import com.wyrm.omrajput.data.preferenceKey
 import com.wyrm.omrajput.data.toWyrmNotification
@@ -946,8 +947,10 @@ class WyrmOverlay(private val activity: Activity) :
                             onMessage = {},
                             onOpenTrail = ::openTrail,
                             onNewTrail = {
-                                studioReturn = Route.PROFILE
-                                route = Route.TRAIL_STUDIO
+                                if (TRAILS_ENABLED) {
+                                    studioReturn = Route.PROFILE
+                                    route = Route.TRAIL_STUDIO
+                                }
                             },
                             onShare = ::shareProfile,
                             onChangePhoto = {
@@ -1370,7 +1373,8 @@ class WyrmOverlay(private val activity: Activity) :
                             },
                         )
 
-                        Route.TRAILS -> TrailsFeedScreen(
+                        // Trails paused: reached somehow anyway, the page leaves at once.
+                        Route.TRAILS -> if (!TRAILS_ENABLED) TrailsPausedExit() else TrailsFeedScreen(
                             insetTop = insetTop,
                             insetBottom = insetBottom,
                             onBack = { panelOpen = false },
@@ -1382,7 +1386,7 @@ class WyrmOverlay(private val activity: Activity) :
                             onAuthor = { id -> openPlayer(id) },
                         )
 
-                        Route.TRAIL -> TrailDetailScreen(
+                        Route.TRAIL -> if (!TRAILS_ENABLED) TrailsPausedExit() else TrailDetailScreen(
                             trailId = trailOpenId,
                             meId = profile.id,
                             insetTop = insetTop,
@@ -1393,7 +1397,7 @@ class WyrmOverlay(private val activity: Activity) :
                             onAuthor = { id -> openPlayer(id) },
                         )
 
-                        Route.TRAIL_STUDIO -> androidx.compose.runtime.CompositionLocalProvider(
+                        Route.TRAIL_STUDIO -> if (!TRAILS_ENABLED) TrailsPausedExit() else androidx.compose.runtime.CompositionLocalProvider(
                             androidx.activity.compose.LocalActivityResultRegistryOwner provides resultOwner,
                         ) {
                             TrailStudioScreen(
@@ -2078,7 +2082,7 @@ class WyrmOverlay(private val activity: Activity) :
             onAppear = {},
             onRefresh = { done ->
                 if (interactive) {
-                    TrailsStore.refresh()
+                    if (TRAILS_ENABLED) TrailsStore.refresh()
                     scope.launch {
                         bootstrapSession()
                         refreshProfile(force = true)
@@ -2088,14 +2092,15 @@ class WyrmOverlay(private val activity: Activity) :
                     done()
                 }
             },
-            trailsTeaser = {
+            // Trails paused: no teaser, and Social closes up with no gap.
+            trailsTeaser = if (!TRAILS_ENABLED) null else ({
                 TrailsTeaser {
                     if (interactive) {
                         tabRoot = Route.SOCIAL
                         openPanel(Rect.Zero) { route = Route.TRAILS }
                     }
                 }
-            },
+            }),
             onOpenLeaderboard = { origin ->
                 if (interactive) {
                     tabRoot = Route.SOCIAL
@@ -3097,7 +3102,7 @@ class WyrmOverlay(private val activity: Activity) :
 
     /** A trail from the feed, a profile's grid or an alert; Back returns there. */
     private fun openTrail(id: String) {
-        if (id.isBlank()) return
+        if (!TRAILS_ENABLED || id.isBlank()) return
         trailOpenId = id
         trailReturn = if (route == Route.TRAIL) trailReturn else route
         if (!route.growsFromHome) {
@@ -3107,6 +3112,14 @@ class WyrmOverlay(private val activity: Activity) :
             panelOpen = true
         }
         route = Route.TRAIL
+    }
+
+    /** A Trails route while Trails are paused (TRAILS_ENABLED): close the panel, or go back to the tab. */
+    @Composable
+    private fun TrailsPausedExit() {
+        LaunchedEffect(Unit) {
+            if (panelOpen) panelOpen = false else route = tabRoot
+        }
     }
 
     private fun openSupportCompose(kind: com.wyrm.omrajput.data.SupportKind) {
@@ -5580,7 +5593,11 @@ class WyrmOverlay(private val activity: Activity) :
     /** What the player has allowed: Android's master gate, then Wyrm's kinds. */
     private fun visibleNotifications(): List<WyrmNotification> {
         if (!notificationsAllowed) return emptyList()
-        return notifications.filter { it.kind.preferenceKey() in enabledNotificationKinds }
+        return notifications.filter {
+            it.kind.preferenceKey() in enabledNotificationKinds &&
+                // Trails paused: its alerts neither show nor count as unread.
+                (TRAILS_ENABLED || (it.kind != NotificationKind.TRAIL_LIKE && it.kind != NotificationKind.TRAIL_REPLY))
+        }
     }
 
     /**
@@ -5615,9 +5632,11 @@ class WyrmOverlay(private val activity: Activity) :
                 if (!route.growsFromHome) openPanel(Rect.Zero) { openPlayer(actor) } else openPlayer(actor)
             }
             NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY ->
-                notification.trailId?.let { trail ->
-                    openTrail(trail)
-                    TrailsStore.reload(trail)
+                if (TRAILS_ENABLED) {
+                    notification.trailId?.let { trail ->
+                        openTrail(trail)
+                        TrailsStore.reload(trail)
+                    }
                 }
             NotificationKind.SUPPORT -> openSupportReportsFromAlert()
             NotificationKind.UPDATE -> {
@@ -5817,7 +5836,8 @@ class WyrmOverlay(private val activity: Activity) :
                 route = Route.HOME
             }
             // The push carries only the alert's id: the trail is in its row.
-            "trail_like", "trail_reply", "support" -> openAlertById(target.id)
+            "trail_like", "trail_reply" -> if (TRAILS_ENABLED) openAlertById(target.id) else openNotifications()
+            "support" -> openAlertById(target.id)
             "invite", "notice", "broadcast", "feature", "update", "event",
             "achievement", "rank", "backup" -> {
                 highlightedNotification = target.id.takeIf { it.isNotBlank() }

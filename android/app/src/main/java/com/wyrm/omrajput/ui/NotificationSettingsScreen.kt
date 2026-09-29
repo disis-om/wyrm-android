@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wyrm.omrajput.data.TRAILS_ENABLED
 
 internal data class NotificationChoice(
     val kind: String,
@@ -27,7 +28,8 @@ internal data class NotificationGroup(
     val rows: List<NotificationChoice>,
 )
 
-internal val notificationGroups = listOf(
+// Trails paused (TRAILS_ENABLED): its group, and so its search entries, drop out.
+internal val notificationGroups = listOfNotNull(
     NotificationGroup(
         "People",
         listOf(
@@ -43,7 +45,7 @@ internal val notificationGroups = listOf(
             NotificationChoice("trail_like", "Beads on your trails", "When someone gives a trail you posted a bead."),
             NotificationChoice("trail_reply", "Replies to your trails", "When someone replies to a trail you posted."),
         ),
-    ),
+    ).takeIf { TRAILS_ENABLED },
     NotificationGroup(
         "Wyrm",
         listOf(

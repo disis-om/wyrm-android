@@ -80,6 +80,8 @@ import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.R as LucideR
 import com.wyrm.omrajput.data.Badge
 import com.wyrm.omrajput.data.BadgeStore
+import com.wyrm.omrajput.data.TRAILS_ENABLED
+import com.wyrm.omrajput.data.TRAIL_BADGE_IDS
 import com.wyrm.omrajput.data.Trail
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -181,7 +183,7 @@ fun IosProfileScreen(
 
     LaunchedEffect(playerId) {
         if (playerId.isNotBlank()) {
-            TrailsStore.loadAuthor(playerId)
+            if (TRAILS_ENABLED) TrailsStore.loadAuthor(playerId)
             BadgeStore.load(playerId)
         }
     }
@@ -230,7 +232,7 @@ fun IosProfileScreen(
                     onRefresh = {
                         onRefresh()
                         if (playerId.isNotBlank()) {
-                            TrailsStore.loadAuthor(playerId)
+                            if (TRAILS_ENABLED) TrailsStore.loadAuthor(playerId)
                             BadgeStore.load(playerId)
                         }
                     },
@@ -251,7 +253,7 @@ fun IosProfileScreen(
                                 following = following,
                                 score = score,
                                 kills = kills,
-                                beads = book?.beads ?: 0,
+                                beads = if (TRAILS_ENABLED) book?.beads ?: 0 else 0,
                                 isFollowing = isFollowing,
                                 followsYou = followsYou,
                                 canMessage = canMessage,
@@ -271,13 +273,15 @@ fun IosProfileScreen(
                             )
                         }
                         item(key = "badges") {
-                            ProfileBadgeStrip(book?.badges) { badge ->
+                            // Trails paused: its two badges leave the strip and the count.
+                            val badges = if (TRAILS_ENABLED) book?.badges else book?.badges?.filter { it.id !in TRAIL_BADGE_IDS }
+                            ProfileBadgeStrip(badges) { badge ->
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 badgeShown = badge
                             }
                         }
-                        item(key = "grid-header") { ProfileGridHeader() }
-                        when {
+                        if (TRAILS_ENABLED) item(key = "grid-header") { ProfileGridHeader() }
+                        if (TRAILS_ENABLED) when {
                             grid != null && grid.loaded && grid.trails.isNotEmpty() -> {
                                 val rows = grid.trails.chunked(3)
                                 items(rows, key = { row -> "row-" + row.first().id }) { row ->
@@ -420,7 +424,7 @@ private fun ProfileHeader(
                     .clickable(interactionSource = interaction, indication = null, onClick = onAvatar),
             )
             Row(Modifier.weight(1f)) {
-                ProfileStat(trailCount, "Trails", null)
+                if (TRAILS_ENABLED) ProfileStat(trailCount, "Trails", null)
                 ProfileStat(profileNumber(followers), "Followers", onFollowers)
                 ProfileStat(profileNumber(following), "Following", onFollowing)
             }

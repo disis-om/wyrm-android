@@ -70,6 +70,7 @@ import com.wyrm.omrajput.data.CrashWatch
 import com.wyrm.omrajput.data.SupportKind
 import com.wyrm.omrajput.data.SupportReport
 import com.wyrm.omrajput.data.SupportStore
+import com.wyrm.omrajput.data.TRAILS_ENABLED
 import com.wyrm.omrajput.data.WyrmRepository
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -433,7 +434,9 @@ private val supportFaqs = listOf(
     ),
     SupportFaq(
         "I'm not getting notifications",
-        "Check Settings › Notifications, and that Wyrm is allowed in Android's settings. Likes and replies on your trails arrive as notifications and wait in Alerts.",
+        // Trails paused (TRAILS_ENABLED): no copy mentions them.
+        if (TRAILS_ENABLED) "Check Settings › Notifications, and that Wyrm is allowed in Android's settings. Likes and replies on your trails arrive as notifications and wait in Alerts."
+        else "Check Settings › Notifications, and that Wyrm is allowed in Android's settings. Anything you miss waits in Alerts.",
     ),
     SupportFaq(
         "How do I get Wyrm updates?",
@@ -441,7 +444,8 @@ private val supportFaqs = listOf(
     ),
     SupportFaq(
         "How do I delete my account?",
-        "Profile › Edit profile › Delete account. Your profile, trails and messages are removed from Wyrm's server.",
+        if (TRAILS_ENABLED) "Profile › Edit profile › Delete account. Your profile, trails and messages are removed from Wyrm's server."
+        else "Profile › Edit profile › Delete account. Your profile and messages are removed from Wyrm's server.",
     ),
 )
 

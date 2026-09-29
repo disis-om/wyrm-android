@@ -96,7 +96,10 @@ public class WyrmMessagingService extends FirebaseMessagingService {
         String title = data.getOrDefault("title", "Wyrm");
         String body = data.getOrDefault("body", "");
         String kind = data.getOrDefault("kind", "");
-        if (NotificationPreferences.isKindEnabled(this, kind)) {
+        // Trails are paused for the beta (TRAILS_ENABLED): their pushes show nothing.
+        boolean trailsPaused = !com.wyrm.omrajput.data.TrailsApiKt.TRAILS_ENABLED
+                && ("trail_like".equals(kind) || "trail_reply".equals(kind));
+        if (!trailsPaused && NotificationPreferences.isKindEnabled(this, kind)) {
             showNotification(data, title, body);
         }
         Intent signal = new Intent(ACTION_PUSH_RECEIVED);

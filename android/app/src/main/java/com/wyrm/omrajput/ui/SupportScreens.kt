@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
@@ -67,6 +69,8 @@ import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.R as LucideR
 import com.wyrm.omrajput.data.CrashRecord
 import com.wyrm.omrajput.data.CrashWatch
+import com.wyrm.omrajput.data.DropRecord
+import com.wyrm.omrajput.data.DropWatch
 import com.wyrm.omrajput.data.SupportKind
 import com.wyrm.omrajput.data.SupportReport
 import com.wyrm.omrajput.data.SupportStore
@@ -411,6 +415,246 @@ private fun SupportLineField(
     )
 }
 
+// -------------------------------------------------------------- drop prompt
+
+/** The arena-drop kicker: a warning, not a crash. */
+private val DropTint = Color(0xFFD9822B)
+
+/**
+ * Holds the arena-drop card (OM, 2026-09-29) through its "Thank you". Shown
+ * when the player is back from the dropped match: over the lobby as well as
+ * Home, so the card fits a landscape phone too (at most 520 dp wide, and it
+ * scrolls when the screen is short). At most one card per ten minutes; a newer
+ * drop replaces the one waiting. With "Always send" only a short note shows.
+ */
+@Composable
+internal fun DropPromptHost(repository: WyrmRepository, insetBottom: Dp, insetTop: Dp) {
+    var shown by remember { mutableStateOf<DropRecord?>(null) }
+    var last by remember { mutableStateOf<DropRecord?>(null) }
+    val prompt = DropWatch.prompt
+    LaunchedEffect(prompt) {
+        if (prompt != null) {
+            // Held off while the last card is under ten minutes old.
+            while (!DropWatch.canAsk(prompt)) delay(5_000)
+            DropWatch.markAsked(prompt)
+            shown = prompt
+        } else if (shown != null) {
+            delay(1_600)
+            if (DropWatch.prompt == null) shown = null
+        }
+    }
+    shown?.let { last = it }
+    Box(Modifier.fillMaxSize()) {
+        AnimatedVisibility(visible = shown != null, enter = fadeIn(tween(1)), exit = fadeOut(tween(250))) {
+            last?.let { record ->
+                DropPromptOverlay(
+                    record = record,
+                    repository = repository,
+                    insetBottom = insetBottom,
+                    insetTop = insetTop,
+                    onClosed = { shown = null },
+                )
+            }
+        }
+        val toast = DropWatch.toast
+        LaunchedEffect(toast) {
+            if (toast.isNotEmpty()) {
+                delay(2_400)
+                DropWatch.toast = ""
+            }
+        }
+        AnimatedVisibility(
+            visible = toast.isNotEmpty(),
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = insetTop + 18.dp),
+        ) {
+            Text(
+                toast,
+                fontFamily = Wyrm.Body,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                color = Wyrm.OnInk,
+                modifier = Modifier
+                    .clip(WyrmCapsule)
+                    .background(Wyrm.Ink)
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
+            )
+        }
+    }
+}
+
+/** The crash card's look, with the drop's own words. Nothing is sent until the player says so. */
+@Composable
+private fun DropPromptOverlay(
+    record: DropRecord,
+    repository: WyrmRepository,
+    insetBottom: Dp,
+    insetTop: Dp,
+    onClosed: () -> Unit,
+) {
+    val focus = LocalFocusManager.current
+    val view = LocalView.current
+    var note by remember(record.id) { mutableStateOf("") }
+    var showDetails by remember { mutableStateOf(false) }
+    var phase by remember(record.id) { mutableStateOf(CrashPhase.ASKING) }
+    var appeared by remember { mutableStateOf(false) }
+    val appear by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = if (appeared) iosSpring<Float>(0.5f, 0.86f) else tween<Float>(220),
+        label = "drop-prompt",
+        finishedListener = { value -> if (value == 0f && !appeared) { DropWatch.dismissPrompt(); onClosed() } },
+    )
+    LaunchedEffect(Unit) {
+        appeared = true
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    }
+    val density = LocalDensity.current
+    val busy = phase == CrashPhase.SENDING
+
+    fun send() {
+        focus.clearFocus()
+        phase = CrashPhase.SENDING
+        // `send` clears the prompt itself; the card stays up to say thanks.
+        DropWatch.send(repository, record, note) { ok ->
+            confirmHaptic(view, ok)
+            phase = if (ok) CrashPhase.SENT else CrashPhase.FAILED
+        }
+    }
+
+    Box(Modifier.fillMaxSize().imePadding()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Wyrm.Ink.copy(alpha = 0.34f * appear))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.clearFocus() },
+        )
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(start = 12.dp, end = 12.dp, top = insetTop + 12.dp, bottom = 12.dp + insetBottom)
+                .widthIn(max = 520.dp)
+                .fillMaxWidth()
+                .graphicsLayer { translationY = with(density) { 520.dp.toPx() } * (1f - appear) }
+                .shadow(30.dp, wyrmRounded(28.dp), ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
+                .clip(wyrmRounded(28.dp))
+                .background(Wyrm.Card)
+                .border(1.dp, Wyrm.Rule, wyrmRounded(28.dp))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                // A landscape lobby is short: the card scrolls rather than clipping.
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+        ) {
+            if (phase == CrashPhase.SENT) {
+                Column(
+                    Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    SupportCheckBadge(64.dp, 26.dp)
+                    Text("Thank you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 21.sp, color = Wyrm.Ink)
+                    Text(
+                        "The report is with the developer. You just made Wyrm a little better.",
+                        fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Mute, textAlign = TextAlign.Center,
+                    )
+                }
+                return@Column
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    Modifier.size(50.dp).clip(wyrmRounded(15.dp)).background(DropTint.copy(alpha = 0.13f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(painterResource(LucideR.drawable.lucide_ic_wifi_off), null, tint = DropTint, modifier = Modifier.size(21.dp))
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("ARENA DROP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+                        letterSpacing = 1.1.sp, color = DropTint)
+                    Text("${record.arenaLabel} · ${record.lifeSec}s alive", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                }
+            }
+            Text("The arena dropped you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 22.sp,
+                color = Wyrm.Ink, modifier = Modifier.padding(top = 16.dp))
+            Text(
+                record.sentence,
+                fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.5.sp, color = Wyrm.Mute,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            SupportLineField(
+                value = note,
+                onValue = { note = it.take(1000) },
+                placeholder = "What happened? (optional)",
+                enabled = !busy,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            val chevron by animateFloatAsState(if (showDetails) 180f else 0f, label = "drop-included-chevron")
+            Row(
+                Modifier
+                    .padding(top = 6.dp)
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { showDetails = !showDetails },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("What's included", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Link)
+                Icon(painterResource(LucideR.drawable.lucide_ic_chevron_down), null, tint = Wyrm.Link,
+                    modifier = Modifier.size(13.dp).rotate(chevron))
+            }
+            AnimatedVisibility(visible = showDetails, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    SupportIncludedLine(LucideR.drawable.lucide_ic_activity, "Arena, ping and how long you were in")
+                    SupportIncludedLine(LucideR.drawable.lucide_ic_wifi, "Wi-Fi or mobile data, and whether it switched")
+                    SupportIncludedLine(LucideR.drawable.lucide_ic_file_text, "The last minutes of Wyrm's own log")
+                    SupportIncludedLine(LucideR.drawable.lucide_ic_lock, "Never your password, keys, Team ID or messages", tint = Wyrm.Live)
+                }
+            }
+            Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Always send drop reports", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+                    Text("Skip this question next time", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet,
+                        modifier = Modifier.padding(top = 1.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                InkSwitch(on = DropWatch.autoSend, onToggle = { DropWatch.applyAutoSend(it) })
+            }
+            if (phase == CrashPhase.FAILED) {
+                Text(
+                    "Couldn't send it. Check your connection and try again.",
+                    fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge, modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            SupportCapsuleButton(
+                label = when (phase) {
+                    CrashPhase.SENDING -> "Sending…"
+                    CrashPhase.FAILED -> "Try again"
+                    else -> "Send report"
+                },
+                busy = busy,
+                enabled = !busy,
+                modifier = Modifier.padding(top = 12.dp),
+                onClick = ::send,
+            )
+            Text(
+                "Not now",
+                fontFamily = Wyrm.Body,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = Wyrm.Mute,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(top = 2.dp)
+                    .fillMaxWidth()
+                    .clickable(enabled = !busy, interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                        focus.clearFocus()
+                        appeared = false
+                    }
+                    .padding(vertical = 13.dp),
+            )
+        }
+    }
+}
+
 // --------------------------------------------------------- Help & feedback
 
 private data class SupportFaq(val question: String, val answer: String)
@@ -514,6 +758,15 @@ fun HelpCenterScreen(
                     onToggle = { CrashWatch.applyAutoSend(it) },
                 )
             }
+            Box(Modifier.settingAnchor("app.drop.auto")) {
+                SettingsBoolRow(
+                    title = "Always send drop reports",
+                    detail = "If an arena drops you mid-match, the report goes without asking.",
+                    on = DropWatch.autoSend,
+                    first = false,
+                    onToggle = { DropWatch.applyAutoSend(it) },
+                )
+            }
             CrashWatch.last?.let { last ->
                 SettingsHairline()
                 Row(
@@ -560,7 +813,7 @@ fun HelpCenterScreen(
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp))
         }
         SettingsCaption(
-            "A crash report holds your phone model, Android and Wyrm version, where in Wyrm it stopped and the last few minutes of Wyrm's log. Never your password, keys, Team ID or messages.",
+            "A crash report holds your phone model, Android and Wyrm version, where in Wyrm it stopped and the last few minutes of Wyrm's log. A drop report adds the arena, ping, how long you were in and your network type. Never your password, keys, Team ID or messages.",
         )
 
         SettingsSectionLabel("Common questions")
@@ -653,7 +906,8 @@ fun SupportComposeScreen(
         focus.clearFocus()
         sending = true
         error = ""
-        SupportStore.send(kind, trimmed, attach, "Help & feedback") { failure ->
+        // The screen the player came from, not Help itself.
+        SupportStore.send(kind, trimmed, attach, SupportStore.screenBefore) { failure ->
             sending = false
             if (failure != null) {
                 error = failure
@@ -860,7 +1114,7 @@ private fun SupportReportCard(report: SupportReport) {
                 color = if (report.reply.isBlank()) Wyrm.Quiet else Wyrm.Live, modifier = Modifier.weight(1f))
             Text(trailTime(report.createdAt), fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet)
         }
-        Text(report.message.ifBlank { "Crash report" }, fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 19.sp,
+        Text(report.message.ifBlank { if (report.kind == "drop") "Arena drop report" else "Crash report" }, fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 19.sp,
             color = Wyrm.Ink, maxLines = 5)
         if (report.reply.isNotBlank()) {
             Row(

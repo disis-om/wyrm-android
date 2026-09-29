@@ -252,7 +252,10 @@ void game_loop(tenv* env) {
         } else if (gdata->join_spawned && !gdata->leaving &&
                    !gdata->restart_req) {
           /* Slither `ws.onclose` while playing: `dead_mtm = now`, then login
-             after the death wait. Instant lobby here was the mid-match eject. */
+             after the death wait. Instant lobby here was the mid-match eject.
+             The drop check runs first; it reports once per life, so a close
+             the callback already reported is not reported again. */
+          android_home_arena_drop(env);
           android_home_notify_death(env);
           gdata->closed = false;
         } else {

@@ -10,13 +10,13 @@ import org.json.JSONObject
  */
 
 /**
- * Trails are paused for the beta (OM, 2026-09-29). The code, routes and store
- * stay; only every player-facing entry point is hidden (Social teaser, profile
- * grid and Trails stat, trail badges, trail alerts and pushes, the Trails group
- * in Settings › Notifications). `true` brings every entry point back.
+ * Trails were paused for the beta (OM, 2026-09-29) and are back on the same
+ * day. The flag stays: `false` hides every player-facing entry point again
+ * (Social teaser, profile grid and Trails stat, trail badges, trail alerts and
+ * pushes, the Trails group in Settings › Notifications).
  * Java reads it as `com.wyrm.omrajput.data.TrailsApiKt.TRAILS_ENABLED`.
  */
-const val TRAILS_ENABLED = false
+const val TRAILS_ENABLED = true
 
 /** Badges that only make sense with Trails on; hidden from the strip and its count while paused. */
 val TRAIL_BADGE_IDS = setOf("trailblazer", "crowd-favourite")

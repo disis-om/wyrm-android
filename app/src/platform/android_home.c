@@ -11,6 +11,7 @@
 #include <SDL3/SDL_system.h>
 
 #include "../network/server.h"
+#include "../network/arena_persona.h"
 #include "../network/arena_protocol.h"
 #include "../game/ai_mode.h"
 #include "../game/ui_overlay.h"
@@ -52,6 +53,14 @@ static Uint64 death_began_at = 0;
 static float death_opacity = 1;
 static bool run_recorded = false;
 
+/* Arena drops: what the current socket said on its way out, and whether this
+   life has already been reported. Engine thread only. */
+static int drop_close_code = 0;
+static char drop_close_reason[124] = {0};
+static char drop_error_text[160] = {0};
+static bool drop_errored = false;
+static bool drop_reported = false;
+
 static bool get_activity(JNIEnv** out_env, jclass* out_class) {
   *out_env = (JNIEnv*)SDL_GetAndroidJNIEnv();
   if (!*out_env) {
@@ -75,7 +84,10 @@ static void clear_exception(JNIEnv* env) {
   }
 }
 
-void android_home_begin_life(void) { run_recorded = false; }
+void android_home_begin_life(void) {
+  run_recorded = false;
+  drop_reported = false;
+}
 
 void android_home_reset_death(void) {
   death_opacity = 1;
@@ -209,6 +221,192 @@ void android_home_arena_refused(const char* endpoint, int seconds) {
   clear_exception(env);
   if (arena) (*env)->DeleteLocalRef(env, arena);
   (*env)->DeleteLocalRef(env, activity_class);
+}
+
+/*
+ * Arena drops (OM, 2026-09-29).
+ *
+ * Text from the arena crosses JNI as modified UTF-8, and a stray byte there is
+ * an abort under CheckJNI, so anything the arena wrote is cut down to plain
+ * printable ASCII first. That is all a close reason has ever needed.
+ */
+static void drop_copy_text(char* out, size_t cap, const char* text,
+                           size_t len) {
+  if (!out || cap == 0) return;
+  size_t n = 0;
+  for (size_t i = 0; text && i < len && text[i] && n + 1 < cap; i++) {
+    unsigned char ch = (unsigned char)text[i];
+    out[n++] = (ch >= 0x20 && ch < 0x7f) ? (char)ch : '?';
+  }
+  out[n] = '\0';
+}
+
+void android_home_arena_socket_opened(void) {
+  drop_close_code = 0;
+  drop_close_reason[0] = '\0';
+  drop_error_text[0] = '\0';
+  drop_errored = false;
+}
+
+void android_home_arena_close_frame(const char* payload, size_t len) {
+  if (!payload || len < 2) {
+    drop_close_code = 0;
+    drop_close_reason[0] = '\0';
+    return;
+  }
+  drop_close_code = ((unsigned char)payload[0] << 8) | (unsigned char)payload[1];
+  /* At most 120 characters of reason, as the report carries it. */
+  drop_copy_text(drop_close_reason, sizeof(drop_close_reason), payload + 2,
+                 len - 2 > 120 ? 120 : len - 2);
+  SDL_Log("Wyrm arena: close frame %d '%s'", drop_close_code,
+          drop_close_reason);
+}
+
+void android_home_arena_error(const char* text) {
+  drop_errored = true;
+  drop_copy_text(drop_error_text, sizeof(drop_error_text), text,
+                 text ? strlen(text) : 0);
+}
+
+/* One `key=value` line. Values are already single-line ASCII. */
+static void drop_put(char* buf, size_t cap, size_t* used, const char* key,
+                     const char* value) {
+  if (*used >= cap) return;
+  int wrote = snprintf(buf + *used, cap - *used, "%s=%s\n", key,
+                       value ? value : "");
+  if (wrote < 0) return;
+  *used += (size_t)wrote;
+  if (*used >= cap) *used = cap - 1;
+}
+
+static void drop_put_int(char* buf, size_t cap, size_t* used, const char* key,
+                         long long value) {
+  char number[32];
+  snprintf(number, sizeof(number), "%lld", value);
+  drop_put(buf, cap, used, key, number);
+}
+
+/*
+ * A snake the arena ends within this long of spawning was dropped, not beaten:
+ * the arena takes it with a 'v' 0.3 to 1 s after it appears (OM, 2026-09-29).
+ */
+#define WYRM_FAST_DEATH_SEC 1.5
+
+/* Whether this life can still be reported: once per life, a live arena
+   snake, and not the player leaving. */
+static bool drop_can_report(game_data* gdata) {
+  return !drop_reported && !gdata->ai_mode && gdata->join_spawned &&
+         !gdata->closed_by_us && !gdata->leaving && !gdata->restart_req &&
+         !android_home_death_pending();
+}
+
+static void arena_drop_report(tenv* env, const char* reason, int death_code);
+
+void android_home_arena_drop(tenv* env) {
+  if (!env) return;
+  /* Evaluated before `android_home_notify_death`: once that has run a death is
+     always pending, and a real death (a 'v' first) already made it pending. */
+  if (!drop_can_report(&env->usr->gdata)) return;
+  arena_drop_report(env, drop_errored ? "error" : "closed", -1);
+}
+
+void android_home_arena_fast_death(tenv* env, int death_code) {
+  if (!env) return;
+  game_data* gdata = &env->usr->gdata;
+  if (!drop_can_report(gdata)) return;
+  double life = glfwGetTime() - gdata->life_started_sec;
+  if (life < 0 || life >= WYRM_FAST_DEATH_SEC) return;
+  arena_drop_report(env, "death_packet", death_code);
+}
+
+static void arena_drop_report(tenv* env, const char* reason, int death_code) {
+  game_data* gdata = &env->usr->gdata;
+  user_settings* settings = &env->usr->usrs;
+  drop_reported = true;
+
+  /* The same numbers `game_capture_final_score` reads, without writing any of
+     them: the death that follows still records the run exactly as before. */
+  int score = gdata->data.score;
+  int length = 0;
+  int kills = gdata->data.kills;
+  size_t count = tdarray_length(gdata->data.snakes);
+  if (count && gdata->data.snakes[count - 1].local_player) {
+    snake* me = gdata->data.snakes + count - 1;
+    length = me->sct;
+    kills = (int)me->kill_count;
+    int sct = me->sct + me->rsc;
+    int limit = (int)tdarray_length(gdata->data.fpsls) - 1;
+    if (sct >= 0 && sct <= limit && gdata->data.fmlts[sct] > 0)
+      score = (int)floorf((gdata->data.fpsls[sct] +
+          me->fam / gdata->data.fmlts[sct] - 1) * 15 - 5);
+  }
+  double life = glfwGetTime() - gdata->life_started_sec;
+  if (life < 0) life = 0;
+  uint64_t now = SDL_GetTicks();
+  uint64_t quiet = now >= gdata->last_packet_ms ? now - gdata->last_packet_ms : 0;
+  /* Dial to spawn: how long the arena took to hand over a snake. */
+  long long since_dial = gdata->attempt_started_ms && now >= gdata->attempt_started_ms
+      ? (long long)(now - gdata->attempt_started_ms) : -1;
+  long long dial_to_spawn = since_dial >= 0 ? since_dial - (long long)(life * 1000.0) : -1;
+  if (dial_to_spawn < 0 && since_dial >= 0) dial_to_spawn = 0;
+  char arena[MAX_IPV4_LEN + 1];
+  drop_copy_text(arena, sizeof(arena), settings->ipv4, strlen(settings->ipv4));
+  char persona[48];
+  const char* persona_name = arena_persona_get(gdata->persona)->name;
+  drop_copy_text(persona, sizeof(persona), persona_name,
+                 persona_name ? strlen(persona_name) : 0);
+  char life_text[32];
+  snprintf(life_text, sizeof(life_text), "%.1f", life);
+
+  char packed[1024];
+  size_t used = 0;
+  packed[0] = '\0';
+  drop_put(packed, sizeof(packed), &used, "dropReason", reason);
+  drop_put_int(packed, sizeof(packed), &used, "deathPacket", death_code);
+  drop_put_int(packed, sizeof(packed), &used, "dialToSpawnMs", dial_to_spawn);
+  drop_put_int(packed, sizeof(packed), &used, "closeCode", drop_close_code);
+  drop_put(packed, sizeof(packed), &used, "closeReason", drop_close_reason);
+  drop_put(packed, sizeof(packed), &used, "errorText", drop_error_text);
+  drop_put(packed, sizeof(packed), &used, "lifeSec", life_text);
+  drop_put_int(packed, sizeof(packed), &used, "score", score);
+  drop_put_int(packed, sizeof(packed), &used, "length", length);
+  drop_put_int(packed, sizeof(packed), &used, "kills", kills);
+  drop_put_int(packed, sizeof(packed), &used, "pingMs", gdata->data.ping);
+  drop_put_int(packed, sizeof(packed), &used, "lagging",
+               gdata->data.lagging ? 1 : 0);
+  drop_put_int(packed, sizeof(packed), &used, "fps", gdata->data.fps);
+  drop_put_int(packed, sizeof(packed), &used, "lastPacketAgoMs",
+               (long long)quiet);
+  drop_put_int(packed, sizeof(packed), &used, "connectsLastMin",
+               server_connects_last_minute());
+  drop_put(packed, sizeof(packed), &used, "persona", persona);
+  drop_put_int(packed, sizeof(packed), &used, "protocol",
+               gdata->data.protocol_version);
+  drop_put(packed, sizeof(packed), &used, "arena", arena);
+  SDL_Log("Wyrm arena: drop after %ss — %s (v %d), close %d '%s' %s",
+          life_text, reason, death_code, drop_close_code, drop_close_reason,
+          drop_error_text);
+
+  JNIEnv* jni = NULL;
+  jclass activity_class = NULL;
+  if (!get_activity(&jni, &activity_class)) return;
+  jmethodID method = (*jni)->GetStaticMethodID(
+      jni, activity_class, "setArenaDropFromNative", "(Ljava/lang/String;)V");
+  if (!method) {
+    /* An older shell has no drop card; the match ends as it always did. */
+    (*jni)->ExceptionClear(jni);
+    (*jni)->DeleteLocalRef(jni, activity_class);
+    return;
+  }
+  jstring text = (*jni)->NewStringUTF(jni, packed);
+  if (text) {
+    (*jni)->CallStaticVoidMethod(jni, activity_class, method, text);
+    clear_exception(jni);
+    (*jni)->DeleteLocalRef(jni, text);
+  } else {
+    clear_exception(jni);
+  }
+  (*jni)->DeleteLocalRef(jni, activity_class);
 }
 
 bool android_home_death_active(void) { return death_active; }
@@ -674,6 +872,17 @@ void android_home_advance_death(tenv* env, float vfr) { (void)env; (void)vfr; }
 void android_home_arena_refused(const char* endpoint, int seconds) {
   (void)endpoint;
   (void)seconds;
+}
+void android_home_arena_socket_opened(void) {}
+void android_home_arena_close_frame(const char* payload, size_t len) {
+  (void)payload;
+  (void)len;
+}
+void android_home_arena_error(const char* text) { (void)text; }
+void android_home_arena_drop(tenv* env) { (void)env; }
+void android_home_arena_fast_death(tenv* env, int death_code) {
+  (void)env;
+  (void)death_code;
 }
 
 #endif

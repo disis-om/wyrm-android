@@ -415,8 +415,10 @@ class WyrmOverlay(private val activity: Activity) :
     private val pushReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != WyrmMessagingService.ACTION_PUSH_RECEIVED) return
-            if (intent.getStringExtra("kind") == "dm") refreshUnreadDmCount()
+            val kind = intent.getStringExtra("kind")
+            if (kind == "dm") refreshUnreadDmCount()
             else refreshNotifications()
+            if (kind == "support") com.wyrm.omrajput.data.SupportStore.refresh()
         }
     }
     private var pushReceiverRegistered = false
@@ -1759,7 +1761,13 @@ class WyrmOverlay(private val activity: Activity) :
                      * before it and handed over with a visible cut. */
 
                     // Where the player is, for a crash report.
-                    LaunchedEffect(route) { com.wyrm.omrajput.data.CrashWatch.screen = route.name }
+                    LaunchedEffect(route) {
+                        com.wyrm.omrajput.data.CrashWatch.screen = route.name
+                        // A manual report names where the player came from, not Help.
+                        if (route !in setOf(Route.HELP, Route.SUPPORT_COMPOSE, Route.SUPPORT_REPORTS)) {
+                            com.wyrm.omrajput.data.SupportStore.screenBefore = route.name
+                        }
+                    }
 
                     // The launch after a crash asks whether to send the report,
                     // over everything but the arena's own landscape surfaces and
@@ -1775,6 +1783,23 @@ class WyrmOverlay(private val activity: Activity) :
                         )
                     ) {
                         CrashPromptHost(repository = repository, insetBottom = insetBottom, insetTop = insetTop)
+                    }
+
+                    // An arena drop asks when the player is back from the match:
+                    // the lobby included (landscape), after any crash card.
+                    if (
+                        !updatePromptVisible &&
+                        whatsNewState == null &&
+                        !backupPromptVisible &&
+                        !backupResultPromptVisible &&
+                        com.wyrm.omrajput.data.CrashWatch.prompt == null &&
+                        !enteringArena &&
+                        route !in setOf(
+                            Route.DEATH, Route.ARENA_CHAT,
+                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT,
+                        )
+                    ) {
+                        DropPromptHost(repository = repository, insetBottom = insetBottom, insetTop = insetTop)
                     }
 
                     // Wyrm iOS's session transition: the W and "Signing you out…".
@@ -2568,6 +2593,7 @@ class WyrmOverlay(private val activity: Activity) :
         FloatingRootTabs(
             selected = selected,
             unreadNotifications = visibleNotifications().count { !it.read },
+            settingsBadge = com.wyrm.omrajput.data.SupportStore.unseenReplies,
             modifier = modifier,
             collapsed = rootBarCollapsed,
             onExpand = { rootBarCollapsed = false },
@@ -3870,6 +3896,22 @@ class WyrmOverlay(private val activity: Activity) :
                 on = com.wyrm.omrajput.data.CrashWatch.autoSend,
                 first = true,
                 onToggle = { com.wyrm.omrajput.data.CrashWatch.applyAutoSend(it) },
+            )
+        }
+        out += SettingsSearchEntry(
+            id = "app.drop.auto",
+            title = "Always send drop reports",
+            detail = "If an arena drops you mid-match, the report goes without asking",
+            page = "Help & feedback",
+            keywords = "drop disconnect arena kicked network report feedback support",
+            open = { openSettingsPage(Route.HELP) },
+        ) {
+            SettingsBoolRow(
+                title = "Always send drop reports",
+                detail = "If an arena drops you mid-match, the report goes without asking.",
+                on = com.wyrm.omrajput.data.DropWatch.autoSend,
+                first = true,
+                onToggle = { com.wyrm.omrajput.data.DropWatch.applyAutoSend(it) },
             )
         }
         out += SettingsSearchEntry(
@@ -5573,6 +5615,7 @@ class WyrmOverlay(private val activity: Activity) :
         TrailsStore.reset()
         com.wyrm.omrajput.data.BadgeStore.reset()
         com.wyrm.omrajput.data.SupportStore.reset()
+        com.wyrm.omrajput.data.DropWatch.dismissPrompt()
         viewedPlayer = null
         photoError = ""
         route = Route.AUTH
@@ -6039,12 +6082,30 @@ class WyrmOverlay(private val activity: Activity) :
         }
     }
 
+    /**
+     * The arena dropped a live snake (engine thread, via WyrmActivity). The
+     * directory record, when the picker knows the endpoint, adds the arena's
+     * id, cluster and player count; DropWatch does the rest.
+     */
+    fun onArenaDrop(packed: String) {
+        activity.runOnUiThread {
+            val endpoint = packed.lineSequence()
+                .firstOrNull { it.startsWith("arena=") }
+                ?.removePrefix("arena=")?.trim().orEmpty()
+            val arena = arenaState.arenas.firstOrNull { it.endpoint.equals(endpoint, ignoreCase = true) }
+                ?: lobbyArena?.takeIf { it.endpoint.equals(endpoint, ignoreCase = true) }
+            com.wyrm.omrajput.data.DropWatch.onNativeDrop(packed, arena, repository)
+        }
+    }
+
     fun onActivityResumed() {
         activityResumed = true
         if (shown) lifecycleRegistry.currentState = Lifecycle.State.RESUMED
         refreshNotificationPreferences()
         refreshUnreadDmCount()
         refreshNotifications()
+        // The Settings badge counts replies from Wyrm; keep it fresh.
+        com.wyrm.omrajput.data.SupportStore.refresh()
     }
 
     /** Runtime permission dialogs do not always pause the Activity. */

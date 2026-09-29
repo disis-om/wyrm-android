@@ -3,15 +3,15 @@
   "source": "github",
   "productName": "Wyrm",
   "packageName": "com.wyrm.omrajput",
-  "versionCode": 622,
-  "versionName": "6.2.2",
+  "versionCode": 625,
+  "versionName": "6.2.5",
   "minimumVersionCode": 0,
   "mandatory": false,
-  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v6.2.2/Wyrm-v6.2.2.apk",
-  "apkSize": 56822377,
-  "sha256": "614f2d36776732b61d7ba3b5ba5bc9adc67ce33cafc745ab6a953350966ac8f9",
-  "publishedAt": "2026-09-27T08:49:25Z",
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v6.2.5/Wyrm-v6.2.5.apk",
+  "apkSize": 60058484,
+  "sha256": "396922d8123eeb545d71b1e83d3aaaa68d4e476f0439353b7eb0b89d22e3190f",
+  "publishedAt": "2026-09-29T08:36:50Z",
   "headline": "A new version of Wyrm",
   "author": "OM Rajput",
-  "releaseNotes": ["Image arrows from Wyrm iOS, with a picker and live preview.", "Seamless Liquid Glass tab bar fold.", "Update now button, and Back up before updating is now a switch.", "Team mode redesigned like Wyrm iOS: saved teams behind the gear, FPS, ping and leaderboard in the roster, cleaner names and chat.", "Slider and switch labels are no longer cut off; pages no longer tuck under the header.", "Lobby: Home replaces Quick settings. Colour wheel knob turns only when held."]
+  "releaseNotes": ["Help & feedback in Settings: report a problem, suggest an idea or ask for help, and read Wyrm's replies under Your reports.", "Crash reports: if Wyrm closes unexpectedly, it asks before sending the report. Turn on Always send to skip the question.", "A new profile: your photo beside Followers and Following, your Best and Kills, Share profile, and tap your photo to enlarge, change or remove it.", "Badges with progress on every profile.", "54 Wyrm beads in Skin Studio: patterns, materials and the India flag.", "Wyrm accessories for your own snake: hair with a colour slider, ears and glasses.", "New welcome screen, clearer and heavier fonts, and search in Settings.", "Replies from Wyrm arrive as notifications. Profiles and badges open instantly from your last visit.", "Fixed: image arrows now show in the arena, and the privacy policy is included in the app.", "Team Mode is paused for now."]
 }

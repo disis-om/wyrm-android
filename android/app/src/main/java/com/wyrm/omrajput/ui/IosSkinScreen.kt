@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
@@ -132,6 +135,8 @@ internal fun IosSkinScreen(
     onLook: ((WyrmLookSpec) -> Unit)? = null,
     /** Drawn under the header: the "Trying …'s skin" banner. */
     banner: (@Composable () -> Unit)? = null,
+    /** "Share this skin": the Share editor with this skin; null hides the button. */
+    onShareSkin: (() -> Unit)? = null,
 ) {
     val textures by rememberSkinTextures()
     val lookNow = look ?: WyrmLookStore.spec()
@@ -199,21 +204,25 @@ internal fun IosSkinScreen(
     Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
         IosScreenHeader(kicker = "WYRM", title = "Skin")
         banner?.invoke()
-        SkinPreview(
-            textures = textures,
-            groups = previewGroups,
-            colors = previewColors,
-            preset = preset,
-            custom = customEnabled,
-            accessoryId = accessory,
-            tagId = tag,
-            backgroundId = backgroundId,
-            chain = chain,
-            swing = swing,
-            tagScale = tagScale,
-            look = lookNow,
-            modifier = Modifier.fillMaxWidth().height(218.dp),
-        )
+        Box(Modifier.fillMaxWidth().height(218.dp)) {
+            SkinPreview(
+                textures = textures,
+                groups = previewGroups,
+                colors = previewColors,
+                preset = preset,
+                custom = customEnabled,
+                accessoryId = accessory,
+                tagId = tag,
+                backgroundId = backgroundId,
+                chain = chain,
+                swing = swing,
+                tagScale = tagScale,
+                look = lookNow,
+                modifier = Modifier.fillMaxSize(),
+            )
+            // Share this skin: bottom left of the preview, just above the rule (OM).
+            onShareSkin?.let { share -> ShareSkinButton(share, Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 10.dp)) }
+        }
         Box(Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(1.dp).background(Wyrm.Rule))
         AnimatedContent(
             targetState = section,
@@ -445,6 +454,37 @@ internal fun IosSkinScreen(
 }
 
 /* ------------------------------------------------------------- the pieces */
+
+/**
+ * "Share this skin" (OM, 2026-09-30): a small ink capsule at the preview's
+ * bottom left, above the rule. Opens the Trails Share editor with the snake
+ * exactly as the preview draws it.
+ */
+@Composable
+private fun ShareSkinButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Row(
+        modifier
+            .height(34.dp)
+            .scale(pressScale(pressed))
+            .clip(CircleShape)
+            .background(Wyrm.Ink)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 13.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(com.composables.icons.lucide.R.drawable.lucide_ic_share),
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            colorFilter = ColorFilter.tint(Wyrm.OnInk),
+        )
+        Spacer(Modifier.width(7.dp))
+        Text("Share this skin", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Wyrm.OnInk)
+    }
+}
 
 /** "Try this skin": whose look the preview shows, and the two ways out. Nothing is worn until Wear. */
 @Composable
@@ -767,7 +807,7 @@ private fun SkinPreview(
     BoxWithConstraints(modifier.background(Wyrm.Paper)) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
-        val segmentsPerRow = 128
+        val segmentsPerRow = SKIN_ROW
         val nativeSpan = 1f + (segmentsPerRow - 1) * (8f / 48f)
         val px = with(androidx.compose.ui.platform.LocalDensity.current) { 1.dp.toPx() }
         val scale = min((w - 28 * px) / nativeSpan, (h - 24 * px) / 2.16f)
@@ -800,47 +840,8 @@ private fun SkinPreview(
         }
         Canvas(Modifier.fillMaxSize()) {
             val t = textures ?: return@Canvas
-            val total = segmentsPerRow * 2
-            fun point(segment: Int): Offset {
-                val local = segment % segmentsPerRow
-                val slot = if (segment < segmentsPerRow) segmentsPerRow - 1 - local else local
-                return Offset(x + scale * 0.5f + slot * step, if (segment < segmentsPerRow) tailY else headY)
-            }
-            fun groupAt(codeIndex: Int) = if (groups.isEmpty()) 7 else groups[codeIndex % groups.size]
-            fun airKind(codeIndex: Int): Int? {
-                if (codeIndex !in 0 until total || codeIndex >= colors.size) return null
-                return if (groupAt(codeIndex) < 0) null else AirSkin.kind(colors[codeIndex])
-            }
-            val shadowSize = scale * 102f / 64f
-            fun airShadow(codeIndex: Int, alpha: Float) {
-                if (!AirSkin.BEAD_SHADOW) return
-                val shadow = t.airShadow ?: return
-                if (airKind(codeIndex) == null) return
-                val p = point(total - 1 - codeIndex)
-                drawImageInto(shadow, p.x - shadowSize / 2, p.y - shadowSize / 2, shadowSize, shadowSize, alpha = alpha.coerceIn(0f, 1f))
-            }
-            fun shadowAlpha(codeIndex: Int) = if (codeIndex < 9) codeIndex / 9f else 1f
-            for (codeIndex in 8 downTo 0) airShadow(codeIndex, 1f - codeIndex / 9f)
-            for (n in 1..4) airShadow(total - n, shadowAlpha(total - n))
-            for (row in 0 until 2) {
-                for (local in 0 until segmentsPerRow) {
-                    val segment = row * segmentsPerRow + local
-                    val codeIndex = total - 1 - segment
-                    if (codeIndex >= 4) airShadow(codeIndex - 4, shadowAlpha(codeIndex - 4))
-                    val group = groupAt(codeIndex)
-                    if (group < 0) continue
-                    val (bead, tint) = skinBead(t, group, colors.getOrElse(codeIndex) { 0 }) ?: continue
-                    val p = point(segment)
-                    if (row == 1) {
-                        rotate(180f, pivot = p) { drawImageInto(bead, p.x - scale / 2, p.y - scale / 2, scale, scale, tint) }
-                    } else {
-                        drawImageInto(bead, p.x - scale / 2, p.y - scale / 2, scale, scale, tint)
-                    }
-                }
-            }
-            // The eyes, the accessory and the Wyrm look.
-            drawSkinHead(t, head, scale, px, preset, custom, accessoryId, look) { img, l, tp, w, h, tint ->
-                drawImageInto(img, l, tp, w, h, tint)
+            drawSkinRows(t, groups, colors, preset, custom, accessoryId, look, x, headY, tailY, scale, px) { img, l, tp, iw, ih, tint, alpha ->
+                drawImageInto(img, l, tp, iw, ih, tint, alpha)
             }
         }
         val tagItem = SkinCatalog.tags.getOrNull(tagId)
@@ -923,85 +924,117 @@ private fun DrawScope.drawSkinHead(
 }
 
 /** An image into a rectangle at float precision, so a scaled-up export keeps every bead in step. */
-private fun DrawScope.drawImageExact(image: ImageBitmap, left: Float, top: Float, width: Float, height: Float, tint: Color?) {
+private fun DrawScope.drawImageExact(image: ImageBitmap, left: Float, top: Float, width: Float, height: Float, tint: Color?, alpha: Float = 1f) {
     if (width <= 0f || height <= 0f || image.width <= 0 || image.height <= 0) return
     withTransform({
         translate(left, top)
         scale(width / image.width, height / image.height, pivot = Offset.Zero)
     }) {
-        drawImage(image, colorFilter = tint?.let { ColorFilter.tint(it, BlendMode.Modulate) })
+        drawImage(image, alpha = alpha, colorFilter = tint?.let { ColorFilter.tint(it, BlendMode.Modulate) })
     }
 }
 
-/* The "Share run" skin sticker (OM, 2026-09-30), in bead widths: one S of
-   beads 8/48 of a bead apart, like the Skin preview, head on the right. */
-private const val STICKER_SPAN = 8.4f
-private const val STICKER_WAVE = 0.72f
-private const val STICKER_W = 10.8f
-private const val STICKER_H = 3.4f
+/** Beads in each of the Skin preview's two rows. */
+private const val SKIN_ROW = 128
+
+/**
+ * The Skin preview's snake, the one drawing the preview and the Share sticker
+ * both use, so they match bead for bead: [SKIN_ROW] beads a row, 8/48 of a
+ * bead apart, the tail row under the head row turned half a revolution, AIR
+ * shadows in AIR's order, then the eyes, the accessory and the Wyrm look. [x]
+ * is the body's left edge; the head ends the row at [headY] on the right.
+ * [draw] paints one image into a rectangle, tinted or not, at an alpha.
+ */
+private fun DrawScope.drawSkinRows(
+    t: SkinTextures,
+    groups: List<Int>,
+    colors: List<Int>,
+    preset: Int,
+    custom: Boolean,
+    accessoryId: Int,
+    look: WyrmLookSpec,
+    x: Float,
+    headY: Float,
+    tailY: Float,
+    scale: Float,
+    px: Float,
+    draw: DrawScope.(ImageBitmap, Float, Float, Float, Float, Color?, Float) -> Unit,
+) {
+    val step = 8f * (scale / 48f)
+    val total = SKIN_ROW * 2
+    fun point(segment: Int): Offset {
+        val local = segment % SKIN_ROW
+        val slot = if (segment < SKIN_ROW) SKIN_ROW - 1 - local else local
+        return Offset(x + scale * 0.5f + slot * step, if (segment < SKIN_ROW) tailY else headY)
+    }
+    fun groupAt(codeIndex: Int) = if (groups.isEmpty()) 7 else groups[codeIndex % groups.size]
+    fun airKind(codeIndex: Int): Int? {
+        if (codeIndex !in 0 until total || codeIndex >= colors.size) return null
+        return if (groupAt(codeIndex) < 0) null else AirSkin.kind(colors[codeIndex])
+    }
+    val shadowSize = scale * 102f / 64f
+    fun airShadow(codeIndex: Int, alpha: Float) {
+        if (!AirSkin.BEAD_SHADOW) return
+        val shadow = t.airShadow ?: return
+        if (airKind(codeIndex) == null) return
+        val p = point(total - 1 - codeIndex)
+        draw(shadow, p.x - shadowSize / 2, p.y - shadowSize / 2, shadowSize, shadowSize, null, alpha.coerceIn(0f, 1f))
+    }
+    fun shadowAlpha(codeIndex: Int) = if (codeIndex < 9) codeIndex / 9f else 1f
+    for (codeIndex in 8 downTo 0) airShadow(codeIndex, 1f - codeIndex / 9f)
+    for (n in 1..4) airShadow(total - n, shadowAlpha(total - n))
+    for (row in 0 until 2) {
+        for (local in 0 until SKIN_ROW) {
+            val segment = row * SKIN_ROW + local
+            val codeIndex = total - 1 - segment
+            if (codeIndex >= 4) airShadow(codeIndex - 4, shadowAlpha(codeIndex - 4))
+            val group = groupAt(codeIndex)
+            if (group < 0) continue
+            val (bead, tint) = skinBead(t, group, colors.getOrElse(codeIndex) { 0 }) ?: continue
+            val p = point(segment)
+            if (row == 1) {
+                rotate(180f, pivot = p) { draw(bead, p.x - scale / 2, p.y - scale / 2, scale, scale, tint, 1f) }
+            } else {
+                draw(bead, p.x - scale / 2, p.y - scale / 2, scale, scale, tint, 1f)
+            }
+        }
+    }
+    // The eyes, the accessory and the Wyrm look.
+    val head = Offset(x + scale * 0.5f + step * (SKIN_ROW - 1), headY)
+    drawSkinHead(t, head, scale, px, preset, custom, accessoryId, look) { img, l, tp, w, h, tint -> draw(img, l, tp, w, h, tint, 1f) }
+}
+
+/* The "Share" skin sticker (OM, 2026-09-30): the Skin preview itself, both
+   rows, in bead widths. Its box leaves room around the head for the
+   accessory and the Wyrm look. */
+private const val STICKER_GAP = 0.16f
+private const val STICKER_BODY_W = 1f + (SKIN_ROW - 1) * (8f / 48f)
+private const val STICKER_W = STICKER_BODY_W + 1.2f
+private const val STICKER_H = 2f + STICKER_GAP + 1.4f
 
 /** The sticker's box for a bead [bead] px wide, centred on the origin when drawn. */
 internal fun skinStickerSize(bead: Float): androidx.compose.ui.geometry.Size =
     androidx.compose.ui.geometry.Size(STICKER_W * bead, STICKER_H * bead)
 
-/** Bead centres along the sticker's S, tail first, head last, in bead widths. */
-private val stickerPath: List<Offset> by lazy {
-    val dense = (0..480).map { i ->
-        val x = -STICKER_SPAN / 2 + STICKER_SPAN * i / 480f
-        Offset(x, STICKER_WAVE * sin(2 * PI.toFloat() * (x / STICKER_SPAN)))
-    }
-    val step = 8f / 48f
-    val out = mutableListOf(dense.first())
-    var carry = 0f
-    for (i in 1 until dense.size) {
-        val a = dense[i - 1]
-        val b = dense[i]
-        val length = hypot(b.x - a.x, b.y - a.y)
-        var travelled = step - carry
-        while (travelled <= length) {
-            val f = travelled / max(length, 0.0001f)
-            out += Offset(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)
-            travelled += step
-        }
-        carry = length - (travelled - step)
-    }
-    // Nudged left so the head's accessory and looks stay inside the box.
-    out.map { Offset(it.x - 0.35f, it.y) }
-}
-
 /**
- * The player's snake as the Skin screen draws it — the same textures, beads,
- * wheel colours, accessory and Wyrm look — laid out as a compact S and centred
- * on the origin. Draws into any DrawScope, including a bitmap for the export.
+ * The player's snake exactly as the Skin preview shows it — the same two rows,
+ * textures, beads, wheel colours, accessory and Wyrm look — centred on the
+ * origin. Draws into any DrawScope, including a bitmap for the export.
  */
 internal fun DrawScope.drawSkinSticker(t: SkinTextures, skin: SkinState, look: WyrmLookSpec, bead: Float) {
+    // The preview's own choice of beads: the custom pattern, else the preset, 256 long.
     val customGroups = skin.code.mapNotNull { SkinCatalog.group(it) }.filter { it in SkinCatalog.validGroups }.take(256)
     val active = skin.custom && customGroups.isNotEmpty()
-    val groups = if (active) customGroups else SkinCatalog.presets.getOrNull(skin.preset) ?: listOf(7)
-    val colours = if (active) List(customGroups.size) { skin.colourAt(it) } else emptyList()
-    val path = stickerPath
-    val count = path.size
-    fun at(index: Int) = Offset(path[index].x * bead, path[index].y * bead)
-    fun heading(index: Int): Float {
-        val a = at(max(0, index - 1))
-        val b = at(min(count - 1, index + 1))
-        return atan2(b.y - a.y, b.x - a.x)
-    }
-    for (segment in 0 until count) {
-        val codeIndex = count - 1 - segment
-        val group = if (groups.isEmpty()) 7 else groups[codeIndex % groups.size]
-        val argb = if (colours.isEmpty()) 0 else colours[codeIndex % colours.size]
-        val (image, tint) = skinBead(t, group, argb) ?: continue
-        val p = at(segment)
-        // Beads face back along the body, as the preview's two rows do.
-        val degrees = heading(segment) * 180f / PI.toFloat() - 180f
-        rotate(degrees, pivot = p) { drawImageExact(image, p.x - bead / 2, p.y - bead / 2, bead, bead, tint) }
-    }
-    val head = at(count - 1)
-    rotate(heading(count - 1) * 180f / PI.toFloat(), pivot = head) {
-        drawSkinHead(t, head, bead, bead / 48f, skin.preset, active, skin.accessory, look.checked()) { img, l, tp, w, h, tint ->
-            drawImageExact(img, l, tp, w, h, tint)
-        }
+    val source = if (active) customGroups else SkinCatalog.presets.getOrNull(skin.preset) ?: listOf(7)
+    val groups = List(256) { source[it % source.size] }
+    val colours = if (active) List(256) { skin.colourAt(it % customGroups.size) } else List(256) { 0 }
+    val gap = bead * STICKER_GAP
+    val x = -STICKER_BODY_W * bead / 2
+    val headY = -bead * 0.5f - gap * 0.5f
+    val tailY = bead * 0.5f + gap * 0.5f
+    // The preview's 1 dp against its usual ~17 dp bead.
+    drawSkinRows(t, groups, colours, skin.preset, active, skin.accessory, look.checked(), x, headY, tailY, bead, bead / 17f) { img, l, tp, iw, ih, tint, alpha ->
+        drawImageExact(img, l, tp, iw, ih, tint, alpha)
     }
 }
 

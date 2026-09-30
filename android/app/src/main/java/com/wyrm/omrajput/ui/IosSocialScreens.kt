@@ -1068,9 +1068,11 @@ private val keepBuild = Build.VERSION.SDK_INT
 /* ------------------------------------------------------------ voice rooms */
 
 /**
- * Wyrm iOS's Voice rooms page: a verify banner until the voice profile is
- * verified, the official Wyrm rooms, then player rooms. Android keeps its
- * "New" action because it can create rooms, which iOS cannot yet.
+ * Voice rooms, redesigned (OM, 2026-09-30): one card per room like a modern
+ * audio app. A verify card until the voice profile is verified; official
+ * Wyrm rooms first (the real Wyrm mark, open to everyone); the player's own
+ * room; rooms that are live now; then quiet ones. Each card says who made it,
+ * whether a code is needed, and how many are in. Wyrm iOS: `WyrmVoiceKit.swift`.
  */
 @Composable
 fun IosVoiceDirectory(
@@ -1086,72 +1088,68 @@ fun IosVoiceDirectory(
     onOpenRoom: (com.wyrm.omrajput.data.VoiceRoom) -> Unit,
 ) {
     val official = rooms.filter { it.managedPublic }
-    val personal = rooms.filter { !it.managedPublic }
+    val mine = rooms.filter { it.mine && !it.managedPublic }
+    val live = rooms.filter { !it.managedPublic && !it.mine && it.active }
+    val quiet = rooms.filter { !it.managedPublic && !it.mine && !it.active }
+    val talking = rooms.filter { it.active }.sumOf { it.activeCount }
     IosPageChrome("Voice rooms", insetTop, onBack, actionTitle = "New", onAction = onNew) {
         IosRefreshable(refreshing, onRefresh, Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                // Who is talking right now, in one line.
+                Row(
+                    Modifier.padding(start = 22.dp, end = 22.dp, top = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    VoiceLiveBars(if (talking > 0) Wyrm.Live else Wyrm.Quiet, playing = talking > 0, height = 13.dp)
+                    Text(
+                        if (talking > 0) "$talking ${if (talking == 1) "person" else "people"} talking now" else "No one is talking yet",
+                        fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                        color = if (talking > 0) Wyrm.Live else Wyrm.Quiet,
+                    )
+                }
                 if (!verified) {
                     Row(
                         Modifier
-                            .padding(start = 16.dp, end = 16.dp, top = 16.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 14.dp)
                             .fillMaxWidth()
-                            .clip(wyrmRounded(16.dp))
-                            .background(Wyrm.Card.copy(alpha = 0.9f))
-                            .border(1.dp, Wyrm.Live.copy(alpha = 0.35f), wyrmRounded(16.dp))
+                            .clip(wyrmRounded(20.dp))
+                            .background(Wyrm.Ink)
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onVerify)
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(13.dp),
                     ) {
-                        IosIcon(IosGlyph.CHECKMARK_SHIELD, Wyrm.Live, size = 26.dp)
+                        IosIcon(IosGlyph.CHECKMARK_SHIELD, Wyrm.OnInk, size = 26.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("Your voice profile is not verified", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = Wyrm.Ink)
-                            Text("Verify once to create and enter player rooms.", fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet)
+                            Text("Verify once, talk anywhere", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = Wyrm.OnInk)
+                            Text("One email code unlocks player rooms. Official rooms are open now.", fontFamily = Wyrm.Body,
+                                fontSize = 11.5.sp, color = Wyrm.OnInk.copy(alpha = 0.72f))
                         }
-                        Text("Verify", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Wyrm.Link)
-                    }
-                }
-                IosSectionLabel("Official Wyrm rooms")
-                IosPaperCard {
-                    if (official.isEmpty()) IosEmptyPanel("Official rooms are quiet", "Wyrm-managed public rooms appear here first.")
-                    official.forEach { room ->
-                        Box {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 58.dp)
-                                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onOpenRoom(room) }
-                                    .padding(horizontal = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Box(Modifier.size(38.dp).clip(wyrmRounded(9.dp)).background(Wyrm.Ink.copy(alpha = 0.06f)), contentAlignment = Alignment.Center) {
-                                    Text("W", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Wyrm.Ink.copy(alpha = 0.38f))
-                                }
-                                PersonText(room.name, "Wyrm · direct entry", Modifier.weight(1f))
-                                Text(
-                                    if (room.active) "${room.activeCount}/${room.capacity} live" else "Public",
-                                    fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp,
-                                    color = if (room.active) Wyrm.Live else Wyrm.Quiet,
-                                )
-                                IosIcon(IosGlyph.CHEVRON_RIGHT, Wyrm.Chevron, size = 12.dp, weight = 2.6f)
-                            }
-                            RowRule(64.dp, Modifier.align(Alignment.BottomStart))
+                        Box(Modifier.clip(CircleShape).background(Wyrm.OnInk).padding(horizontal = 13.dp, vertical = 7.dp)) {
+                            Text("Verify", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Wyrm.Ink)
                         }
                     }
                 }
-                IosSectionLabel("Player rooms · ${personal.size}")
-                IosPaperCard {
-                    if (personal.isEmpty()) IosEmptyPanel("No player rooms yet", "Your rooms and rooms from other players will appear here.")
-                    personal.forEach { room ->
-                        IosListRow(
-                            title = room.name,
-                            detail = if (room.mine) "Your room" else "by ${room.creator.displayName}",
-                            value = if (room.active) "${room.activeCount} live" else room.gate.replaceFirstChar { it.uppercase() },
-                            glyph = if (room.active) IosGlyph.WAVEFORM else IosGlyph.MIC,
-                            tint = if (room.active) Wyrm.Live else Wyrm.Mute,
-                        ) { onOpenRoom(room) }
-                    }
+                VoiceSectionTitle("Official Wyrm rooms", "Open to everyone")
+                if (official.isEmpty()) IosPaperCard { IosEmptyPanel("Official rooms are quiet", "Wyrm-managed public rooms appear here first.") }
+                official.forEach { room -> VoiceRoomCard(room) { onOpenRoom(room) } }
+                if (mine.isNotEmpty()) {
+                    VoiceSectionTitle("Your room")
+                    mine.forEach { room -> VoiceRoomCard(room) { onOpenRoom(room) } }
+                }
+                VoiceSectionTitle("Live now", if (live.isEmpty()) "" else "${live.size}")
+                if (live.isEmpty()) {
+                    Text(
+                        if (quiet.isEmpty()) "No player rooms yet. Tap New to start one." else "No player room is live. Start one, or wake a quiet one.",
+                        fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet,
+                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp),
+                    )
+                }
+                live.forEach { room -> VoiceRoomCard(room) { onOpenRoom(room) } }
+                if (quiet.isNotEmpty()) {
+                    VoiceSectionTitle("Quiet rooms", "${quiet.size}")
+                    quiet.forEach { room -> VoiceRoomCard(room) { onOpenRoom(room) } }
                 }
                 Spacer(Modifier.height(24.dp + insetBottom))
             }

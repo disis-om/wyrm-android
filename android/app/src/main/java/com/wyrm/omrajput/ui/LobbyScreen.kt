@@ -54,6 +54,19 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wyrm.omrajput.R
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun LobbyScreen(
@@ -237,10 +250,8 @@ private fun LobbyReadyRoom(
                 Spacer(Modifier.weight(1f))
                 // The last run, as a trail (OM, 2026-09-30).
                 if (canShareRun) {
-                    LobbyPaperButton(
-                        label = "Share run",
-                        icon = com.composables.icons.lucide.R.drawable.lucide_ic_share,
-                        modifier = Modifier.width(128.dp),
+                    LobbyShareRunButton(
+                        modifier = Modifier.width(138.dp),
                         enabled = !entering,
                         onClick = onShareRun,
                     )
@@ -410,6 +421,76 @@ private fun LobbyPlayButton(
         )
     }
 }
+
+/**
+ * "Share run", made the one thing the eye goes to (OM, 2026-09-30). The lobby
+ * is paper and ink, so this is its only colour: a warm gradient, a halo that
+ * breathes out every 1.8 s and a light sweep across the face (contrast first,
+ * motion second, as CTA guides say). Motion stops when the phone's
+ * animations are off. Wyrm iOS: `WyrmShareRunButton` in `WyrmLobby.swift`.
+ */
+@Composable
+private fun LobbyShareRunButton(modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
+    val context = LocalContext.current
+    val still = remember {
+        runCatching {
+            android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+        }.getOrDefault(false)
+    }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val shape = wyrmRounded(11.dp)
+    val loop = rememberInfiniteTransition(label = "share-run")
+    val halo by loop.animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "halo")
+    val sweep by loop.animateFloat(-0.6f, 1.6f, infiniteRepeatable(tween(2600, delayMillis = 500, easing = FastOutSlowInEasing)), label = "sweep")
+    val moving = enabled && !still
+    Box(
+        modifier = modifier
+            .height(49.dp)
+            .scale(pressScale(pressed, enabled))
+            .drawBehind {
+                if (!moving) return@drawBehind
+                // The halo: a coral ring that grows out and fades.
+                val spread = 9.dp.toPx() * halo
+                drawRoundRect(
+                    color = ShareRunCoral.copy(alpha = 0.55f * (1f - halo)),
+                    topLeft = Offset(-spread, -spread),
+                    size = Size(size.width + spread * 2, size.height + spread * 2),
+                    cornerRadius = CornerRadius(11.dp.toPx() + spread),
+                )
+            }
+            .clip(shape)
+            .background(Brush.linearGradient(ShareRunWarm), alpha = if (enabled) 1f else 0.45f)
+            .drawBehind {
+                if (!moving) return@drawBehind
+                val x = size.width * sweep
+                drawRect(
+                    Brush.linearGradient(
+                        listOf(Color.Transparent, Color.White.copy(alpha = 0.42f), Color.Transparent),
+                        start = Offset(x - size.width * 0.22f, 0f),
+                        end = Offset(x + size.width * 0.22f, size.height),
+                    ),
+                )
+            }
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painter = painterResource(com.composables.icons.lucide.R.drawable.lucide_ic_share),
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                colorFilter = ColorFilter.tint(Color.White),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Share run", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = Color.White)
+        }
+    }
+}
+
+/** Share run's colours: gold to coral to magenta, found nowhere else in the lobby. */
+private val ShareRunWarm = listOf(Color(0xFFFFA91F), Color(0xFFFF5A5F), Color(0xFFD63AF9))
+private val ShareRunCoral = Color(0xFFFF5A5F)
 
 @Composable
 private fun LobbyPaperButton(

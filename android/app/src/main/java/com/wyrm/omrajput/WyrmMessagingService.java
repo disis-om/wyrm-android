@@ -94,7 +94,9 @@ public class WyrmMessagingService extends FirebaseMessagingService {
     public void onMessageReceived(RemoteMessage message) {
         Map<String, String> data = message.getData();
         String title = data.getOrDefault("title", "Wyrm");
-        String body = data.getOrDefault("body", "");
+        // Wyrm's own notices carry the whole Markdown next to the flattened line.
+        String markdown = data.getOrDefault("markdown", "");
+        String body = markdown.isEmpty() ? data.getOrDefault("body", "") : markdown;
         String kind = data.getOrDefault("kind", "");
         // Trails are paused for the beta (TRAILS_ENABLED): their pushes show nothing.
         boolean trailsPaused = !com.wyrm.omrajput.data.TrailsApiKt.TRAILS_ENABLED
@@ -126,11 +128,13 @@ public class WyrmMessagingService extends FirebaseMessagingService {
                 this, notificationId, intent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
+        // The body is Markdown: formatted for the shade, lines and all.
+        CharSequence text = com.wyrm.omrajput.ui.WyrmMarkdownKt.shadeMarkdown(body);
         NotificationCompat.Builder notification = new NotificationCompat.Builder(this, channelFor(kind))
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
-                .setContentText(body)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
                 .setAutoCancel(true)
                 .setGroup(SHADE_GROUP)
                 .setContentIntent(pendingIntent);

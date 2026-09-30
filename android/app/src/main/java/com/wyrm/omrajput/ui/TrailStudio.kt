@@ -184,6 +184,9 @@ internal enum class StudioMode(val label: String) { PHOTO("Photo"), TEXT("Text")
  * as a Share editor. The background is a colour (Skin) or the arena as it
  * stood at death (Screenshot); on top sit the skin sticker, the stats box and
  * the studio's own text and drawing. Wyrm iOS: `WyrmTrailStudio.swift`.
+ *
+ * "Share this skin" (OM, 2026-09-30): the Skin tab opens the same editor with
+ * no run: only the skin sticker on a colour, no stats and no screenshot.
  */
 
 /** The last finished run. Memory only: replaced by the next death, cleared when a run starts. */
@@ -196,8 +199,8 @@ internal data class LastRun(
     val screenshot: Bitmap? = null,
 )
 
-/** What the Share editor starts from: the run, and the skin and look the player wears. */
-internal data class ShareRunInput(val run: LastRun, val skin: SkinState, val look: WyrmLookSpec)
+/** What the Share editor starts from: the run (null for "Share this skin"), and the skin and look the player wears. */
+internal data class ShareRunInput(val run: LastRun?, val skin: SkinState, val look: WyrmLookSpec)
 
 internal enum class ShareLayer { SKIN, SCREENSHOT }
 
@@ -543,7 +546,7 @@ internal class StudioDraft {
     fun startShare(input: ShareRunInput, paper: Int) {
         reset(StudioMode.CANVAS)
         share = input
-        shareLayer = if (input.run.screenshot != null) ShareLayer.SCREENSHOT else ShareLayer.SKIN
+        shareLayer = if (input.run?.screenshot != null) ShareLayer.SCREENSHOT else ShareLayer.SKIN
         background = paper
         statsSeeded = false
         skinSeeded = false
@@ -586,6 +589,7 @@ internal class StudioDraft {
     /** Adds the skin sticker or the stats box (once each), sized to the canvas. */
     fun addSticker(kind: StickerKind, w: Float, h: Float, type: StudioType) {
         if (share == null || w <= 0f || h <= 0f || stickers.any { it.kind == kind }) return
+        if (kind == StickerKind.STATS && share?.run == null) return
         val (sw, _) = stickerSize(StudioSticker(kind = kind, center = Offset.Zero), type)
         val scale = ((if (kind == StickerKind.SKIN) 0.8f else 0.74f) * w / max(sw, 1f)).coerceIn(0.3f, 5f)
         val y = when {
@@ -597,8 +601,8 @@ internal class StudioDraft {
     }
 
     /**
-     * The stats box always comes first; the skin sticker the first time the
-     * Skin layer shows. Afterwards only keeps everything on a reshaped canvas.
+     * The stats box always comes first (a run only); the skin sticker the
+     * first time the Skin layer shows. Afterwards only keeps everything on a reshaped canvas.
      */
     fun seedShare(w: Float, h: Float, type: StudioType) {
         if (share == null || w <= 0f || h <= 0f) return
@@ -626,7 +630,7 @@ internal class StudioDraft {
             canvas.rotate(item.rotation)
             canvas.scale(item.scale, item.scale)
             when (item.kind) {
-                StickerKind.STATS -> StudioStatsPainter.draw(canvas, input.run, statsStyle, type, tone)
+                StickerKind.STATS -> input.run?.let { StudioStatsPainter.draw(canvas, it, statsStyle, type, tone) }
                 StickerKind.SKIN -> textures?.let { t ->
                     // The Skin screen's own drawing code, through Compose, onto this canvas.
                     stickerScope.draw(
@@ -815,6 +819,7 @@ internal fun TrailStudioScreen(
     var shareSkin by remember { mutableStateOf(true) }
     val textures by rememberSkinTextures()
     val sharing = share != null
+    val skinOnly = share != null && share.run == null
 
     LaunchedEffect(Unit) { TrailsStore.resetPosting() }
     // The worn skin can arrive after the editor opens; the sticker follows it.
@@ -892,7 +897,7 @@ internal fun TrailStudioScreen(
     val actionLabel = if (step == StudioStep.CAPTION || (step == StudioStep.PICK && draft.mode == StudioMode.TEXT)) "Post" else "Next"
     val title = when (step) {
         StudioStep.PICK -> "New trail"
-        StudioStep.EDIT -> if (sharing) "Share run" else "Edit"
+        StudioStep.EDIT -> if (skinOnly) "Share skin" else if (sharing) "Share run" else "Edit"
         StudioStep.CAPTION -> "Caption"
     }
 
@@ -932,7 +937,7 @@ internal fun TrailStudioScreen(
             }
         }
         // Share run: what is behind everything, the skin colour or the arena at death.
-        if (sharing && step == StudioStep.EDIT) {
+        if (sharing && !skinOnly && step == StudioStep.EDIT) {
             val hasShot = draft.share?.run?.screenshot != null
             Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) {
                 PaperSegmented(
@@ -1515,7 +1520,7 @@ private fun StudioChip(label: String, selected: Boolean, dark: Boolean = false, 
 }
 
 /**
- * Share run, under the canvas: "+ Skin" / "+ Stats" to bring back what was
+ * Share run, under the canvas: "+ Skin" / "+ Stats" (a run only) to bring back what was
  * binned, the stats box's looks, and the background colour (the theme's own
  * colours first, then the studio's).
  */
@@ -1526,6 +1531,7 @@ private fun ShareBar(draft: StudioDraft, w: Float, h: Float, type: StudioType) {
     val colours = (theme + StudioPalette.colours).distinct()
     val hasSkin = draft.stickers.any { it.kind == StickerKind.SKIN }
     val hasStats = draft.stickers.any { it.kind == StickerKind.STATS }
+    val hasRun = draft.share?.run != null
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -1536,7 +1542,7 @@ private fun ShareBar(draft: StudioDraft, w: Float, h: Float, type: StudioType) {
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 draft.addSticker(StickerKind.SKIN, w, h, type)
             }
-            if (!hasStats) StudioChip("+ Stats", false) {
+            if (hasRun && !hasStats) StudioChip("+ Stats", false) {
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 draft.addSticker(StickerKind.STATS, w, h, type)
             }

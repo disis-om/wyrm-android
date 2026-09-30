@@ -195,6 +195,8 @@ class WyrmOverlay(private val activity: Activity) :
     private var lastRunSeq = 0
     /** The run the Share editor was opened on. */
     private var shareRun by mutableStateOf<LastRun?>(null)
+    /** "Share this skin" (Skin tab): the Share editor with the skin only, no run. */
+    private var shareSkinOnly by mutableStateOf(false)
     /** A skin tried from a trail: the Skin tab shows it; nothing is worn or saved until Wear. */
     private var skinTrial by mutableStateOf<SkinTrial?>(null)
 
@@ -1431,14 +1433,14 @@ class WyrmOverlay(private val activity: Activity) :
                         // Share run: the studio as the Share editor, portrait, over Home.
                         Route.TRAIL_SHARE -> {
                             val run = shareRun
-                            if (!TRAILS_ENABLED || run == null) TrailsPausedExit() else androidx.compose.runtime.CompositionLocalProvider(
+                            if (!TRAILS_ENABLED || (run == null && !shareSkinOnly)) TrailsPausedExit() else androidx.compose.runtime.CompositionLocalProvider(
                                 androidx.activity.compose.LocalActivityResultRegistryOwner provides resultOwner,
                             ) {
                                 TrailStudioScreen(
                                     insetTop = insetTop,
                                     insetBottom = insetBottom,
                                     onClose = ::closeShareRun,
-                                    share = ShareRunInput(run, skinState, WyrmLookStore.spec()),
+                                    share = ShareRunInput(run?.takeIf { !shareSkinOnly }, skinState, WyrmLookStore.spec()),
                                     onPosted = ::openTrailsAfterShare,
                                 )
                             }
@@ -2102,6 +2104,8 @@ class WyrmOverlay(private val activity: Activity) :
             banner = if (trial != null) ({
                 SkinTrialBanner(trial.author, onWear = ::wearSkinTrial, onBack = { skinTrial = null })
             }) else null,
+            // Only the worn skin is shared, never one being tried.
+            onShareSkin = if (interactive && trial == null && TRAILS_ENABLED && repository.hasSession) ::openShareSkin else null,
         )
     }
 
@@ -3430,13 +3434,10 @@ class WyrmOverlay(private val activity: Activity) :
         if (name.isBlank()) return
         val retry = { createVoiceRoom(name) }
         startVoiceOperation(VoiceOperationKind.CREATE_ROOM, retry) { generation ->
+            // The server checks verification itself; no separate round trip first.
             voiceStage(generation, 0)
-            if (!voiceRepository.verificationStatus().verified) {
-                throw VoiceApiException(403, "VOICE_VERIFICATION_REQUIRED")
-            }
-            voiceStage(generation, 1)
             val (room, password) = voiceRepository.createRoom(name.trim(), voiceState.operation.id)
-            for (stage in 2..6) voiceStage(generation, stage)
+            voiceStage(generation, 2)
             voiceState = voiceState.copy(
                 page = VoicePage.ROOM,
                 selectedRoom = room,
@@ -3467,27 +3468,21 @@ class WyrmOverlay(private val activity: Activity) :
         voiceState = voiceState.copy(selectedRoom = room)
         val retry = { joinVoiceRoom(password, room) }
         startVoiceOperation(VoiceOperationKind.JOIN_ROOM, retry) { generation ->
+            // The server checks verification itself; no separate round trip first.
             voiceStage(generation, 0)
-            if (!room.managedPublic && !voiceRepository.verificationStatus().verified) {
-                throw VoiceApiException(403, "VOICE_VERIFICATION_REQUIRED")
-            }
-            voiceStage(generation, 1)
             val preferences = voicePreferences.read(profile.id)
             val ticket = voiceRepository.joinRoom(
                 room.id, password, voiceState.operation.id,
                 preferences.muted, preferences.deafened,
             )
-            voiceStage(generation, 2)
+            voiceStage(generation, 1)
             VoiceCallService.connect(activity, profile.id, ticket)
             val terminal = withTimeout(25_000) {
                 VoiceCallController.state.first { call ->
+                    // Three plain stages: joining, connecting audio, in.
                     val stage = when (call.stage) {
-                        VoiceConnectionStage.GETTING_SESSION -> 2
-                        VoiceConnectionStage.CONNECTING_EDGE -> 3
-                        VoiceConnectionStage.PREPARING_AUDIO -> 4
-                        VoiceConnectionStage.SUBSCRIBING -> 5
-                        VoiceConnectionStage.ENTERING, VoiceConnectionStage.CONNECTED -> 6
-                        else -> voiceState.operation.stage
+                        VoiceConnectionStage.ENTERING, VoiceConnectionStage.CONNECTED -> 2
+                        else -> 1
                     }
                     if (generation == voiceOperationGeneration && stage != voiceState.operation.stage) {
                         voiceState = voiceState.copy(operation = voiceState.operation.copy(stage = stage))
@@ -3529,25 +3524,18 @@ class WyrmOverlay(private val activity: Activity) :
         val retry = { acceptVoiceInvite(inviteId) }
         startVoiceOperation(VoiceOperationKind.ACCEPT_INVITE, retry) { generation ->
             voiceStage(generation, 0)
-            if (!voiceRepository.verificationStatus().verified) {
-                throw VoiceApiException(403, "VOICE_VERIFICATION_REQUIRED")
-            }
-            voiceStage(generation, 1)
             val preferences = voicePreferences.read(profile.id)
             val ticket = voiceRepository.acceptInvite(
                 inviteId, voiceState.operation.id, preferences.muted, preferences.deafened,
             )
-            voiceStage(generation, 2)
+            voiceStage(generation, 1)
             VoiceCallService.connect(activity, profile.id, ticket)
             val terminal = withTimeout(25_000) {
                 VoiceCallController.state.first { call ->
+                    // Three plain stages: joining, connecting audio, in.
                     val stage = when (call.stage) {
-                        VoiceConnectionStage.GETTING_SESSION -> 2
-                        VoiceConnectionStage.CONNECTING_EDGE -> 3
-                        VoiceConnectionStage.PREPARING_AUDIO -> 4
-                        VoiceConnectionStage.SUBSCRIBING -> 5
-                        VoiceConnectionStage.ENTERING, VoiceConnectionStage.CONNECTED -> 6
-                        else -> voiceState.operation.stage
+                        VoiceConnectionStage.ENTERING, VoiceConnectionStage.CONNECTED -> 2
+                        else -> 1
                     }
                     if (generation == voiceOperationGeneration && stage != voiceState.operation.stage) {
                         voiceState = voiceState.copy(operation = voiceState.operation.copy(stage = stage))
@@ -3652,7 +3640,16 @@ class WyrmOverlay(private val activity: Activity) :
         voiceOperationJob = scope.launch {
             runCatching { operation(generation) }
                 .onFailure { failure ->
-                    if (generation == voiceOperationGeneration) {
+                    if (generation == voiceOperationGeneration &&
+                        (failure as? VoiceApiException)?.code == "VOICE_VERIFICATION_REQUIRED") {
+                        voiceRetryAction = null
+                        voiceState = voiceState.copy(
+                            verified = false,
+                            page = VoicePage.VERIFY_EMAIL,
+                            error = "Verify your profile once to use player rooms.",
+                            operation = VoiceOperationState(),
+                        )
+                    } else if (generation == voiceOperationGeneration) {
                         voiceState = voiceState.copy(
                             operation = voiceState.operation.copy(
                                 running = false,
@@ -3664,15 +3661,14 @@ class WyrmOverlay(private val activity: Activity) :
         }
     }
 
-    private suspend fun voiceStage(generation: Long, stage: Int) {
+    /** Shows a stage the moment it is reached (the old 240 ms pauses made joining feel slow). */
+    private fun voiceStage(generation: Long, stage: Int) {
         if (generation != voiceOperationGeneration) return
         voiceState = voiceState.copy(operation = voiceState.operation.copy(stage = stage))
-        delay(240)
     }
 
-    private suspend fun finishVoiceOperation(generation: Long) {
+    private fun finishVoiceOperation(generation: Long) {
         if (generation != voiceOperationGeneration) return
-        delay(300)
         voiceState = voiceState.copy(operation = VoiceOperationState())
         voiceRetryAction = null
     }
@@ -3713,9 +3709,11 @@ class WyrmOverlay(private val activity: Activity) :
             "VOICE_OTP_EXPIRED" -> "That code expired. Request a new one."
             "VOICE_OTP_LOCKED" -> "Too many incorrect attempts. Request a new code."
             "VOICE_EMAIL_QUOTA_EXHAUSTED" -> "Email delivery is temporarily full. Try again later."
-            "ROOM_CLOSED" -> "This room is closed right now."
+            "ROOM_CLOSED" -> "This room is closed right now. Try again when its creator opens it."
             "ROOM_FULL" -> "This room already has 10 participants."
-            "ROOM_PASSWORD_INCORRECT" -> "That room password is incorrect."
+            "ROOM_PASSWORD_INCORRECT" -> "That code didn't work. Check it with the room's creator."
+            "ROOM_PASSWORD_REQUIRED" -> "Enter the room code to join."
+            "ROOM_CODE_CHANGED" -> "The creator changed the code. Ask them for the new one."
             "ROOM_BANNED" -> "You cannot enter this room."
             "VOICE_DISABLED" -> "Voice Chat is not available yet."
             "VOICE_JOIN_PAUSED" -> "New voice joins are temporarily paused."
@@ -5904,6 +5902,7 @@ class WyrmOverlay(private val activity: Activity) :
         val run = lastRun ?: return
         if (!TRAILS_ENABLED || !repository.hasSession) return
         shareRun = run
+        shareSkinOnly = false
         lobbyJob?.cancel()
         lobbyQuickSettings = false
         host?.onLeaveLobby()
@@ -5916,12 +5915,24 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     private fun closeShareRun() {
-        tabRoot = Route.HOME
-        route = Route.HOME
+        val fromSkin = shareSkinOnly
+        shareSkinOnly = false
+        tabRoot = if (fromSkin) Route.SKIN else Route.HOME
+        route = tabRoot
+    }
+
+    /** Skin › Share this skin: the Share editor with the worn skin as the preview draws it; closing goes back to Skin. */
+    private fun openShareSkin() {
+        if (!TRAILS_ENABLED || !repository.hasSession) return
+        shareSkinOnly = true
+        panelOpen = false
+        tabRoot = Route.SKIN
+        route = Route.TRAIL_SHARE
     }
 
     /** Posted: the Trails feed, where the upload shows its progress. */
     private fun openTrailsAfterShare() {
+        shareSkinOnly = false
         tabRoot = Route.SOCIAL
         panelOrigin = Rect.Zero
         panelOpen = true

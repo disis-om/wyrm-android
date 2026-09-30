@@ -95,13 +95,53 @@ fun WyrmMarkdown(
     baseSize: TextUnit = 13.sp,
     onMediaOpen: ((ReleaseMedia) -> Unit)? = null,
 ) {
-    val document = remember(source) { MARKDOWN_PARSER.parse(source) }
+    val document = remember(source) { MARKDOWN_PARSER.parse(keepTyping(source)) }
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         document.children().forEach { MarkdownBlock(it, baseSize, 0, onMediaOpen) }
     }
+}
+
+/**
+ * What the writer typed, kept (OM, 2026-09-30): CommonMark folds any run of
+ * blank lines into one paragraph break and drops a line's leading spaces.
+ * Each extra blank line becomes a paragraph holding one no-break space (an
+ * empty line on screen), and 1-3 leading spaces of a plain line become
+ * no-break spaces. Code fences, lists, quotes, tables, headings and
+ * four-space code keep their Markdown meaning. Wyrm iOS: `WyrmMarkdown.swift`.
+ */
+private fun keepTyping(source: String): String {
+    val out = StringBuilder()
+    var fence: String? = null
+    var blanks = 0
+    val structural = Regex("""^([-*+]\s|\d{1,9}[.)]\s|>|\||#{1,6}(\s|$))""")
+    for (raw in source.replace("\r\n", "\n").replace('\r', '\n').split('\n')) {
+        val trimmed = raw.trim()
+        if (fence != null) {
+            out.append(raw).append('\n')
+            if (trimmed.startsWith(fence)) fence = null
+            continue
+        }
+        if (trimmed.isEmpty()) { blanks++; continue }
+        if (blanks > 0) {
+            if (out.isNotEmpty()) {
+                out.append('\n')
+                repeat(blanks - 1) { out.append(' ').append("\n\n") }
+            }
+            blanks = 0
+        }
+        if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+            fence = trimmed.takeWhile { it == trimmed[0] }
+            out.append(raw).append('\n')
+            continue
+        }
+        val lead = raw.takeWhile { it == ' ' }.length
+        val line = if (lead in 1..3 && !structural.containsMatchIn(trimmed)) " ".repeat(lead) + raw.drop(lead) else raw
+        out.append(line).append('\n')
+    }
+    return out.toString()
 }
 
 @Composable
@@ -444,3 +484,19 @@ private fun htmlMedia(source: String): ReleaseMedia? {
 private fun plainText(parent: Node): String = buildString {
     parent.descendants().filterIsInstance<Text>().forEach { append(it.literal) }
 }
+
+private val SHADE_RENDERER: org.commonmark.renderer.html.HtmlRenderer =
+    org.commonmark.renderer.html.HtmlRenderer.builder().extensions(MARKDOWN_EXTENSIONS).escapeHtml(true)
+        // A soft break is a line break here, as it is in the app.
+        .softbreak("<br />").build()
+
+/**
+ * A push's Markdown for the system shade (OM, 2026-09-30): bold, italic,
+ * links, lists and line breaks as the shade can show them, through
+ * commonmark's HTML and Android's own HTML spans. Plain text on any failure.
+ */
+fun shadeMarkdown(body: String): CharSequence = runCatching {
+    val html = SHADE_RENDERER.render(MARKDOWN_PARSER.parse(body))
+    val spanned = androidx.core.text.HtmlCompat.fromHtml(html, androidx.core.text.HtmlCompat.FROM_HTML_MODE_COMPACT)
+    spanned.trimEnd()
+}.getOrDefault(body)

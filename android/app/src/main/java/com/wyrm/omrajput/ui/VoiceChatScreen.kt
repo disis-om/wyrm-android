@@ -84,6 +84,7 @@ import com.wyrm.omrajput.data.VoiceParticipant
 import com.wyrm.omrajput.data.VoiceRoom
 import com.wyrm.omrajput.data.relativeTime
 import com.wyrm.omrajput.voice.VoiceCallState
+import com.wyrm.omrajput.voice.VoiceConnectionStage
 import kotlinx.coroutines.delay
 import java.time.Instant
 
@@ -98,14 +99,9 @@ data class VoiceOperationState(
     val failure: String = "",
 ) {
     val stages: List<String> get() = when (kind) {
-        VoiceOperationKind.CREATE_ROOM -> listOf(
-            "Checking creator access", "Reserving your room", "Generating room password",
-            "Protecting room credentials", "Publishing room", "Fetching room credentials", "Your room is ready",
-        )
-        VoiceOperationKind.JOIN_ROOM, VoiceOperationKind.ACCEPT_INVITE -> listOf(
-            "Checking room access", "Getting session ID", "Creating secure voice session",
-            "Connecting to voice edge", "Preparing encrypted audio", "Subscribing to room audio", "Entering room",
-        )
+        // Three plain steps (OM, 2026-09-30: the seven technical ones were too long).
+        VoiceOperationKind.CREATE_ROOM -> listOf("Creating your room", "Securing your room", "Your room is ready")
+        VoiceOperationKind.JOIN_ROOM, VoiceOperationKind.ACCEPT_INVITE -> listOf("Joining room", "Connecting audio", "You're in")
     }
 }
 
@@ -204,7 +200,7 @@ fun VoiceChatScreen(
                     Text(
                         text = when (state.page) {
                             VoicePage.VERIFY_EMAIL, VoicePage.VERIFY_CODE, VoicePage.VERIFIED -> "Voice verification"
-                            VoicePage.ROOM -> state.selectedRoom?.name ?: "Room"
+                            VoicePage.ROOM -> "Voice room"
                             VoicePage.CALL -> "Voice"
                             else -> "Voice"
                         },
@@ -261,7 +257,15 @@ fun VoiceChatScreen(
             enter = fadeIn(tween(180)), exit = fadeOut(tween(220)),
             modifier = Modifier.fillMaxSize().zIndex(50f),
         ) {
-            VoiceOperationOverlay(state.operation, onCancelOperation, onRetryOperation)
+            VoiceJoinSheet(
+                title = if (state.operation.kind == VoiceOperationKind.CREATE_ROOM) "New voice room" else state.selectedRoom?.name ?: "Voice room",
+                stages = state.operation.stages,
+                stage = state.operation.stage,
+                failure = state.operation.failure,
+                bottom = insetBottom,
+                onCancel = onCancelOperation,
+                onRetry = onRetryOperation,
+            )
         }
     }
 }
@@ -781,6 +785,12 @@ private fun VerifyCode(state: VoiceScreenState, onConfirm: (String) -> Unit, onR
     }
 }
 
+/**
+ * A room before joining (OM, 2026-09-30): the room's art, name and maker, a
+ * live line, three facts, then one action. A private room asks for its code
+ * in eight boxes and says how to get one; the owner manages the code, the
+ * gate and bans below.
+ */
 @Composable
 private fun RoomDetails(
     state: VoiceScreenState,
@@ -793,109 +803,161 @@ private fun RoomDetails(
     onOpenProfile: (String) -> Unit,
 ) {
     val room = state.selectedRoom ?: return
-    var password by remember(room.id) { mutableStateOf("") }
+    var code by remember(room.id) { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Wyrm.Gutter)) {
-        Spacer(Modifier.height(Wyrm.Gap))
-        WyrmLabel(if (room.active) "Live now" else "Room")
-        Spacer(Modifier.height(5.dp))
-        Text(room.name, fontFamily = Wyrm.Display, fontSize = 42.sp, lineHeight = 44.sp, color = Wyrm.Ink)
-        Row(
-            Modifier.fillMaxWidth().then(if (room.managedPublic) Modifier else Modifier.clickable { onOpenProfile(room.creator.id) }).padding(top = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            WyrmAvatar(room.creator.avatarUrl, room.creator.avatarKey, room.creator.displayName, 30.dp, corner = 10.dp)
-            Spacer(Modifier.width(9.dp))
-            Column {
-                Text(if (room.managedPublic) "Managed public room" else "Created by", fontFamily = Wyrm.Body, fontSize = 9.sp, color = Wyrm.Quiet)
-                Text(if (room.managedPublic) "Wyrm · passwordless" else "@${room.creator.username}", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Wyrm.Ink)
-            }
-        }
-        if (room.active && room.activeSince.isNotBlank()) {
-            Text("Active since ${relativeTime(room.activeSince)}", fontFamily = Wyrm.Body, fontSize = 10.sp, color = Wyrm.Live)
-        }
-        Spacer(Modifier.height(Wyrm.GapLarge))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Metric("Inside", "${room.activeCount}/${room.capacity}", Modifier.weight(1f))
-            Metric("Calls", room.lifetimeCalls.toString(), Modifier.weight(1f))
-            Metric("Gate", room.gate.uppercase(), Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(Wyrm.GapLarge))
-        if (room.mine) {
-            WyrmLabel("Room key")
-            Spacer(Modifier.height(8.dp))
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(wyrmRounded(14.dp))
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                    Text(state.roomPassword.ifBlank { "••••••••" }, fontFamily = Wyrm.Display, fontSize = 25.sp, letterSpacing = 4.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
-                    if (state.roomPassword.isNotBlank()) {
-                        Icon(
-                            painterResource(LucideR.drawable.lucide_ic_copy), "Copy room key",
-                            Modifier.size(38.dp).clip(CircleShape).clickable {
-                                clipboard.setText(AnnotatedString(state.roomPassword))
-                            }.padding(9.dp), tint = Wyrm.Ink,
-                        )
-                        Spacer(Modifier.width(5.dp))
-                    }
-                    WyrmPill(if (state.roomPassword.isBlank()) "Reveal" else "Regenerate", onClick = if (state.roomPassword.isBlank()) onReveal else onRegenerate)
-            }
-            Spacer(Modifier.height(10.dp))
-            WyrmPill(if (room.gate == "open") "Close room gate" else "Open room gate", Modifier.fillMaxWidth(), onClick = onToggleGate)
-            if (room.bans.isNotEmpty()) {
-                Spacer(Modifier.height(Wyrm.GapLarge))
-                WyrmLabel("Banned players")
-                room.bans.forEach { ban ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(ban.displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
-                        WyrmPill("Unban", onClick = { onUnban(ban.playerId) })
-                    }
-                }
-            }
-        } else if (!room.managedPublic) {
-            WyrmField(
-                "Room password", password, { password = it.uppercase().take(8) },
-                placeholder = "8 characters", error = state.error, masked = true,
-                passwordCredential = false, keyboardType = KeyboardType.Ascii,
-                imeAction = ImeAction.Done,
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-        WyrmPrimaryAction(
-            if (state.offline) "Reconnect to enter" else if (room.managedPublic) "Enter public room" else "Enter room",
-            Modifier.fillMaxWidth().height(58.dp),
-            enabled = !state.offline && (room.managedPublic || room.member || room.mine || password.length == 8),
-        ) {
-            // A room key is not an account password. Releasing focus before
-            // the field leaves composition also prevents an OEM password-save
-            // window from sitting invisibly above the fresh call controls.
+    // A member's code can go stale when the owner changes it; the error brings the boxes back.
+    val needsCode = !room.managedPublic && !room.mine && (!room.member || state.error.isNotBlank())
+    val canJoin = !state.offline && (!needsCode || code.length == 8)
+    val join = {
+        if (canJoin) {
+            // A room code is not an account password. Releasing focus first also
+            // keeps an OEM password-save window from sitting over the call.
             focusManager.clearFocus(force = true)
             keyboard?.hide()
-            onJoin(password)
+            onJoin(code)
         }
-        if (room.mine) {
-            Spacer(Modifier.height(22.dp)); WyrmRule(); Spacer(Modifier.height(14.dp))
-            Text("Delete room", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Blood, modifier = Modifier.clickable(onClick = onDelete))
-        }
-        if (room.history.isNotEmpty()) {
-            Spacer(Modifier.height(Wyrm.GapLarge))
-            WyrmLabel("Previous calls")
-            room.history.take(20).forEach { call ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(relativeTime(call.startedAt), fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
-                    Text("Peak ${call.peakParticipants}", fontFamily = Wyrm.Body, fontSize = 10.sp, color = Wyrm.Quiet)
+    }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding()) {
+        Spacer(Modifier.height(26.dp))
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            VoiceRoomArt(room, 88.dp)
+            Spacer(Modifier.height(14.dp))
+            Text(room.name, fontFamily = Wyrm.Display, fontSize = 30.sp, lineHeight = 34.sp, color = Wyrm.Ink, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(6.dp))
+            if (room.managedPublic) {
+                Text("Official Wyrm room", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+            } else {
+                Row(
+                    Modifier.clip(CircleShape)
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onOpenProfile(room.creator.id) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    WyrmAvatar(room.creator.avatarUrl, room.creator.avatarKey, room.creator.displayName, 20.dp, corner = 10.dp)
+                    Text("by ${room.creator.displayName}", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Mute)
                 }
-                WyrmRule()
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier.clip(CircleShape).background(if (room.active) Wyrm.Live.copy(alpha = 0.13f) else Wyrm.Well)
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                VoiceLiveBars(if (room.active) Wyrm.Live else Wyrm.Quiet, playing = room.active, height = 11.dp)
+                Text(
+                    when {
+                        room.active -> "Live · ${room.activeCount} of ${room.capacity} inside" +
+                            if (room.activeSince.isNotBlank()) " · since ${relativeTime(room.activeSince)}" else ""
+                        room.gate != "open" && !room.managedPublic -> "Closed right now"
+                        else -> "Quiet · be the first one in"
+                    },
+                    fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp,
+                    color = if (room.active) Wyrm.Live else Wyrm.Mute,
+                )
             }
         }
-        Spacer(Modifier.height(Wyrm.GapLarge))
+        Spacer(Modifier.height(20.dp))
+        VoiceFacts(room)
+        Spacer(Modifier.height(24.dp))
+        if (needsCode) {
+            Box(Modifier.padding(horizontal = 20.dp)) {
+                VoiceRoomCodeField(
+                    code = code,
+                    onCode = { code = it },
+                    creator = room.creator.displayName,
+                    error = state.error,
+                    onAskCreator = { onOpenProfile(room.creator.id) },
+                    onDone = join,
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+        } else if (state.error.isNotBlank()) {
+            Text(state.error, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Blood, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
+        }
+        Row(
+            Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(56.dp).clip(CircleShape)
+                .background(if (canJoin) Wyrm.Live else Wyrm.Well)
+                .clickable(enabled = canJoin, interactionSource = remember { MutableInteractionSource() }, indication = null) { join() },
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(painterResource(LucideR.drawable.lucide_ic_mic), null, Modifier.size(19.dp), tint = if (canJoin) Color.White else Wyrm.Quiet)
+            Spacer(Modifier.width(9.dp))
+            Text(
+                when {
+                    state.offline -> "Reconnect to join"
+                    room.mine -> if (room.active) "Join your room" else "Start your room"
+                    else -> "Join room"
+                },
+                fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (canJoin) Color.White else Wyrm.Quiet,
+            )
+        }
+        Text(
+            if (room.managedPublic) "You join muted. Tap the mic when you want to talk." else "You join muted. The creator can remove people.",
+            fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet, textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp),
+        )
+        if (room.mine) {
+            VoiceSectionTitle("Manage your room")
+            Column(
+                Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(wyrmRounded(20.dp)).background(Wyrm.Card)
+                    .border(1.dp, Wyrm.Rule, wyrmRounded(20.dp)).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text("Room code", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Wyrm.Quiet)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(state.roomPassword.ifBlank { "••••••••" }, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold, fontSize = 24.sp, letterSpacing = 3.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
+                    if (state.roomPassword.isNotBlank()) {
+                        Icon(
+                            painterResource(LucideR.drawable.lucide_ic_copy), "Copy room code",
+                            Modifier.size(38.dp).clip(CircleShape).clickable { clipboard.setText(AnnotatedString(state.roomPassword)) }.padding(9.dp),
+                            tint = Wyrm.Ink,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    WyrmPill(if (state.roomPassword.isBlank()) "Show" else "New code", onClick = if (state.roomPassword.isBlank()) onReveal else onRegenerate)
+                }
+                Text("Share this code with friends. A new code keeps out anyone who had the old one.",
+                    fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(if (room.gate == "open") "Open for entries" else "Closed", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp, color = Wyrm.Ink)
+                        Text(if (room.gate == "open") "People with the code can join." else "No one new can join until you open it.",
+                            fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                    }
+                    WyrmPill(if (room.gate == "open") "Close" else "Open", onClick = onToggleGate)
+                }
+            }
+            if (room.bans.isNotEmpty()) {
+                VoiceSectionTitle("Removed for good", "${room.bans.size}")
+                room.bans.forEach { ban ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(ban.displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
+                        WyrmPill("Let back in", onClick = { onUnban(ban.playerId) })
+                    }
+                }
+            }
+            Text("Delete room", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Blood,
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp).clickable(onClick = onDelete))
+        }
+        if (room.history.isNotEmpty()) {
+            VoiceSectionTitle("Earlier calls")
+            room.history.take(20).forEach { call ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(relativeTime(call.startedAt), fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
+                    Text("${call.peakParticipants} at most", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                }
+            }
+        }
+        Spacer(Modifier.height(32.dp))
     }
 }
 
@@ -909,6 +971,12 @@ private fun cacheAge(savedAt: Long): String {
     }
 }
 
+/**
+ * In the call (OM, 2026-09-30): the room and a live line on top, everyone as
+ * a round avatar with a ring while they speak, and a dock of big round
+ * controls at the bottom (mic, sound, speaker, more, leave). The owner taps a
+ * person for Profile / Remove / Remove for good.
+ */
 @Composable
 private fun CallRoom(
     call: VoiceCallState,
@@ -923,199 +991,91 @@ private fun CallRoom(
     onOpenProfile: (String) -> Unit,
 ) {
     var more by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().padding(horizontal = Wyrm.Gutter)) {
-        Spacer(Modifier.height(Wyrm.Gap))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                WyrmLabel(call.stage.label, color = if (call.error.isBlank()) Wyrm.Live else Wyrm.Blood)
-                Text(call.roomName, fontFamily = Wyrm.Display, fontSize = 34.sp, color = Wyrm.Ink)
-            }
-            Text("${call.participants.size}/10", fontFamily = Wyrm.Display, fontSize = 26.sp, color = Wyrm.Ink)
-        }
-        Spacer(Modifier.height(14.dp))
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2), modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            gridItems(call.participants, key = VoiceParticipant::id) { participant ->
-                ParticipantTile(
-                    participant,
-                    participant.playerId in call.speakingPlayerIds,
-                    owner && participant.playerId != call.playerId,
-                    onKick, onBan, onOpenProfile,
-                )
-            }
-        }
-        AnimatedVisibility(more) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 10.dp)
-                    .clip(wyrmRounded(14.dp))
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
-                    .padding(16.dp),
-            ) {
-                    Text("Call volume", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = Wyrm.Quiet)
-                    LiquidSlider(value = call.volume, onValueChange = onVolume)
-            }
-        }
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(bottom = 18.dp)
-                .clip(wyrmRounded(18.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(18.dp)),
-        ) {
-            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                CallButton(
-                    if (call.muted || call.interrupted) LucideR.drawable.lucide_ic_mic_off else LucideR.drawable.lucide_ic_mic,
-                    if (call.muted || call.interrupted) "MUTED" else "UNMUTED",
-                    if (call.muted || call.interrupted) Wyrm.Blood else Wyrm.Live,
-                    onMute,
-                )
-                CallButton(
-                    if (call.deafened) LucideR.drawable.lucide_ic_volume_x else LucideR.drawable.lucide_ic_volume_2,
-                    if (call.deafened) "SOUND OFF" else "SOUND ON",
-                    if (call.deafened) Wyrm.Blood else Wyrm.Ink, onDeafen,
-                )
-                CallButton(LucideR.drawable.lucide_ic_phone_off, "LEAVE", Wyrm.Blood, onLeave)
-                CallButton(
-                    if (call.audioRoute == "earpiece") LucideR.drawable.lucide_ic_ear else LucideR.drawable.lucide_ic_speaker,
-                    if (call.audioRoute == "earpiece") "EARPIECE" else "SPEAKER", Wyrm.Ink,
-                ) { onRoute(if (call.audioRoute == "earpiece") "speaker" else "earpiece") }
-                CallButton(LucideR.drawable.lucide_ic_sliders_horizontal, "MORE", Wyrm.Ink) { more = !more }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ParticipantTile(
-    participant: VoiceParticipant,
-    speaking: Boolean,
-    canModerate: Boolean,
-    onKick: (String) -> Unit,
-    onBan: (String) -> Unit,
-    onOpenProfile: (String) -> Unit,
-) {
-    val edge = if (speaking) Wyrm.Live else Wyrm.Rule
-    Column(
-        Modifier.aspectRatio(1f).clip(wyrmRounded(14.dp))
-            .background(Wyrm.Card)
-            .border(if (speaking) 2.dp else 1.dp, edge, wyrmRounded(14.dp))
-            .clickable { onOpenProfile(participant.playerId) }.padding(12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        WyrmAvatar(participant.avatarUrl, participant.avatarKey, participant.displayName, 54.dp)
-        Spacer(Modifier.height(9.dp))
-        Text(participant.displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                painterResource(if (participant.muted) LucideR.drawable.lucide_ic_mic_off else LucideR.drawable.lucide_ic_mic),
-                null, Modifier.size(13.dp),
-                tint = if (participant.muted) Wyrm.Blood else if (speaking) Wyrm.Live else Wyrm.Grey,
-            )
-            Spacer(Modifier.width(5.dp))
-            Text(if (speaking) "Speaking" else if (participant.muted) "Muted" else "Listening", fontFamily = Wyrm.Body, fontSize = 9.sp, color = if (speaking) Wyrm.Live else Wyrm.Quiet)
-        }
-        if (canModerate) {
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("KICK", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 8.sp, color = Wyrm.Grey, modifier = Modifier.clickable { onKick(participant.playerId) })
-                Text("BAN", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 8.sp, color = Wyrm.Blood, modifier = Modifier.clickable { onBan(participant.playerId) })
-            }
-        }
-    }
-}
-
-@Composable
-private fun VoiceOperationOverlay(operation: VoiceOperationState, onCancel: () -> Unit, onRetry: () -> Unit) {
-    val shimmer = rememberInfiniteTransition(label = "voice-shimmer")
-    val travel by shimmer.animateFloat(0f, 1f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "travel")
-    Box(Modifier.fillMaxSize().background(Color(0xCC1E1C1A)), contentAlignment = Alignment.Center) {
-        Column(
-            Modifier
-                .padding(horizontal = 22.dp)
-                .fillMaxWidth()
-                .widthIn(max = 430.dp)
-                .clip(wyrmRounded(16.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(16.dp))
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-                Box(
-                    Modifier.size(72.dp).clip(CircleShape).background(
-                        Brush.linearGradient(listOf(Color.Transparent, Wyrm.Ink.copy(alpha = .22f), Color.Transparent),
-                            start = androidx.compose.ui.geometry.Offset(travel * 180f - 120f, travel * 180f - 120f),
-                            end = androidx.compose.ui.geometry.Offset(travel * 180f, travel * 180f)),
-                    ), contentAlignment = Alignment.Center,
-                ) { WyrmMark(Modifier.size(54.dp), size = 48.dp, ink = Wyrm.Ink) }
-                Spacer(Modifier.height(16.dp))
-                if (operation.failure.isEmpty()) {
-                    Icon(
-                        painterResource(LucideR.drawable.lucide_ic_loader_circle), null,
-                        Modifier.size(19.dp).rotate(travel * 360f), tint = Wyrm.Ink,
+    var chosen by remember { mutableStateOf<VoiceParticipant?>(null) }
+    val connected = call.stage == VoiceConnectionStage.CONNECTED
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    VoiceLiveBars(if (call.error.isBlank()) Wyrm.Live else Wyrm.Blood, playing = connected, height = 12.dp)
+                    Text(
+                        if (call.error.isNotBlank()) call.stage.label else if (connected) "LIVE" else call.stage.label.uppercase(),
+                        fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.2.sp,
+                        color = if (call.error.isBlank()) Wyrm.Live else Wyrm.Blood,
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Text(operation.stages.getOrElse(operation.stage) { operation.stages.last() }, fontFamily = Wyrm.Display, fontSize = 24.sp, lineHeight = 29.sp, textAlign = TextAlign.Center, color = Wyrm.Ink)
-                    Spacer(Modifier.height(14.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        operation.stages.indices.forEach { index ->
-                            Box(Modifier.weight(1f).height(3.dp).clip(CircleShape).background(if (index <= operation.stage) Wyrm.Ink else Wyrm.Line))
-                        }
-                    }
-                    Spacer(Modifier.height(9.dp))
-                    WyrmLabel("STEP ${operation.stage + 1} OF ${operation.stages.size}")
-                    Spacer(Modifier.height(22.dp))
-                    WyrmPill("Cancel", Modifier.fillMaxWidth().height(46.dp), onClick = onCancel)
-                } else {
-                    Text("That stage did not finish", fontFamily = Wyrm.Display, fontSize = 27.sp, color = Wyrm.Ink, textAlign = TextAlign.Center)
-                    Spacer(Modifier.height(7.dp))
-                    Text(operation.failure, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Blood, textAlign = TextAlign.Center)
-                    Spacer(Modifier.height(18.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        WyrmPill("Cancel", onClick = onCancel)
-                        WyrmPill("Retry", leading = Wyrm.Live, onClick = onRetry)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(call.roomName, fontFamily = Wyrm.Display, fontSize = 30.sp, lineHeight = 34.sp, color = Wyrm.Ink,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("${call.participants.size} of 10 in the room", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 18.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                gridItems(call.participants, key = VoiceParticipant::id) { participant ->
+                    val you = participant.playerId == call.playerId
+                    VoiceParticipantTile(
+                        participant = participant,
+                        speaking = participant.playerId in call.speakingPlayerIds,
+                        you = you,
+                        onTap = { if (owner && !you) chosen = participant else onOpenProfile(participant.playerId) },
+                    )
+                }
+            }
+            AnimatedVisibility(more) {
+                Column(
+                    Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp).fillMaxWidth().clip(wyrmRounded(18.dp))
+                        .background(Wyrm.Card).border(1.dp, Wyrm.Rule, wyrmRounded(18.dp)).padding(16.dp),
+                ) {
+                    Text("Call volume", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Wyrm.Quiet)
+                    LiquidSlider(value = call.volume, onValueChange = onVolume)
+                }
+            }
+            Row(
+                Modifier.padding(start = 12.dp, end = 12.dp, bottom = 16.dp).fillMaxWidth().clip(wyrmRounded(30.dp))
+                    .background(Wyrm.Card).border(1.dp, Wyrm.Rule, wyrmRounded(30.dp)).padding(vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                val micOff = call.muted || call.interrupted
+                VoiceDockButton(if (micOff) LucideR.drawable.lucide_ic_mic_off else LucideR.drawable.lucide_ic_mic,
+                    if (micOff) "Unmute" else "Mute", on = !micOff, onClick = onMute)
+                VoiceDockButton(if (call.deafened) LucideR.drawable.lucide_ic_headphone_off else LucideR.drawable.lucide_ic_headphones,
+                    if (call.deafened) "Sound off" else "Sound", on = false, onClick = onDeafen)
+                VoiceDockButton(if (call.audioRoute == "earpiece") LucideR.drawable.lucide_ic_ear else LucideR.drawable.lucide_ic_speaker,
+                    if (call.audioRoute == "earpiece") "Earpiece" else "Speaker", on = false) {
+                    onRoute(if (call.audioRoute == "earpiece") "speaker" else "earpiece")
+                }
+                VoiceDockButton(LucideR.drawable.lucide_ic_sliders_horizontal, "More", on = more) { more = !more }
+                VoiceDockButton(LucideR.drawable.lucide_ic_phone_off, "Leave", on = false, danger = true, onClick = onLeave)
+            }
+        }
+        // The owner's choices for one person.
+        chosen?.let { person ->
+            Box(
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { chosen = null },
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                Column(
+                    Modifier.padding(12.dp).fillMaxWidth().clip(wyrmRounded(24.dp)).background(Wyrm.Card)
+                        .border(1.dp, Wyrm.Rule, wyrmRounded(24.dp)).padding(vertical = 8.dp),
+                ) {
+                    Text(person.displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp))
+                    listOf(
+                        Triple("View profile", Wyrm.Ink) { onOpenProfile(person.playerId) },
+                        Triple("Remove from call", Wyrm.Ink) { onKick(person.playerId) },
+                        Triple("Remove for good", Wyrm.Blood) { onBan(person.playerId) },
+                    ).forEach { (label, colour, action) ->
+                        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = colour,
+                            modifier = Modifier.fillMaxWidth().clickable { chosen = null; action() }.padding(horizontal = 18.dp, vertical = 13.dp))
                     }
                 }
+            }
         }
-    }
-}
-
-@Composable
-private fun Metric(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier
-            .aspectRatio(1.18f)
-            .clip(wyrmRounded(14.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
-            .padding(12.dp),
-    ) {
-        Text(label.uppercase(), fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Wyrm.Quiet)
-        Spacer(Modifier.weight(1f))
-        Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Wyrm.Ink, maxLines = 1)
-    }
-}
-
-@Composable
-private fun CallButton(icon: Int, label: String, colour: Color, onClick: () -> Unit) {
-    Column(Modifier.clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.size(38.dp).clip(CircleShape).background(colour.copy(alpha = .10f))
-                .border(1.dp, colour.copy(alpha = .32f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(painterResource(icon), null, Modifier.size(18.dp), tint = colour)
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.sp, letterSpacing = 1.sp, color = colour)
     }
 }
 

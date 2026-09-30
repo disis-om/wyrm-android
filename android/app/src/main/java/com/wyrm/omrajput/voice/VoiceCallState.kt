@@ -7,15 +7,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 enum class VoiceConnectionStage(val label: String) {
+    // Plain words for players (OM, 2026-09-30); the stages themselves are unchanged.
     IDLE("Voice is ready"),
-    GETTING_SESSION("Getting session ID"),
-    CONNECTING_EDGE("Connecting to voice edge"),
-    PREPARING_AUDIO("Preparing encrypted audio"),
-    SUBSCRIBING("Subscribing to room audio"),
-    ENTERING("Entering room"),
-    CONNECTED("Voice connected"),
-    LEAVING("Leaving room"),
-    FAILED("Voice connection failed"),
+    GETTING_SESSION("Connecting"),
+    CONNECTING_EDGE("Connecting"),
+    PREPARING_AUDIO("Connecting audio"),
+    SUBSCRIBING("Connecting audio"),
+    ENTERING("Joining room"),
+    CONNECTED("Live"),
+    LEAVING("Leaving"),
+    FAILED("Couldn't connect"),
 }
 
 data class VoiceCallState(

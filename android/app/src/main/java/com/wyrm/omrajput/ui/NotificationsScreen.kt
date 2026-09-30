@@ -426,9 +426,11 @@ private fun FeatureCardBody(n: WyrmNotification) {
 @Composable
 private fun EventCardBody(n: WyrmNotification, onJoin: (String) -> Unit) {
     var clock by remember(n.id) { mutableLongStateOf(System.currentTimeMillis()) }
+    // A live countdown on Play (OM, 2026-10-01): every second, computed from the
+    // start time each tick, never a cached label.
     LaunchedEffect(n.id) {
         while (true) {
-            delay(60_000)
+            delay(1_000L - System.currentTimeMillis() % 1_000L)
             clock = System.currentTimeMillis()
         }
     }
@@ -457,7 +459,7 @@ private fun EventCardBody(n: WyrmNotification, onJoin: (String) -> Unit) {
     InviteActions(
         id = n.id,
         address = n.serverAddress,
-        joinLabel = if (started) "Join Now" else eventCountdown(n.startsAt, clock),
+        joinLabel = if (started) "Play" else eventCountdown(n.startsAt, clock),
         joinFilled = started,
         onJoin = onJoin,
     )
@@ -725,16 +727,19 @@ private fun InviteActions(
 }
 
 private fun eventCountdown(startsAt: String?, nowMs: Long): String {
-    val instant = startsAt ?: return "Join Now"
+    val instant = startsAt ?: return "Play"
     return runCatching {
-    val target = java.time.Instant.parse(instant).toEpochMilli()
-    val minutes = ((target - nowMs).coerceAtLeast(0L) + 59_999L) / 60_000L
-    when {
-        minutes >= 24 * 60 -> "Starts in ${minutes / (24 * 60)}d"
-        minutes >= 60 -> "Starts in ${minutes / 60}h ${minutes % 60}m"
-        else -> "Starts in ${minutes}m"
-    }
-    }.getOrDefault("Join Now")
+        val left = ((java.time.Instant.parse(instant).toEpochMilli() - nowMs).coerceAtLeast(0L) + 999L) / 1_000L
+        val days = left / 86_400
+        val hours = (left % 86_400) / 3_600
+        val minutes = (left % 3_600) / 60
+        val seconds = left % 60
+        when {
+            days > 0 -> "Starts in ${days}d ${hours}h"
+            hours > 0 -> "Starts in %d:%02d:%02d".format(hours, minutes, seconds)
+            else -> "Starts in %02d:%02d".format(minutes, seconds)
+        }
+    }.getOrDefault("Play")
 }
 
 /** A label/value pair, the same shape an event's rundown always takes. */

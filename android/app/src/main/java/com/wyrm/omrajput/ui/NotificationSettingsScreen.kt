@@ -62,7 +62,6 @@ internal val notificationGroups = listOfNotNull(
         listOf(
             NotificationChoice("achievement", "Achievements", "Personal bests and milestones after a run."),
             NotificationChoice("rank", "Rank changes", "Leaderboard movement after a finished run."),
-            NotificationChoice("backup", "Backup receipts", "Local backup and restore results from this device."),
         ),
     ),
 )

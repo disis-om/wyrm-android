@@ -544,6 +544,97 @@ private fun EditorFooterAction(label: String, color: Color, onClick: () -> Unit,
     )
 }
 
+/** The engine's default background scale (599/4096, `user_settings.c`). */
+internal const val DEFAULT_BG_SCALE = 599f / 4096f
+private const val BG_MIN = 0.05f
+private const val BG_MAX = 4f
+
+/** Slider position (0..1) ⇄ background scale, on a log scale so small sizes get room. */
+internal fun bgScaleAt(t: Float): Float = BG_MIN * Math.pow((BG_MAX / BG_MIN).toDouble(), t.coerceIn(0f, 1f).toDouble()).toFloat()
+internal fun bgSliderOf(scale: Float): Float =
+    (Math.log((scale.coerceIn(BG_MIN, BG_MAX) / BG_MIN).toDouble()) / Math.log((BG_MAX / BG_MIN).toDouble())).toFloat()
+
+/** "100%" is the arena's own size; the label a player reads everywhere. */
+internal fun bgScaleLabel(scale: Float): String = "${Math.round(scale / DEFAULT_BG_SCALE * 100f)}%"
+
+/**
+ * Adjust arena background size (OM, 2026-10-01). The AI arena in landscape,
+ * as the HUD editor opens it, with the minimap and leaderboard where the
+ * player keeps them, and one slider along the bottom. The engine redraws the
+ * floor at the new size every frame, so what the player sees is what they get.
+ * The floor is the one chosen in Skin › Arena background.
+ */
+@Composable
+fun ArenaBackgroundSizeEditor(
+    scale: Float,
+    minimap: Offset,
+    leaderboard: Offset,
+    minimapSize: Float,
+    leaderboardFont: Int,
+    safeInsets: SafeInsets,
+    onScale: (Float) -> Unit,
+    onReset: () -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    var size by remember { mutableStateOf(Offset.Zero) }
+    val density = LocalDensity.current
+    val mapDp = with(density) { minimapSize.coerceIn(128f, 512f).toDp() }
+    val leaderboardScale = 1f + leaderboardFont.coerceIn(0, 2) * 0.16f
+    Box(Modifier.fillMaxSize().onSizeChanged { size = Offset(it.width.toFloat(), it.height.toFloat()) }) {
+        ArenaHint()
+        if (size.x > 0f) {
+            val area = safeInsets.area(size)
+            // References only: where the player keeps them; they do not move here.
+            Draggable(minimap, area, {}) {
+                Box(
+                    Modifier.size(mapDp).background(Wyrm.Card.copy(alpha = 0.18f), CircleShape)
+                        .border(3.dp, Wyrm.Ink.copy(alpha = 0.76f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Text("MAP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = Wyrm.Ink) }
+            }
+            Draggable(leaderboard, area, {}) {
+                HudPreviewPanel(
+                    "LEADERBOARD\n1  Wyrm Player     9503\n2  Northwind       2819\n3  Orbit            418\n4  Meadow           389\n5  Drift            248",
+                    with(density) { (250f * leaderboardScale).toDp() },
+                    with(density) { (132f * leaderboardScale).toDp() },
+                )
+            }
+        }
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = with(density) { safeInsets.bottom.toDp() } + 14.dp)
+                .width(460.dp)
+                .clip(wyrmRounded(24.dp))
+                .background(Wyrm.Card.copy(alpha = 0.96f))
+                .border(1.dp, Wyrm.Rule, wyrmRounded(24.dp))
+                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("ARENA BACKGROUND SIZE", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+                    letterSpacing = 1.2.sp, color = Wyrm.Quiet, modifier = Modifier.weight(1f))
+                Text(bgScaleLabel(scale), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+            }
+            WyrmSlider(
+                value = bgSliderOf(scale),
+                minimum = 0f,
+                maximum = 1f,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                onChange = { onScale(bgScaleAt(it)) },
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Smaller looks further away", fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet,
+                    modifier = Modifier.weight(1f))
+                EditorFooterAction("CANCEL", Wyrm.Quiet, onCancel)
+                EditorFooterAction("RESET", Wyrm.Quiet, onReset)
+                EditorFooterAction("SAVE", Wyrm.OnInk, onSave, filled = true)
+            }
+        }
+    }
+}
+
 enum class LayoutTarget { JOYSTICK, BOOST, ZOOM }
 
 enum class ArenaHudTarget(val prefix: String, val fallback: Offset) {

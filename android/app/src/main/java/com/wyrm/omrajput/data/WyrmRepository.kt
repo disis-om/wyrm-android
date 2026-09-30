@@ -569,6 +569,29 @@ class WyrmRepository(context: Context, baseUrl: String) {
         Unit
     }
 
+    /** Log out: this phone stops receiving the account's pushes. */
+    suspend fun forgetDeviceToken(token: String): Unit = withContext(Dispatchers.IO) {
+        call("/v1/me/device-token/forget", method = "POST", body = JSONObject().put("token", token))
+        Unit
+    }
+
+    /**
+     * The account's settings for this platform plus the shared copy (skin, look,
+     * arena background, name). Either is null when nothing was ever saved.
+     */
+    suspend fun accountSettings(platform: String): Pair<JSONObject?, JSONObject?> = withContext(Dispatchers.IO) {
+        val body = call("/v1/me/settings/$platform")
+        body.optJSONObject("platform")?.optJSONObject("doc") to body.optJSONObject("shared")?.optJSONObject("doc")
+    }
+
+    /** Replaces the account's copy for this platform (and the shared one). */
+    suspend fun saveAccountSettings(platform: String, doc: JSONObject, shared: JSONObject?): Unit = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("doc", doc).put("appVersion", com.wyrm.omrajput.BuildConfig.VERSION_NAME)
+        if (shared != null) body.put("shared", shared)
+        call("/v1/me/settings/$platform", method = "PUT", body = body)
+        Unit
+    }
+
     /** The alerts panel's feed: every broadcast, marked against this player's own read point. */
     suspend fun notifications(): List<ServerNotification> = withContext(Dispatchers.IO) {
         val array = call("/v1/notifications").optJSONArray("notifications")

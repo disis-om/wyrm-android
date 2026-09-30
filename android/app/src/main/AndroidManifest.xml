@@ -124,6 +124,10 @@
             -->
         </activity>
 
+        <!-- Battledome notification: Copy IP from the shade (OM, 2026-10-01). -->
+        <receiver
+            android:name="com.wyrm.omrajput.WyrmNotificationActions"
+            android:exported="false" />
         <receiver
             android:name="com.wyrm.omrajput.UpdateInstallReceiver"
             android:exported="false" />

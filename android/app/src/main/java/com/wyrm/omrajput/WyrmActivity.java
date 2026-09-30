@@ -72,7 +72,6 @@ public final class WyrmActivity extends SDLActivity {
     static final int SCREEN_LOBBY = 3;
 
     private final ExecutorService photoExecutor = Executors.newSingleThreadExecutor();
-    private BackupManager backupManager;
     private UpdateManager updateManager;
     private WyrmGameMode gameMode;
     private WyrmOverlay overlay;
@@ -183,8 +182,9 @@ public final class WyrmActivity extends SDLActivity {
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
                         | WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
 
-        backupManager = new BackupManager(this);
-        updateManager = new UpdateManager(this, backupManager);
+        // Manual .wyrm backups are gone (2026-10-01): settings live in the
+        // account now (data/AccountSync.kt), saved on log out and in the background.
+        updateManager = new UpdateManager(this);
         gameMode = new WyrmGameMode(this);
         ensureNotificationsReady();
 
@@ -448,10 +448,14 @@ public final class WyrmActivity extends SDLActivity {
         overlay.openFromNotification(
                 kind,
                 safe(intent.getStringExtra("wyrm.id")),
-                safe(intent.getStringExtra("wyrm.actorId")));
+                safe(intent.getStringExtra("wyrm.actorId")),
+                safe(intent.getStringExtra("wyrm.action")),
+                safe(intent.getStringExtra("wyrm.address")));
         intent.removeExtra("wyrm.kind");
         intent.removeExtra("wyrm.id");
         intent.removeExtra("wyrm.actorId");
+        intent.removeExtra("wyrm.action");
+        intent.removeExtra("wyrm.address");
     }
 
     @Override
@@ -469,7 +473,11 @@ public final class WyrmActivity extends SDLActivity {
     protected void onPause() {
         if (gameMode != null) gameMode.onPause();
         com.wyrm.omrajput.data.DropWatch.watchNetwork(this, false);
-        if (overlay != null) overlay.onActivityPaused();
+        if (overlay != null) {
+            overlay.onActivityPaused();
+            // The account keeps a current copy of the settings (AccountSync).
+            overlay.onAppBackground();
+        }
         super.onPause();
     }
 
@@ -484,10 +492,6 @@ public final class WyrmActivity extends SDLActivity {
             if (picked != null) {
                 decodeProfilePhoto(picked);
             }
-            return;
-        }
-        if (backupManager != null
-                && backupManager.onActivityResult(requestCode, resultCode, data)) {
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
@@ -587,9 +591,6 @@ public final class WyrmActivity extends SDLActivity {
         if (updateManager != null) {
             updateManager.shutdown();
         }
-        if (backupManager != null) {
-            backupManager.shutdown();
-        }
         photoExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -637,31 +638,10 @@ public final class WyrmActivity extends SDLActivity {
         }
     }
 
-    String applyBackupPayload(byte[] payload, byte[] teamConfig) {
-        try {
-            return payload == null ? "FAILED\nReason: Backup payload is empty."
-                    : nativeApplyBackup(payload, teamConfig);
-        } catch (Throwable error) {
-            String message = error.getMessage();
-            return "FAILED\nReason: " + (message == null || message.trim().isEmpty()
-                    ? error.getClass().getSimpleName() : message);
-        }
-    }
-
     void emitUpdateState(int status, int progress, String title, String detail,
                          long versionCode, String versionName) {
         nativeOnUpdateState(status, Math.max(0, Math.min(100, progress)),
                 safe(title), safe(detail), versionCode, safe(versionName));
-    }
-
-    void emitBackupState(int status, int count, String title, String detail) {
-        nativeOnBackupState(status, Math.max(0, count), safe(title), safe(detail));
-    }
-
-    void notifyBackupAppliedToOverlay() {
-        runOnUiThread(() -> {
-            if (overlay != null) overlay.onBackupRestored();
-        });
     }
 
     /** Called once the engine has finished starting; avoids startup-touch races. */
@@ -968,42 +948,18 @@ public final class WyrmActivity extends SDLActivity {
         }));
     }
 
-    public static void createBackupFromNative(byte[] payload, byte[] unused) {
-        if (payload == null) {
-            return;
-        }
-        byte[] copy = payload.clone();
-        withActivity(activity -> activity.runOnUiThread(() -> {
-            if (activity.backupManager != null) {
-                activity.backupManager.createBackup(copy, null);
-            }
-        }));
-    }
+    /*
+     * The engine still knows the four backup calls by name (android_update.c).
+     * Manual backups are retired (2026-10-01), so they do nothing; nothing in
+     * the interface asks for them any more.
+     */
+    public static void createBackupFromNative(byte[] payload, byte[] unused) { }
 
-    public static void checkBackupsFromNative() {
-        withActivity(activity -> activity.runOnUiThread(() -> {
-            if (activity.backupManager != null) {
-                activity.backupManager.checkBackups();
-            }
-        }));
-    }
+    public static void checkBackupsFromNative() { }
 
-    public static void restoreLatestBackupFromNative() {
-        withActivity(activity -> activity.runOnUiThread(() -> {
-            if (activity.backupManager != null) {
-                activity.backupManager.restoreLatest();
-            }
-        }));
-    }
+    public static void restoreLatestBackupFromNative() { }
 
-    /** The instruction card's OK button; selection itself stays with Android. */
-    public static void chooseBackupFolderFromNative() {
-        withActivity(activity -> activity.runOnUiThread(() -> {
-            if (activity.backupManager != null) {
-                activity.backupManager.openFolderPicker();
-            }
-        }));
-    }
+    public static void chooseBackupFolderFromNative() { }
 
     private static void withActivity(ActivityAction action) {
         Activity context = SDLActivity.getContext();

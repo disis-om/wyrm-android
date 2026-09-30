@@ -137,6 +137,8 @@ internal fun IosSkinScreen(
     banner: (@Composable () -> Unit)? = null,
     /** "Share this skin": the Share editor with this skin; null hides the button. */
     onShareSkin: (() -> Unit)? = null,
+    /** Arena background open: "Adjust size" sits on the rule, top right (OM, 2026-10-01). */
+    onAdjustBackgroundSize: (() -> Unit)? = null,
 ) {
     val textures by rememberSkinTextures()
     val lookNow = look ?: WyrmLookStore.spec()
@@ -222,6 +224,11 @@ internal fun IosSkinScreen(
             )
             // Share this skin: bottom left of the preview, just above the rule (OM).
             onShareSkin?.let { share -> ShareSkinButton(share, Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 10.dp)) }
+            if (section == SkinSection.BACKGROUND) {
+                onAdjustBackgroundSize?.let { adjust ->
+                    AdjustBackgroundButton(adjust, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp).offset(y = 17.dp))
+                }
+            }
         }
         Box(Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(1.dp).background(Wyrm.Rule))
         AnimatedContent(
@@ -483,6 +490,33 @@ private fun ShareSkinButton(onClick: () -> Unit, modifier: Modifier = Modifier) 
         )
         Spacer(Modifier.width(7.dp))
         Text("Share this skin", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Wyrm.OnInk)
+    }
+}
+
+@Composable
+private fun AdjustBackgroundButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Row(
+        modifier
+            .height(34.dp)
+            .scale(pressScale(pressed))
+            .clip(CircleShape)
+            .background(Wyrm.Card)
+            .border(1.dp, Wyrm.Rule, CircleShape)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 13.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(com.composables.icons.lucide.R.drawable.lucide_ic_scaling),
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            colorFilter = ColorFilter.tint(Wyrm.Ink),
+        )
+        Spacer(Modifier.width(7.dp))
+        Text("Adjust size", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Wyrm.Ink)
     }
 }
 

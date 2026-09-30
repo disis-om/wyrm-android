@@ -250,6 +250,11 @@ object CrashWatch {
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private fun javaFile(context: Context) = File(context.filesDir, "wyrm-crash/java.txt")
 
+    /** After a log in or log out rewrote the file (AccountSync). */
+    fun reloadPrefs() {
+        appContext?.let { autoSend = prefs(it).getBoolean(KEY_AUTO, false) }
+    }
+
     /** Once, first thing in the activity: read what the last run left, then arm. */
     @JvmStatic
     fun install(context: Context) {
@@ -425,6 +430,13 @@ object SupportStore {
     private fun stamp(report: SupportReport) = "${report.id}|${report.updatedAt}"
 
     /** Replies the player has not opened yet. */
+    /** A reply the player has not seen yet (the badge trail's last mark). */
+    fun isUnseen(report: SupportReport): Boolean {
+        if (report.reply.isBlank()) return false
+        val seen = appContext?.getSharedPreferences(SEEN, Context.MODE_PRIVATE)?.getStringSet("seen", emptySet()).orEmpty()
+        return stamp(report) !in seen
+    }
+
     val unseenReplies: Int
         get() {
             seenRevision

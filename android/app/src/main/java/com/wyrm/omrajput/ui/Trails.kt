@@ -1307,7 +1307,8 @@ private fun TrailReplyRow(
 
 /** Trails at the top of Social: the newest photos, and one tap into the feed. */
 @Composable
-internal fun TrailsTeaser(onOpen: () -> Unit) {
+/** [badge]: unread likes and replies on your trails (the badge trail, OM 2026-10-01). */
+internal fun TrailsTeaser(badge: Int = 0, onOpen: () -> Unit) {
     LaunchedEffect(Unit) { if (!TrailsStore.loaded) TrailsStore.refresh() }
     val trails = TrailsStore.trails
     Column(
@@ -1324,8 +1325,16 @@ internal fun TrailsTeaser(onOpen: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Trails", fontFamily = Wyrm.Display, fontSize = 24.sp, color = Wyrm.Ink)
-                Text(if (trails.isEmpty()) "Show off your skins, kills and best moments." else "New from the Wyrm community",
-                    fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Mute)
+                Text(when {
+                        badge > 0 -> "$badge new on your trails"
+                        trails.isEmpty() -> "Show off your skins, kills and best moments."
+                        else -> "New from the Wyrm community"
+                    },
+                    fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = if (badge > 0) Wyrm.Badge else Wyrm.Mute)
+            }
+            if (badge > 0) {
+                WyrmCountBadge(badge)
+                Spacer(Modifier.width(10.dp))
             }
             IosIcon(IosGlyph.CHEVRON_RIGHT, Wyrm.Chevron, size = 13.dp, semibold = true)
         }

@@ -113,7 +113,7 @@ private enum class SkinSection(val title: String) {
 private fun Int.rgbColor(): Color = Color(((this shr 16) and 0xFF) / 255f, ((this shr 8) and 0xFF) / 255f, (this and 0xFF) / 255f)
 
 @Composable
-fun IosSkinScreen(
+internal fun IosSkinScreen(
     state: SkinState,
     background: Int,
     settings: List<Setting>,
@@ -123,8 +123,22 @@ fun IosSkinScreen(
     onPickAccessory: (Int) -> Unit,
     onPickBackground: (Int) -> Unit,
     onSettingChange: (Setting, List<Float>) -> Unit,
+    /**
+     * A look being tried ("Try this skin", OM 2026-09-30): the preview and the
+     * Wyrm accessories page show it and every pick goes to [onLook], never to
+     * [WyrmLookStore]. Null is the player's own saved look.
+     */
+    look: WyrmLookSpec? = null,
+    onLook: ((WyrmLookSpec) -> Unit)? = null,
+    /** Drawn under the header: the "Trying …'s skin" banner. */
+    banner: (@Composable () -> Unit)? = null,
 ) {
     val textures by rememberSkinTextures()
+    val lookNow = look ?: WyrmLookStore.spec()
+    fun pickLook(next: WyrmLookSpec, saved: () -> Unit) {
+        val draft = onLook
+        if (look != null && draft != null) draft(next) else saved()
+    }
     val prefs = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("wyrm_skin_studio", android.content.Context.MODE_PRIVATE)
     var section by remember { mutableStateOf(SkinSection.OVERVIEW) }
     var editingPattern by remember { mutableStateOf(false) }
@@ -184,6 +198,7 @@ fun IosSkinScreen(
 
     Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
         IosScreenHeader(kicker = "WYRM", title = "Skin")
+        banner?.invoke()
         SkinPreview(
             textures = textures,
             groups = previewGroups,
@@ -196,6 +211,7 @@ fun IosSkinScreen(
             chain = chain,
             swing = swing,
             tagScale = tagScale,
+            look = lookNow,
             modifier = Modifier.fillMaxWidth().height(218.dp),
         )
         Box(Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(1.dp).background(Wyrm.Rule))
@@ -222,7 +238,7 @@ fun IosSkinScreen(
                         // Wyrm's own looks (hair, ears, glasses): only this phone sees them.
                         IosSectionLabel("Wyrm accessories")
                         IosPaperCard {
-                            val worn = listOf(WyrmLookStore.hair, WyrmLookStore.ears, WyrmLookStore.glasses).count { it >= 0 }
+                            val worn = listOf(lookNow.hair, lookNow.ears, lookNow.glasses).count { it >= 0 }
                             IosListRow(SkinSection.WYRM_ACCESSORIES.title, value = if (worn == 0) "None" else "$worn on") {
                                 enter(SkinSection.WYRM_ACCESSORIES)
                             }
@@ -357,34 +373,35 @@ fun IosSkinScreen(
                                     Text("Hair colour", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Wyrm.Quiet)
                                     Spacer(Modifier.height(8.dp))
                                     GradientTrack(
-                                        fraction = WyrmLookStore.hairTone,
+                                        fraction = lookNow.hairTone,
                                         brush = Brush.horizontalGradient(*WyrmLook.hairStops.map { (at, rgb) -> at to WyrmLook.rgbColor(rgb) }.toTypedArray()),
-                                        onPick = WyrmLookStore::pickHairTone,
+                                        onPick = { tone -> pickLook(lookNow.copy(hairTone = tone.coerceIn(0f, 1f))) { WyrmLookStore.pickHairTone(tone) } },
                                     )
                                 }
                                 TileGrid(minimum = 70.dp, count = WyrmLook.hairNames.size + 1, fixedColumns = 4) { index ->
                                     if (index == 0) {
-                                        SelectionTile(WyrmLookStore.hair < 0, "None") { WyrmLookStore.pickHair(-1) }
+                                        SelectionTile(lookNow.hair < 0, "None") { pickLook(lookNow.copy(hair = -1)) { WyrmLookStore.pickHair(-1) } }
                                     } else {
                                         val style = index - 1
-                                        ImageTile(WyrmLookStore.hair == style, textures?.lookThumbnails?.get(style), 6.dp,
-                                            tint = WyrmLook.rgbColor(WyrmLookStore.hairRgb)) { WyrmLookStore.pickHair(style) }
+                                        ImageTile(lookNow.hair == style, textures?.lookThumbnails?.get(style), 6.dp,
+                                            tint = WyrmLook.rgbColor(lookNow.hairRgb)) { pickLook(lookNow.copy(hair = style)) { WyrmLookStore.pickHair(style) } }
                                     }
                                 }
                             }
                             else -> {
                                 val ears = lookTab == 1
                                 val names = if (ears) WyrmLook.earNames else WyrmLook.glassesNames
-                                val current = if (ears) WyrmLookStore.ears else WyrmLookStore.glasses
+                                val current = if (ears) lookNow.ears else lookNow.glasses
+                                fun pick(style: Int) = pickLook(if (ears) lookNow.copy(ears = style) else lookNow.copy(glasses = style)) {
+                                    if (ears) WyrmLookStore.pickEars(style) else WyrmLookStore.pickGlasses(style)
+                                }
                                 TileGrid(minimum = 70.dp, count = names.size + 1, fixedColumns = 4) { index ->
                                     if (index == 0) {
-                                        SelectionTile(current < 0, "None") { if (ears) WyrmLookStore.pickEars(-1) else WyrmLookStore.pickGlasses(-1) }
+                                        SelectionTile(current < 0, "None") { pick(-1) }
                                     } else {
                                         val style = index - 1
                                         val cell = (if (ears) 16 else 28) + style
-                                        ImageTile(current == style, textures?.lookThumbnails?.get(cell), 6.dp) {
-                                            if (ears) WyrmLookStore.pickEars(style) else WyrmLookStore.pickGlasses(style)
-                                        }
+                                        ImageTile(current == style, textures?.lookThumbnails?.get(cell), 6.dp) { pick(style) }
                                     }
                                 }
                             }
@@ -428,6 +445,41 @@ fun IosSkinScreen(
 }
 
 /* ------------------------------------------------------------- the pieces */
+
+/** "Try this skin": whose look the preview shows, and the two ways out. Nothing is worn until Wear. */
+@Composable
+internal fun SkinTrialBanner(author: String, onWear: () -> Unit, onBack: () -> Unit) {
+    Row(
+        Modifier
+            .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp)
+            .fillMaxWidth()
+            .clip(wyrmRounded(16.dp))
+            .background(Wyrm.Card)
+            .border(1.dp, Wyrm.Rule, wyrmRounded(16.dp))
+            .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            "Trying $author's skin",
+            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = Wyrm.Ink,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            Modifier.clip(CircleShape).background(Wyrm.Well)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack)
+                .padding(horizontal = 12.dp).height(32.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("Back to mine", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Ink, maxLines = 1) }
+        Box(
+            Modifier.clip(CircleShape).background(Wyrm.Ink)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onWear)
+                .padding(horizontal = 16.dp).height(32.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("Wear", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Wyrm.OnInk, maxLines = 1) }
+    }
+}
 
 @Composable
 private fun InlineHeader(title: String, onBack: () -> Unit) {
@@ -709,6 +761,7 @@ private fun SkinPreview(
     chain: Double,
     swing: Double,
     tagScale: Double,
+    look: WyrmLookSpec,
     modifier: Modifier,
 ) {
     BoxWithConstraints(modifier.background(Wyrm.Paper)) {
@@ -726,7 +779,6 @@ private fun SkinPreview(
         val headY = centreY - scale * 0.5f - gap * 0.5f
         val tailY = centreY + scale * 0.5f + gap * 0.5f
         val head = Offset(x + scale * 0.5f + step * (segmentsPerRow - 1), headY)
-        val unit = scale / 29f
 
         // No arena background behind the snake: the preview is the skin alone (OM).
         if (false) textures?.backgrounds?.get(backgroundId)?.let { image ->
@@ -777,17 +829,7 @@ private fun SkinPreview(
                     if (codeIndex >= 4) airShadow(codeIndex - 4, shadowAlpha(codeIndex - 4))
                     val group = groupAt(codeIndex)
                     if (group < 0) continue
-                    val argb = colors.getOrElse(codeIndex) { 0 }
-                    val air = AirSkin.kind(argb)
-                    val wyrm = WyrmBeads.kind(argb)
-                    val bead = (wyrm?.let { t.wyrmBeads[it] }) ?: (air?.let { t.airBeads[it] })
-                        ?: t.beads[if (argb == 0) group else 40] ?: continue
-                    val tint = when {
-                        wyrm != null -> if (WyrmBeads.tinted[wyrm]) argb.rgbColor() else null
-                        air != null -> AirSkin.bodyTint(argb).rgbColor()
-                        argb != 0 -> argb.rgbColor()
-                        else -> null
-                    }
+                    val (bead, tint) = skinBead(t, group, colors.getOrElse(codeIndex) { 0 }) ?: continue
                     val p = point(segment)
                     if (row == 1) {
                         rotate(180f, pivot = p) { drawImageInto(bead, p.x - scale / 2, p.y - scale / 2, scale, scale, tint) }
@@ -796,39 +838,10 @@ private fun SkinPreview(
                     }
                 }
             }
-            // The eyes.
-            val eye = t.beads[40]
-            if (eye != null) {
-                val iris = 12 * unit
-                val pupil = (if (custom) 7f else if (preset == 63) 5f else 7f) * unit
-                val irisColor = when {
-                    !custom && preset == 63 -> Color.Black
-                    !custom && preset == 64 -> Color(1f, 1f, 0.50196f)
-                    !custom && preset == 25 -> Color(1f, 0.3373f, 0.0353f)
-                    !custom && preset == 44 -> Color(0.8314f, 0.8314f, 0.8314f)
-                    else -> Color.White
-                }
-                val pupilColor = if (!custom && preset == 63) Color(0.8f, 0.8f, 0.8f) else Color.Black
-                val cx = head.x + 6 * unit
-                for (side in 0 until 2) {
-                    val ey = if (side == 0) -6 * unit - 0.5f * px else 6 * unit
-                    drawImageInto(eye, cx - iris / 2, head.y + ey - iris / 2, iris, iris, irisColor)
-                    val py = if (side == 0) -6 * unit else 6 * unit
-                    drawImageInto(eye, cx + 0.5f * px + 2 * unit - pupil / 2, head.y + py - pupil / 2, pupil, pupil, pupilColor)
-                }
+            // The eyes, the accessory and the Wyrm look.
+            drawSkinHead(t, head, scale, px, preset, custom, accessoryId, look) { img, l, tp, w, h, tint ->
+                drawImageInto(img, l, tp, w, h, tint)
             }
-            // The accessory.
-            val item = SkinCatalog.accessories.getOrNull(accessoryId)
-            val image = if (item != null) t.accessories[accessoryId] else null
-            if (item != null && image != null) {
-                val size = scale * item.scale
-                val cx = head.x + item.offset * 6 * unit
-                val fit = min(size / image.width, size / image.height)
-                drawImageInto(image, cx - image.width * fit / 2, head.y - image.height * fit / 2, image.width * fit, image.height * fit)
-            }
-            // Wyrm looks, placed as platform/android_look.c places them (hair at rest).
-            drawWyrmLook(t.looks, head, scale / 2, WyrmLookStore.hair, WyrmLookStore.hairRgb, WyrmLookStore.ears,
-                WyrmLookStore.glasses) { img, l, tp, w, h, tint -> drawImageInto(img, l, tp, w, h, tint) }
         }
         val tagItem = SkinCatalog.tags.getOrNull(tagId)
         val tagImage = textures?.tags?.get(tagId)
@@ -837,6 +850,157 @@ private fun SkinPreview(
         }
         if (textures == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { IosSpinner(size = 20.dp, colour = Wyrm.Ink) }
+        }
+    }
+}
+
+/**
+ * One body position's bead and tint, as the arena and the preview choose it:
+ * a Wyrm bead or an AIR wheel bead named by the alpha byte, otherwise the
+ * colour group's own bead (tinted when an exact colour was picked).
+ */
+private fun skinBead(t: SkinTextures, group: Int, argb: Int): Pair<ImageBitmap, Color?>? {
+    val air = AirSkin.kind(argb)
+    val wyrm = WyrmBeads.kind(argb)
+    val bead = (wyrm?.let { t.wyrmBeads[it] }) ?: (air?.let { t.airBeads[it] })
+        ?: t.beads[if (argb == 0) group else 40] ?: return null
+    val tint = when {
+        wyrm != null -> if (WyrmBeads.tinted[wyrm]) argb.rgbColor() else null
+        air != null -> AirSkin.bodyTint(argb).rgbColor()
+        argb != 0 -> argb.rgbColor()
+        else -> null
+    }
+    return bead to tint
+}
+
+/**
+ * The head facing +x at [head], a bead [scale] px wide: the eyes (preset eye
+ * colours included), the accessory and the Wyrm look (hair at rest). [draw]
+ * paints one image into a rectangle, tinted or not.
+ */
+private fun DrawScope.drawSkinHead(
+    t: SkinTextures,
+    head: Offset,
+    scale: Float,
+    px: Float,
+    preset: Int,
+    custom: Boolean,
+    accessoryId: Int,
+    look: WyrmLookSpec,
+    draw: DrawScope.(ImageBitmap, Float, Float, Float, Float, Color?) -> Unit,
+) {
+    val unit = scale / 29f
+    val eye = t.beads[40]
+    if (eye != null) {
+        val iris = 12 * unit
+        val pupil = (if (custom) 7f else if (preset == 63) 5f else 7f) * unit
+        val irisColor = when {
+            !custom && preset == 63 -> Color.Black
+            !custom && preset == 64 -> Color(1f, 1f, 0.50196f)
+            !custom && preset == 25 -> Color(1f, 0.3373f, 0.0353f)
+            !custom && preset == 44 -> Color(0.8314f, 0.8314f, 0.8314f)
+            else -> Color.White
+        }
+        val pupilColor = if (!custom && preset == 63) Color(0.8f, 0.8f, 0.8f) else Color.Black
+        val cx = head.x + 6 * unit
+        for (side in 0 until 2) {
+            val ey = if (side == 0) -6 * unit - 0.5f * px else 6 * unit
+            draw(eye, cx - iris / 2, head.y + ey - iris / 2, iris, iris, irisColor)
+            val py = if (side == 0) -6 * unit else 6 * unit
+            draw(eye, cx + 0.5f * px + 2 * unit - pupil / 2, head.y + py - pupil / 2, pupil, pupil, pupilColor)
+        }
+    }
+    val item = SkinCatalog.accessories.getOrNull(accessoryId)
+    val image = if (item != null) t.accessories[accessoryId] else null
+    if (item != null && image != null) {
+        val size = scale * item.scale
+        val cx = head.x + item.offset * 6 * unit
+        val fit = min(size / image.width, size / image.height)
+        draw(image, cx - image.width * fit / 2, head.y - image.height * fit / 2, image.width * fit, image.height * fit, null)
+    }
+    // Wyrm looks, placed as platform/android_look.c places them (hair at rest).
+    drawWyrmLook(t.looks, head, scale / 2, look.hair, look.hairRgb, look.ears, look.glasses, draw)
+}
+
+/** An image into a rectangle at float precision, so a scaled-up export keeps every bead in step. */
+private fun DrawScope.drawImageExact(image: ImageBitmap, left: Float, top: Float, width: Float, height: Float, tint: Color?) {
+    if (width <= 0f || height <= 0f || image.width <= 0 || image.height <= 0) return
+    withTransform({
+        translate(left, top)
+        scale(width / image.width, height / image.height, pivot = Offset.Zero)
+    }) {
+        drawImage(image, colorFilter = tint?.let { ColorFilter.tint(it, BlendMode.Modulate) })
+    }
+}
+
+/* The "Share run" skin sticker (OM, 2026-09-30), in bead widths: one S of
+   beads 8/48 of a bead apart, like the Skin preview, head on the right. */
+private const val STICKER_SPAN = 8.4f
+private const val STICKER_WAVE = 0.72f
+private const val STICKER_W = 10.8f
+private const val STICKER_H = 3.4f
+
+/** The sticker's box for a bead [bead] px wide, centred on the origin when drawn. */
+internal fun skinStickerSize(bead: Float): androidx.compose.ui.geometry.Size =
+    androidx.compose.ui.geometry.Size(STICKER_W * bead, STICKER_H * bead)
+
+/** Bead centres along the sticker's S, tail first, head last, in bead widths. */
+private val stickerPath: List<Offset> by lazy {
+    val dense = (0..480).map { i ->
+        val x = -STICKER_SPAN / 2 + STICKER_SPAN * i / 480f
+        Offset(x, STICKER_WAVE * sin(2 * PI.toFloat() * (x / STICKER_SPAN)))
+    }
+    val step = 8f / 48f
+    val out = mutableListOf(dense.first())
+    var carry = 0f
+    for (i in 1 until dense.size) {
+        val a = dense[i - 1]
+        val b = dense[i]
+        val length = hypot(b.x - a.x, b.y - a.y)
+        var travelled = step - carry
+        while (travelled <= length) {
+            val f = travelled / max(length, 0.0001f)
+            out += Offset(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)
+            travelled += step
+        }
+        carry = length - (travelled - step)
+    }
+    // Nudged left so the head's accessory and looks stay inside the box.
+    out.map { Offset(it.x - 0.35f, it.y) }
+}
+
+/**
+ * The player's snake as the Skin screen draws it — the same textures, beads,
+ * wheel colours, accessory and Wyrm look — laid out as a compact S and centred
+ * on the origin. Draws into any DrawScope, including a bitmap for the export.
+ */
+internal fun DrawScope.drawSkinSticker(t: SkinTextures, skin: SkinState, look: WyrmLookSpec, bead: Float) {
+    val customGroups = skin.code.mapNotNull { SkinCatalog.group(it) }.filter { it in SkinCatalog.validGroups }.take(256)
+    val active = skin.custom && customGroups.isNotEmpty()
+    val groups = if (active) customGroups else SkinCatalog.presets.getOrNull(skin.preset) ?: listOf(7)
+    val colours = if (active) List(customGroups.size) { skin.colourAt(it) } else emptyList()
+    val path = stickerPath
+    val count = path.size
+    fun at(index: Int) = Offset(path[index].x * bead, path[index].y * bead)
+    fun heading(index: Int): Float {
+        val a = at(max(0, index - 1))
+        val b = at(min(count - 1, index + 1))
+        return atan2(b.y - a.y, b.x - a.x)
+    }
+    for (segment in 0 until count) {
+        val codeIndex = count - 1 - segment
+        val group = if (groups.isEmpty()) 7 else groups[codeIndex % groups.size]
+        val argb = if (colours.isEmpty()) 0 else colours[codeIndex % colours.size]
+        val (image, tint) = skinBead(t, group, argb) ?: continue
+        val p = at(segment)
+        // Beads face back along the body, as the preview's two rows do.
+        val degrees = heading(segment) * 180f / PI.toFloat() - 180f
+        rotate(degrees, pivot = p) { drawImageExact(image, p.x - bead / 2, p.y - bead / 2, bead, bead, tint) }
+    }
+    val head = at(count - 1)
+    rotate(heading(count - 1) * 180f / PI.toFloat(), pivot = head) {
+        drawSkinHead(t, head, bead, bead / 48f, skin.preset, active, skin.accessory, look.checked()) { img, l, tp, w, h, tint ->
+            drawImageExact(img, l, tp, w, h, tint)
         }
     }
 }

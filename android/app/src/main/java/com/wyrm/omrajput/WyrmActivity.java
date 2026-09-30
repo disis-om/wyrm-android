@@ -12,7 +12,11 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
+import android.view.PixelCopy;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
 
@@ -712,6 +716,8 @@ public final class WyrmActivity extends SDLActivity {
                     ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
             if (activity.overlay != null) {
+                // A run is starting: the last one can no longer be shared.
+                if (screen == SCREEN_PLAYING) activity.overlay.clearLastRun();
                 if (isLobby) {
                     activity.overlay.showRoute(WyrmOverlay.Route.LOBBY);
                 } else if (composeOwns && !keepLandscape && !editorReturned) {
@@ -798,13 +804,50 @@ public final class WyrmActivity extends SDLActivity {
         requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO);
     }
 
-    /** A finished run exists independently of whether Auto Respawn shows a card. */
-    public static void recordRunFromNative(int score, int kills) {
+    /**
+     * A finished run exists independently of whether Auto Respawn shows a card.
+     * The arena is still on screen for about 1.6 s after a death, so the run's
+     * screenshot for "Share run" is taken here too.
+     */
+    public static void recordRunFromNative(int score, int kills, double playTimeSeconds) {
         withActivity(activity -> activity.runOnUiThread(() -> {
             if (activity.overlay != null) {
-                activity.overlay.recordRunFromNative(score, kills);
+                final int run = activity.overlay.recordRunFromNative(score, kills, playTimeSeconds);
+                activity.captureRunScreenshot(run);
             }
         }));
+    }
+
+    /**
+     * One copy of SDL's surface, the long side at most 1440 px. Any failure
+     * (no surface, a protected buffer, no memory) simply means no screenshot.
+     */
+    private void captureRunScreenshot(final int run) {
+        final SurfaceView surface = mSurface;
+        if (surface == null || overlay == null) return;
+        final int width = surface.getWidth();
+        final int height = surface.getHeight();
+        if (width <= 0 || height <= 0 || !surface.getHolder().getSurface().isValid()) return;
+        final float scale = Math.min(1f, 1440f / Math.max(width, height));
+        final Bitmap shot;
+        try {
+            shot = Bitmap.createBitmap(Math.max(1, Math.round(width * scale)),
+                    Math.max(1, Math.round(height * scale)), Bitmap.Config.ARGB_8888);
+        } catch (OutOfMemoryError | IllegalArgumentException e) {
+            return;
+        }
+        try {
+            PixelCopy.request(surface, shot, result -> {
+                if (result == PixelCopy.SUCCESS && overlay != null) {
+                    overlay.setRunScreenshot(run, shot);
+                } else {
+                    shot.recycle();
+                }
+            }, new Handler(Looper.getMainLooper()));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Share run: no screenshot", e);
+            shot.recycle();
+        }
     }
 
     /** The engine's palette and preset table, sent once. */
@@ -826,6 +869,8 @@ public final class WyrmActivity extends SDLActivity {
         final String safeNickname = safe(nickname);
         withActivity(activity -> {
             if (activity.overlay != null) {
+                // A new life (Auto Respawn stays on PLAYING): the last run is no longer the one to share.
+                if (snakeId >= 0) activity.overlay.clearLastRun();
                 activity.overlay.publishArenaSkin(safeArena, snakeId, safeNickname);
             }
         });

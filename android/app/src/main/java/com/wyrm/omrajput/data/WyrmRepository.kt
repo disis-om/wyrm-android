@@ -363,10 +363,22 @@ class WyrmRepository(context: Context, baseUrl: String) {
         callBinary("/v1/trails/media", "PUT", "image/jpeg", bytes, progress).getString("id")
     }
 
-    /** A photo trail with both ids, or a text trail with neither. */
-    suspend fun createTrail(caption: String, photoId: String?, thumbId: String?): Trail = withContext(Dispatchers.IO) {
+    /**
+     * A photo trail with both ids, or a text trail with neither. A shared run
+     * also says whether the poster's skin goes with it ([shareSkin]); the skin
+     * itself is sent only when it does. Other posts send neither field.
+     */
+    suspend fun createTrail(
+        caption: String,
+        photoId: String?,
+        thumbId: String?,
+        skin: TrailSkin? = null,
+        shareSkin: Boolean? = null,
+    ): Trail = withContext(Dispatchers.IO) {
         val body = JSONObject().put("caption", caption)
         if (photoId != null && thumbId != null) body.put("photoId", photoId).put("thumbId", thumbId)
+        if (shareSkin != null) body.put("shareSkin", shareSkin)
+        if (shareSkin == true && skin != null) body.put("skin", skin.toJson())
         call("/v1/trails", method = "POST", body = body).getJSONObject("trail").toTrail(api)
     }
 

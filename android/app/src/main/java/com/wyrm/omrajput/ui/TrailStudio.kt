@@ -95,6 +95,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -177,6 +178,73 @@ internal data class StudioText(
 internal enum class StudioAspect(val label: String) { ORIGINAL("Original"), FREE("Free"), SQUARE("1:1"), PORTRAIT("4:5"), WIDE("16:9") }
 
 internal enum class StudioMode(val label: String) { PHOTO("Photo"), TEXT("Text"), CANVAS("Canvas") }
+
+/*
+ * "Share this run" (OM, 2026-09-30): the lobby's Share run opens this studio
+ * as a Share editor. The background is a colour (Skin) or the arena as it
+ * stood at death (Screenshot); on top sit the skin sticker, the stats box and
+ * the studio's own text and drawing. Wyrm iOS: `WyrmTrailStudio.swift`.
+ */
+
+/** The last finished run. Memory only: replaced by the next death, cleared when a run starts. */
+internal data class LastRun(
+    val score: Int,
+    val kills: Int,
+    val seconds: Double,
+    val endedAt: Long,
+    /** The arena at death (long side at most 1440 px), when it could be read. */
+    val screenshot: Bitmap? = null,
+)
+
+/** What the Share editor starts from: the run, and the skin and look the player wears. */
+internal data class ShareRunInput(val run: LastRun, val skin: SkinState, val look: WyrmLookSpec)
+
+internal enum class ShareLayer { SKIN, SCREENSHOT }
+
+internal enum class StickerKind { SKIN, STATS }
+
+/** The skin sticker or the stats box: dragged, pinched and turned like text. */
+internal data class StudioSticker(
+    val id: String = UUID.randomUUID().toString(),
+    val kind: StickerKind,
+    val center: Offset,
+    val scale: Float = 1f,
+    val rotation: Float = 0f,
+)
+
+internal enum class StatsStyle(val label: String) {
+    PAPER("Paper card"), INK("Ink card"), GLASS("Glass"), NEON("Neon"), LINE("Minimal line"), BIG("Big number"),
+}
+
+/** The worn skin and look as the shared-skin JSON ("Share my skin"), the shape Wyrm iOS sends too. */
+internal fun SkinState.toTrailSkin(look: WyrmLookSpec): com.wyrm.omrajput.data.TrailSkin {
+    val letters = code.take(256)
+    return com.wyrm.omrajput.data.TrailSkin(
+        custom = custom && letters.isNotEmpty(),
+        preset = preset.coerceIn(0, 255),
+        code = letters,
+        colours = coloursFor(letters.length).toList(),
+        accessory = accessory.coerceIn(-1, 255),
+        look = com.wyrm.omrajput.data.TrailSkinLook(look.hair, look.hairTone, look.ears, look.glasses),
+    )
+}
+
+/** A shared skin as a Skin-tab draft: only code letters, presets and accessories this app has. */
+internal fun com.wyrm.omrajput.data.TrailSkin.toSkinState(): SkinState {
+    // Colours pair with code positions, so a letter that is dropped takes its colour with it.
+    val kept = code.indices.filter { SkinCatalog.group(code[it]) != null }.take(256)
+    return SkinState(
+        custom = custom && kept.isNotEmpty(),
+        preset = preset.takeIf { it in SkinCatalog.presets.indices } ?: 0,
+        code = kept.map { code[it] }.joinToString(""),
+        accessory = accessory.takeIf { it in SkinCatalog.accessories.indices } ?: -1,
+        colours = IntArray(kept.size) { colours.getOrElse(kept[it]) { 0 } },
+    )
+}
+
+/** A shared skin's Wyrm look; the hair colour is the same slider position on both apps. */
+internal fun com.wyrm.omrajput.data.TrailSkin.lookSpec(): WyrmLookSpec =
+    WyrmLookSpec(look.hair, look.hairTone, look.ears, look.glasses).checked()
 
 /** Typefaces and sizes shared by the editor and the export. */
 internal class StudioType(context: Context, val density: Float) {
@@ -307,6 +375,117 @@ internal object StudioInk {
     }
 }
 
+/** The stats box: SCORE, KILLS and TIME in one of [StatsStyle], centred on the canvas origin. */
+internal object StudioStatsPainter {
+    fun time(seconds: Double): String {
+        val whole = if (seconds.isFinite()) seconds.coerceAtLeast(0.0).toLong() else 0L
+        return "%d:%02d".format(whole / 60, whole % 60)
+    }
+
+    private fun number(value: Int): String = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(value)
+
+    /** The box's own size in canvas pixels, before its scale and rotation. */
+    fun size(style: StatsStyle, type: StudioType): Pair<Float, Float> {
+        val d = type.density
+        return when (style) {
+            StatsStyle.BIG -> 210f * d to 132f * d
+            StatsStyle.LINE -> 240f * d to 64f * d
+            else -> 240f * d to 78f * d
+        }
+    }
+
+    private fun text(type: StudioType, serif: Boolean, size: Float, argb: Int, spacing: Float = 0f) =
+        TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = type.face(serif)
+            textSize = size
+            color = argb
+            textAlign = Paint.Align.CENTER
+            letterSpacing = spacing
+        }
+
+    /** [tone] is the ink for the unboxed styles: dark on a light background, white on dark or on the screenshot. */
+    fun draw(canvas: android.graphics.Canvas, run: LastRun, preset: StatsStyle, type: StudioType, tone: Int) {
+        val d = type.density
+        val (w, h) = size(preset, type)
+        val ink = StudioPalette.argb(tone)
+        fun faded(argb: Int, a: Float) = (((argb ushr 24) * a).roundToInt().coerceIn(0, 255) shl 24) or (argb and 0xFFFFFF)
+        val soft = if (tone == 0xFFFFFF) android.graphics.Color.argb(110, 0, 0, 0) else 0
+        if (preset == StatsStyle.BIG) {
+            val label = text(type, false, 10f * d, faded(ink, 0.72f), 0.14f)
+            val value = text(type, true, 62f * d, ink)
+            val line = text(type, false, 12.5f * d, faded(ink, 0.86f), 0.04f)
+            if (soft != 0) listOf(label, value, line).forEach { it.setShadowLayer(4f * d, 0f, 1f * d, soft) }
+            canvas.drawText("SCORE", 0f, -h / 2 + 16f * d, label)
+            val score = number(run.score)
+            // A long score shrinks to fit rather than running off the box.
+            value.textSize = min(62f * d, 62f * d * w * 0.96f / max(1f, value.measureText(score)))
+            canvas.drawText(score, 0f, 22f * d, value)
+            canvas.drawText("${number(run.kills)} KILLS  ·  ${time(run.seconds)}", 0f, h / 2 - 8f * d, line)
+            return
+        }
+        val box = RectF(-w / 2, -h / 2, w / 2, h / 2)
+        val radius = 18f * d
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.2f * d }
+        var labelArgb = faded(ink, 0.7f)
+        var valueArgb = ink
+        var rule = faded(ink, 0.35f)
+        var glow = 0
+        when (preset) {
+            StatsStyle.PAPER -> {
+                fill.color = 0xFFF7F3EA.toInt(); canvas.drawRoundRect(box, radius, radius, fill)
+                edge.color = 0x24111111; canvas.drawRoundRect(box, radius, radius, edge)
+                labelArgb = 0xFF8C8778.toInt(); valueArgb = 0xFF151515.toInt(); rule = 0x1F111111
+            }
+            StatsStyle.INK -> {
+                fill.color = 0xFF141414.toInt(); canvas.drawRoundRect(box, radius, radius, fill)
+                labelArgb = 0x99FFFFFF.toInt(); valueArgb = 0xFFFFFFFF.toInt(); rule = 0x2EFFFFFF
+            }
+            StatsStyle.GLASS -> {
+                fill.color = 0x3DFFFFFF; canvas.drawRoundRect(box, radius, radius, fill)
+                edge.color = 0x99FFFFFF.toInt(); canvas.drawRoundRect(box, radius, radius, edge)
+                labelArgb = 0xD9FFFFFF.toInt(); valueArgb = 0xFFFFFFFF.toInt(); rule = 0x4DFFFFFF
+                glow = android.graphics.Color.argb(90, 0, 0, 0)
+            }
+            StatsStyle.NEON -> {
+                val neon = 0xFF39FF88.toInt()
+                fill.color = 0xE60B0D17.toInt(); canvas.drawRoundRect(box, radius, radius, fill)
+                edge.color = neon; edge.strokeWidth = 2f * d; edge.setShadowLayer(8f * d, 0f, 0f, neon)
+                canvas.drawRoundRect(box, radius, radius, edge)
+                labelArgb = 0xCC7CFFC0.toInt(); valueArgb = neon; rule = 0x4039FF88
+                glow = neon
+            }
+            StatsStyle.LINE -> {
+                // No box: hairlines above and below, the ink chosen for the background.
+                val hair = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = faded(ink, 0.55f); strokeWidth = 1f * d }
+                canvas.drawLine(-w / 2, -h / 2, w / 2, -h / 2, hair)
+                canvas.drawLine(-w / 2, h / 2, w / 2, h / 2, hair)
+                glow = soft
+            }
+            StatsStyle.BIG -> Unit
+        }
+        val label = text(type, false, 9.5f * d, labelArgb, 0.14f)
+        val value = text(type, false, 23f * d, valueArgb)
+        if (glow != 0) {
+            value.setShadowLayer(if (preset == StatsStyle.NEON) 10f * d else 3f * d, 0f, if (preset == StatsStyle.NEON) 0f else 1f * d, glow)
+            if (preset != StatsStyle.NEON) label.setShadowLayer(3f * d, 0f, 1f * d, glow)
+        }
+        val divider = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = rule; strokeWidth = 1f * d }
+        val cells = listOf("SCORE" to number(run.score), "KILLS" to number(run.kills), "TIME" to time(run.seconds))
+        cells.forEachIndexed { index, (name, figure) ->
+            val cx = -w / 2 + w * (index + 0.5f) / 3f
+            canvas.drawText(name, cx, -h / 2 + h * 0.38f, label)
+            value.textSize = 23f * d
+            value.textSize = min(23f * d, 23f * d * (w / 3f) * 0.9f / max(1f, value.measureText(figure)))
+            canvas.drawText(figure, cx, h / 2 - h * 0.24f, value)
+            if (index > 0) {
+                val x = -w / 2 + w * index / 3f
+                canvas.drawLine(x, -h / 2 + h * 0.2f, x, h / 2 - h * 0.2f, divider)
+            }
+        }
+    }
+}
+
 internal class StudioDraft {
     var mode by mutableStateOf(StudioMode.PHOTO)
     var image by mutableStateOf<Bitmap?>(null)
@@ -321,13 +500,31 @@ internal class StudioDraft {
     /** Bumped by every stroke change, so the canvas redraws. */
     var ink by mutableStateOf(0)
 
+    // "Share run": null for every other trail.
+    var share by mutableStateOf<ShareRunInput?>(null)
+    var shareLayer by mutableStateOf(ShareLayer.SKIN)
+    /** The screenshot's zoom over "covers the canvas" (1), and its pan. */
+    var shotScale by mutableFloatStateOf(1f)
+    var shotOffset by mutableStateOf(Offset.Zero)
+    val stickers = mutableStateListOf<StudioSticker>()
+    var statsStyle by mutableStateOf(StatsStyle.PAPER)
+    /** The Skin screen's textures, for the skin sticker. */
+    var textures by mutableStateOf<SkinTextures?>(null)
+    private var statsSeeded = false
+    private var skinSeeded = false
+    private val stickerScope = androidx.compose.ui.graphics.drawscope.CanvasDrawScope()
+
+    /** The screenshot, while it is the background layer. */
+    val shot: Bitmap?
+        get() = share?.run?.screenshot?.takeIf { shareLayer == ShareLayer.SCREENSHOT }
+
     val ratio: Float
         get() = when (aspect) {
             StudioAspect.FREE -> freeRatio
             StudioAspect.SQUARE -> 1f
             StudioAspect.PORTRAIT -> 0.8f
             StudioAspect.WIDE -> 16f / 9f
-            StudioAspect.ORIGINAL -> image?.takeIf { it.height > 0 }?.let { (it.width.toFloat() / it.height).coerceIn(0.8f, 1.91f) } ?: 0.8f
+            StudioAspect.ORIGINAL -> (image ?: shot)?.takeIf { it.height > 0 }?.let { (it.width.toFloat() / it.height).coerceIn(0.8f, 1.91f) } ?: 0.8f
         }
 
     fun reset(next: StudioMode) {
@@ -338,7 +535,110 @@ internal class StudioDraft {
         photoOffset = Offset.Zero
         strokes.clear()
         texts.clear()
+        stickers.clear()
         ink++
+    }
+
+    /** A Share editor: 4:5, the screenshot behind if there is one, else the theme's paper. */
+    fun startShare(input: ShareRunInput, paper: Int) {
+        reset(StudioMode.CANVAS)
+        share = input
+        shareLayer = if (input.run.screenshot != null) ShareLayer.SCREENSHOT else ShareLayer.SKIN
+        background = paper
+        statsSeeded = false
+        skinSeeded = false
+    }
+
+    fun showLayer(layer: ShareLayer) {
+        shareLayer = layer
+        shotScale = 1f
+        shotOffset = Offset.Zero
+    }
+
+    /** Where the screenshot sits in a canvas of [w] x [h]: covering it, then the player's zoom and pan. */
+    fun shotRect(w: Float, h: Float): RectF {
+        val bitmap = shot ?: return RectF(0f, 0f, w, h)
+        val cover = max(w / bitmap.width, h / bitmap.height)
+        val sw = bitmap.width * cover * shotScale
+        val sh = bitmap.height * cover * shotScale
+        val left = (w - sw) / 2 + shotOffset.x
+        val top = (h - sh) / 2 + shotOffset.y
+        return RectF(left, top, left + sw, top + sh)
+    }
+
+    /** Pinch and drag on the screenshot: it may shrink past fitting (the colour shows around it), never leave. */
+    fun moveShot(pan: Offset, zoom: Float, w: Float, h: Float) {
+        val bitmap = shot ?: return
+        val fit = min(w / bitmap.width, h / bitmap.height) / max(w / bitmap.width, h / bitmap.height)
+        shotScale = (shotScale * zoom).coerceIn(fit * 0.6f, 5f)
+        shotOffset = Offset((shotOffset.x + pan.x).coerceIn(-w / 2, w / 2), (shotOffset.y + pan.y).coerceIn(-h / 2, h / 2))
+    }
+
+    /** The skin sticker is drawn with beads this wide (canvas pixels), before its own scale. */
+    private fun stickerBead(type: StudioType) = 20f * type.density
+
+    /** A sticker's own size in canvas pixels, before its scale and rotation. */
+    fun stickerSize(item: StudioSticker, type: StudioType): Pair<Float, Float> = when (item.kind) {
+        StickerKind.SKIN -> skinStickerSize(stickerBead(type)).let { it.width to it.height }
+        StickerKind.STATS -> StudioStatsPainter.size(statsStyle, type)
+    }
+
+    /** Adds the skin sticker or the stats box (once each), sized to the canvas. */
+    fun addSticker(kind: StickerKind, w: Float, h: Float, type: StudioType) {
+        if (share == null || w <= 0f || h <= 0f || stickers.any { it.kind == kind }) return
+        val (sw, _) = stickerSize(StudioSticker(kind = kind, center = Offset.Zero), type)
+        val scale = ((if (kind == StickerKind.SKIN) 0.8f else 0.74f) * w / max(sw, 1f)).coerceIn(0.3f, 5f)
+        val y = when {
+            kind == StickerKind.SKIN -> h * 0.42f
+            shareLayer == ShareLayer.SCREENSHOT -> h * 0.84f
+            else -> h * 0.78f
+        }
+        stickers += StudioSticker(kind = kind, center = Offset(w / 2, y), scale = scale)
+    }
+
+    /**
+     * The stats box always comes first; the skin sticker the first time the
+     * Skin layer shows. Afterwards only keeps everything on a reshaped canvas.
+     */
+    fun seedShare(w: Float, h: Float, type: StudioType) {
+        if (share == null || w <= 0f || h <= 0f) return
+        if (!statsSeeded) { statsSeeded = true; addSticker(StickerKind.STATS, w, h, type) }
+        if (shareLayer == ShareLayer.SKIN && !skinSeeded) { skinSeeded = true; addSticker(StickerKind.SKIN, w, h, type) }
+        for (i in stickers.indices) {
+            val c = stickers[i].center
+            if (c.x !in 0f..w || c.y !in 0f..h) stickers[i] = stickers[i].copy(center = Offset(c.x.coerceIn(0f, w), c.y.coerceIn(0f, h)))
+        }
+        for (i in texts.indices) {
+            val c = texts[i].center
+            if (c.x !in 0f..w || c.y !in 0f..h) texts[i] = texts[i].copy(center = Offset(c.x.coerceIn(0f, w), c.y.coerceIn(0f, h)))
+        }
+    }
+
+    /** Ink for words and unboxed stats: dark on a light colour, white on dark or on the screenshot. */
+    val tone: Int
+        get() = if (image != null || shot != null) 0xFFFFFF else StudioPalette.contrast(background)
+
+    private fun paintStickers(canvas: android.graphics.Canvas, w: Float, h: Float, type: StudioType) {
+        val input = share ?: return
+        for (item in stickers) {
+            canvas.save()
+            canvas.translate(item.center.x, item.center.y)
+            canvas.rotate(item.rotation)
+            canvas.scale(item.scale, item.scale)
+            when (item.kind) {
+                StickerKind.STATS -> StudioStatsPainter.draw(canvas, input.run, statsStyle, type, tone)
+                StickerKind.SKIN -> textures?.let { t ->
+                    // The Skin screen's own drawing code, through Compose, onto this canvas.
+                    stickerScope.draw(
+                        androidx.compose.ui.unit.Density(type.density),
+                        androidx.compose.ui.unit.LayoutDirection.Ltr,
+                        androidx.compose.ui.graphics.Canvas(canvas),
+                        androidx.compose.ui.geometry.Size(w, h),
+                    ) { drawSkinSticker(t, input.skin, input.look, stickerBead(type)) }
+                }
+            }
+            canvas.restore()
+        }
     }
 
     /** Where the photo sits in a canvas of [w] x [h]: filling it, then the player's zoom and pan. */
@@ -368,11 +668,19 @@ internal class StudioDraft {
             canvas.drawBitmap(bitmap, null, photoRect(w, h), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
         } else {
             canvas.drawColor(StudioPalette.argb(background))
+            // A shared run's screenshot: over the colour, clipped to the canvas.
+            shot?.let { screenshot ->
+                canvas.save()
+                canvas.clipRect(0f, 0f, w, h)
+                canvas.drawBitmap(screenshot, null, shotRect(w, h), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+                canvas.restore()
+            }
         }
         val layer = canvas.saveLayer(0f, 0f, w, h, null)
         StudioInk.draw(canvas, strokes)
         live?.let { StudioInk.draw(canvas, it) }
         canvas.restoreToCount(layer)
+        paintStickers(canvas, w, h, type)
         for (item in texts) {
             canvas.save()
             canvas.translate(item.center.x, item.center.y)
@@ -478,21 +786,40 @@ private enum class StudioStep { PICK, EDIT, CAPTION }
 /** What the editor is doing: nothing (move and pinch), writing, drawing or cropping. */
 private enum class EditorTool { NONE, TEXT, DRAW, CROP }
 
+/**
+ * The studio. With [share] it is the Share editor for the last run: it opens
+ * straight on the canvas, closes with [onClose] and, once posted, leaves
+ * through [onPosted].
+ */
 @Composable
-fun TrailStudioScreen(insetTop: Dp, insetBottom: Dp, onClose: () -> Unit) {
+internal fun TrailStudioScreen(
+    insetTop: Dp,
+    insetBottom: Dp,
+    onClose: () -> Unit,
+    share: ShareRunInput? = null,
+    onPosted: () -> Unit = onClose,
+) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    val draft = remember { StudioDraft() }
+    val paper = Wyrm.Paper.toArgb() and 0xFFFFFF
+    val draft = remember { StudioDraft().also { d -> share?.let { d.startShare(it, paper) } } }
     val type = remember(density) { StudioType(context, density) }
-    var step by remember { mutableStateOf(StudioStep.PICK) }
+    var step by remember { mutableStateOf(if (share != null) StudioStep.EDIT else StudioStep.PICK) }
     var canvasPx by remember { mutableStateOf(0f to 0f) }
     var rendered by remember { mutableStateOf<Bitmap?>(null) }
     var loadingPhoto by remember { mutableStateOf(false) }
     var cameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    /** "Share my skin": on unless the player turns it off (OM). */
+    var shareSkin by remember { mutableStateOf(true) }
+    val textures by rememberSkinTextures()
+    val sharing = share != null
 
     LaunchedEffect(Unit) { TrailsStore.resetPosting() }
+    // The worn skin can arrive after the editor opens; the sticker follows it.
+    LaunchedEffect(share) { if (share != null) draft.share = share }
+    LaunchedEffect(textures) { draft.textures = textures }
 
     fun open(bitmap: Bitmap) {
         draft.reset(StudioMode.PHOTO)
@@ -526,15 +853,22 @@ fun TrailStudioScreen(insetTop: Dp, insetBottom: Dp, onClose: () -> Unit) {
     fun post(image: Bitmap?) {
         if (TrailsStore.posting.busy) return
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        TrailsStore.post(image, draft.caption)
-        onClose()
+        val input = draft.share
+        if (sharing && input != null) {
+            // A shared run says whether the skin goes with it; the skin only when it does.
+            TrailsStore.post(image, draft.caption, if (shareSkin) input.skin.toTrailSkin(input.look) else null, shareSkin)
+            onPosted()
+        } else {
+            TrailsStore.post(image, draft.caption)
+            onClose()
+        }
     }
 
     fun back() {
         when (step) {
             StudioStep.PICK -> onClose()
-            StudioStep.EDIT -> { step = StudioStep.PICK; if (draft.mode == StudioMode.PHOTO) draft.image = null }
-            StudioStep.CAPTION -> step = if (draft.mode == StudioMode.CANVAS) StudioStep.PICK else StudioStep.EDIT
+            StudioStep.EDIT -> if (sharing) onClose() else { step = StudioStep.PICK; if (draft.mode == StudioMode.PHOTO) draft.image = null }
+            StudioStep.CAPTION -> step = if (sharing) StudioStep.EDIT else if (draft.mode == StudioMode.CANVAS) StudioStep.PICK else StudioStep.EDIT
         }
     }
 
@@ -558,7 +892,7 @@ fun TrailStudioScreen(insetTop: Dp, insetBottom: Dp, onClose: () -> Unit) {
     val actionLabel = if (step == StudioStep.CAPTION || (step == StudioStep.PICK && draft.mode == StudioMode.TEXT)) "Post" else "Next"
     val title = when (step) {
         StudioStep.PICK -> "New trail"
-        StudioStep.EDIT -> "Edit"
+        StudioStep.EDIT -> if (sharing) "Share run" else "Edit"
         StudioStep.CAPTION -> "Caption"
     }
 
@@ -569,7 +903,7 @@ fun TrailStudioScreen(insetTop: Dp, insetBottom: Dp, onClose: () -> Unit) {
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { back() },
                 contentAlignment = Alignment.Center,
             ) {
-                if (step == StudioStep.PICK) Text("✕", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+                if (step == StudioStep.PICK || (sharing && step == StudioStep.EDIT)) Text("✕", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
                 else IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Ink, size = 16.dp, semibold = true)
             }
             Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wyrm.Ink,
@@ -597,6 +931,27 @@ fun TrailStudioScreen(insetTop: Dp, insetBottom: Dp, onClose: () -> Unit) {
                 )
             }
         }
+        // Share run: what is behind everything, the skin colour or the arena at death.
+        if (sharing && step == StudioStep.EDIT) {
+            val hasShot = draft.share?.run?.screenshot != null
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) {
+                PaperSegmented(
+                    options = listOf("Skin", "Screenshot"),
+                    selected = draft.shareLayer.ordinal,
+                    onSelect = { index ->
+                        val layer = ShareLayer.entries[index]
+                        if (layer != draft.shareLayer && (layer == ShareLayer.SKIN || hasShot)) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            draft.showLayer(layer)
+                        }
+                    },
+                )
+                if (!hasShot) {
+                    Text("No screenshot for this run", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
+                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                }
+            }
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val page = if (step == StudioStep.PICK) draft.mode.ordinal else 3 + step.ordinal
             androidx.compose.animation.AnimatedContent(
@@ -615,7 +970,7 @@ fun TrailStudioScreen(insetTop: Dp, insetBottom: Dp, onClose: () -> Unit) {
                         onAll = { pickAll.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                         onNativeCamera = ::nativeCamera)
                     StudioMode.TEXT.ordinal -> TextComposer(draft)
-                    3 + StudioStep.CAPTION.ordinal -> CaptionStep(draft, rendered)
+                    3 + StudioStep.CAPTION.ordinal -> CaptionStep(draft, rendered, shareSkin.takeIf { sharing }) { shareSkin = it }
                     else -> StudioEditor(draft, type) { w, h -> canvasPx = w to h }
                 }
             }
@@ -785,8 +1140,9 @@ private fun TextComposer(draft: StudioDraft) {
     }
 }
 
+/** The caption; a shared run also asks whether its skin goes with it ([shareSkin], null otherwise). */
 @Composable
-private fun CaptionStep(draft: StudioDraft, rendered: Bitmap?) {
+private fun CaptionStep(draft: StudioDraft, rendered: Bitmap?, shareSkin: Boolean? = null, onShareSkin: (Boolean) -> Unit = {}) {
     val focus = remember { FocusRequester() }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(320); runCatching { focus.requestFocus() }; keyboard?.show() }
@@ -813,6 +1169,18 @@ private fun CaptionStep(draft: StudioDraft, rendered: Bitmap?) {
         }
         Text("${draft.caption.length}/500", fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet, textAlign = TextAlign.End,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp))
+        if (shareSkin != null) {
+            Spacer(Modifier.height(6.dp))
+            SettingsCard {
+                SettingsBoolRow(
+                    title = "Share my skin",
+                    detail = "Others can try your skin from this post. Turn it off to keep it to yourself.",
+                    on = shareSkin,
+                    first = true,
+                    onToggle = onShareSkin,
+                )
+            }
+        }
     }
 }
 
@@ -838,12 +1206,21 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
     var overBin by remember { mutableStateOf(false) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val bottomBar = if (tool == EditorTool.CROP || draft.image == null) 96.dp else 56.dp
+        val sharing = draft.share != null
+        val bottomBar = when {
+            tool == EditorTool.CROP -> 96.dp
+            sharing -> if (tool == EditorTool.NONE) 120.dp else 56.dp
+            draft.image == null -> 96.dp
+            else -> 56.dp
+        }
         val widthPx = with(density) { (maxWidth - 24.dp).toPx() }
         val maxHeightPx = with(density) { (maxHeight - bottomBar - 8.dp).toPx() }.coerceAtLeast(200f)
         val h = min(widthPx / draft.ratio, maxHeightPx)
         val w = h * draft.ratio
         LaunchedEffect(w, h) { onCanvas(w, h) }
+        // Share run: the stats box (and the skin sticker on the Skin layer) once
+        // the canvas has a size; later only keeps everything inside a new shape.
+        LaunchedEffect(w, h, draft.shareLayer) { draft.seedShare(w, h, type) }
         val binCenter = Offset(w / 2, h - 46 * density.density)
 
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -872,22 +1249,37 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                                             draft.photoScale = (draft.photoScale * event.calculateZoom()).coerceIn(1f, 5f)
                                             draft.photoOffset += event.calculatePan()
                                             draft.clampOffset(w, h)
+                                        } else if (draft.shot != null) {
+                                            draft.moveShot(event.calculatePan(), event.calculateZoom(), w, h)
                                         }
                                         event.changes.forEach { if (it.positionChanged()) it.consume() }
                                     } while (event.changes.any { it.pressed })
                                 }
                                 else -> awaitEachGesture {
                                     // A text item under the first finger moves, grows and turns;
-                                    // otherwise the photo pans and zooms.
+                                    // then a Share run sticker the same way; otherwise the
+                                    // photo (or the run's screenshot) pans and zooms.
                                     val down = awaitFirstDown(requireUnconsumed = false)
                                     val hit = draft.texts.indexOfLast { item ->
                                         val (tw, th) = StudioTextPainter.size(item, type)
                                         abs(down.position.x - item.center.x) < tw * item.scale / 2 + 16 &&
                                             abs(down.position.y - item.center.y) < th * item.scale / 2 + 16
                                     }
+                                    val stickerHit = if (hit >= 0) -1 else draft.stickers.indexOfLast { item ->
+                                        val (sw, sh) = draft.stickerSize(item, type)
+                                        abs(down.position.x - item.center.x) < sw * item.scale / 2 + 16 &&
+                                            abs(down.position.y - item.center.y) < sh * item.scale / 2 + 16
+                                    }
                                     var moved = 0f
                                     var last = down.position
                                     val start = System.currentTimeMillis()
+                                    fun towardBin() {
+                                        if (moved > 12f) {
+                                            dragging = true
+                                            val near = (last - binCenter).getDistance() < 44 * density.density
+                                            if (near != overBin) { overBin = near; if (near) haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+                                        }
+                                    }
                                     do {
                                         val event = awaitPointerEvent()
                                         val pan = event.calculatePan()
@@ -900,22 +1292,39 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                                                 scale = (item.scale * event.calculateZoom()).coerceIn(0.4f, 5f),
                                                 rotation = item.rotation + event.calculateRotation(),
                                             )
-                                            if (moved > 12f) {
-                                                dragging = true
-                                                val near = (last - binCenter).getDistance() < 44 * density.density
-                                                if (near != overBin) { overBin = near; if (near) haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
-                                            }
+                                            towardBin()
+                                        } else if (stickerHit >= 0 && stickerHit < draft.stickers.size) {
+                                            val item = draft.stickers[stickerHit]
+                                            draft.stickers[stickerHit] = item.copy(
+                                                center = Offset((item.center.x + pan.x).coerceIn(0f, w), (item.center.y + pan.y).coerceIn(0f, h)),
+                                                scale = (item.scale * event.calculateZoom()).coerceIn(0.3f, 5f),
+                                                rotation = item.rotation + event.calculateRotation(),
+                                            )
+                                            towardBin()
                                         } else if (draft.image != null) {
                                             draft.photoScale = (draft.photoScale * event.calculateZoom()).coerceIn(1f, 5f)
                                             draft.photoOffset += pan
                                             draft.clampOffset(w, h)
+                                        } else if (draft.shot != null) {
+                                            draft.moveShot(pan, event.calculateZoom(), w, h)
                                         }
                                         event.changes.forEach { if (it.positionChanged()) it.consume() }
                                     } while (event.changes.any { it.pressed })
+                                    val tapped = moved < 12f && System.currentTimeMillis() - start < 320
                                     if (hit >= 0 && hit < draft.texts.size) {
                                         when {
                                             dragging && overBin -> draft.texts.removeAt(hit)
-                                            moved < 12f && System.currentTimeMillis() - start < 320 -> { editing = draft.texts[hit]; tool = EditorTool.TEXT }
+                                            tapped -> { editing = draft.texts[hit]; tool = EditorTool.TEXT }
+                                        }
+                                    } else if (stickerHit >= 0 && stickerHit < draft.stickers.size) {
+                                        val item = draft.stickers[stickerHit]
+                                        when {
+                                            dragging && overBin -> draft.stickers.removeAt(stickerHit)
+                                            // A tap on the stats box shows its next style.
+                                            tapped && item.kind == StickerKind.STATS -> {
+                                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                                draft.statsStyle = StatsStyle.entries[(draft.statsStyle.ordinal + 1) % StatsStyle.entries.size]
+                                            }
                                         }
                                     }
                                     dragging = false
@@ -924,7 +1333,7 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                             }
                         },
                 ) {
-                    @Suppress("UNUSED_VARIABLE") val redraw = liveTick + draft.ink + draft.texts.size
+                    @Suppress("UNUSED_VARIABLE") val redraw = liveTick + draft.ink + draft.texts.size + draft.stickers.size
                     drawIntoCanvas { draft.paint(it.nativeCanvas, w, h, type, live) }
                     if (tool == EditorTool.CROP) {
                         // The rule of thirds while cropping.
@@ -937,7 +1346,7 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                 }
                 if (tool == EditorTool.CROP && draft.aspect == StudioAspect.FREE) FreeHandles(draft, w, h, widthPx, maxHeightPx)
 
-                // The bin, while a text item is being dragged.
+                // The bin, while a text item or a sticker is being dragged.
                 if (dragging) {
                     Box(
                         Modifier.offset { IntOffset((binCenter.x - 26 * density.density).roundToInt(), (binCenter.y - 26 * density.density).roundToInt()) }
@@ -951,12 +1360,12 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                 if (tool == EditorTool.NONE && !dragging) {
                     Column(Modifier.align(Alignment.TopEnd).padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         StudioRoundButton("Aa", Modifier) {
-                            val rgb = if (draft.image == null) StudioPalette.contrast(draft.background) else 0xFFFFFF
+                            val rgb = draft.tone
                             editing = StudioText(text = "", rgb = rgb, serif = false, filled = false, center = Offset(w / 2, h / 2))
                             tool = EditorTool.TEXT
                         }
                         StudioRoundButton("✎", Modifier) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tool = EditorTool.DRAW }
-                        if (draft.image != null) StudioRoundButton("⌗", Modifier) { tool = EditorTool.CROP }
+                        if (draft.image != null || sharing) StudioRoundButton("⌗", Modifier) { tool = EditorTool.CROP }
                         if (draft.strokes.isNotEmpty()) StudioRoundButton("↶", Modifier) { draft.strokes.removeAt(draft.strokes.lastIndex); draft.ink++ }
                     }
                 }
@@ -990,11 +1399,14 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                                     draft.aspect = aspect
                                     draft.photoScale = 1f
                                     draft.photoOffset = Offset.Zero
+                                    draft.shotScale = 1f
+                                    draft.shotOffset = Offset.Zero
                                 }
                             }
                         }
                         StudioChip("Done", true) { tool = EditorTool.NONE }
                     }
+                    sharing && tool == EditorTool.NONE -> ShareBar(draft, w, h, type)
                     draft.image == null && tool == EditorTool.NONE -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(StudioAspect.PORTRAIT, StudioAspect.SQUARE, StudioAspect.WIDE).forEach { aspect ->
@@ -1102,14 +1514,56 @@ private fun StudioChip(label: String, selected: Boolean, dark: Boolean = false, 
     ) { Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = ink) }
 }
 
+/**
+ * Share run, under the canvas: "+ Skin" / "+ Stats" to bring back what was
+ * binned, the stats box's looks, and the background colour (the theme's own
+ * colours first, then the studio's).
+ */
 @Composable
-private fun StudioSwatches(selected: Int, onPick: (Int) -> Unit) {
+private fun ShareBar(draft: StudioDraft, w: Float, h: Float, type: StudioType) {
+    val haptics = LocalHapticFeedback.current
+    val theme = listOf(Wyrm.Paper, Wyrm.Card, Wyrm.Ink, Wyrm.Live, Wyrm.Link, Wyrm.Badge).map { it.toArgb() and 0xFFFFFF }
+    val colours = (theme + StudioPalette.colours).distinct()
+    val hasSkin = draft.stickers.any { it.kind == StickerKind.SKIN }
+    val hasStats = draft.stickers.any { it.kind == StickerKind.STATS }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!hasSkin) StudioChip("+ Skin", false) {
+                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                draft.addSticker(StickerKind.SKIN, w, h, type)
+            }
+            if (!hasStats) StudioChip("+ Stats", false) {
+                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                draft.addSticker(StickerKind.STATS, w, h, type)
+            }
+            if (hasStats) StatsStyle.entries.forEach { style ->
+                StudioChip(style.label, draft.statsStyle == style) {
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    draft.statsStyle = style
+                }
+            }
+        }
+        StudioSwatches(draft.background, colours, ring = Wyrm.Ink) { draft.background = it }
+    }
+}
+
+@Composable
+private fun StudioSwatches(
+    selected: Int,
+    colours: List<Int> = StudioPalette.colours,
+    ring: Color = Color.White,
+    onPick: (Int) -> Unit,
+) {
     val haptics = LocalHapticFeedback.current
     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-        StudioPalette.colours.forEach { rgb ->
+        colours.forEach { rgb ->
             Box(
                 Modifier.size(34.dp).clip(CircleShape)
-                    .border(if (selected == rgb) 2.5.dp else 0.dp, Color.White, CircleShape)
+                    .border(if (selected == rgb) 2.5.dp else 0.dp, ring, CircleShape)
                     .padding(3.dp).clip(CircleShape).background(StudioPalette.color(rgb)).border(1.dp, Color.White.copy(alpha = 0.4f), CircleShape)
                     .clickable { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick(rgb) },
             )

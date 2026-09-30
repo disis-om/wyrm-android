@@ -135,6 +135,9 @@ private data class NotificationOpen(
     val actorId: String,
 )
 
+/** A skin being tried from a trail: whose it is, the skin as a Skin-tab state, and the Wyrm look. */
+private data class SkinTrial(val author: String, val skin: SkinState, val look: WyrmLookSpec)
+
 private const val STATS_RECONCILE_MS = 5L * 60L * 60L * 1000L
 private const val STATS_RETRY_MS = 15L * 60L * 1000L
 
@@ -184,6 +187,16 @@ class WyrmOverlay(private val activity: Activity) :
     private var trailReturn by mutableStateOf(Route.TRAILS)
     /** Where the Trails studio closes to: the feed, or your profile's "New trail". */
     private var studioReturn by mutableStateOf(Route.TRAILS)
+
+    // "Share this run" and "Try this skin" (OM, 2026-09-30).
+    /** The last finished run, for the lobby's Share run. Memory only; cleared when a run starts. */
+    private var lastRun by mutableStateOf<LastRun?>(null)
+    /** Numbers each finished run, so a late screenshot never lands on a newer one. */
+    private var lastRunSeq = 0
+    /** The run the Share editor was opened on. */
+    private var shareRun by mutableStateOf<LastRun?>(null)
+    /** A skin tried from a trail: the Skin tab shows it; nothing is worn or saved until Wear. */
+    private var skinTrial by mutableStateOf<SkinTrial?>(null)
 
     // Help & feedback (OM, 2026-09-29).
     private var supportKind by mutableStateOf(com.wyrm.omrajput.data.SupportKind.BUG)
@@ -516,7 +529,7 @@ class WyrmOverlay(private val activity: Activity) :
         SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT,
         CHAT, THREAD, PLAYER, CONNECTIONS, TEAM, VOICE, ARENA_CHAT, PRIVACY, NOTIFICATIONS,
         GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT, TRAILS, TRAIL, TRAIL_STUDIO,
-        HELP, SUPPORT_COMPOSE, SUPPORT_REPORTS;
+        HELP, SUPPORT_COMPOSE, SUPPORT_REPORTS, TRAIL_SHARE;
 
         /**
          * Whether this screen was reached from a row on Home.
@@ -540,6 +553,8 @@ class WyrmOverlay(private val activity: Activity) :
                 AUTH, ONBOARDING, HOME, SOCIAL, SKIN, SETTINGS, NOTIFICATIONS, DEATH, ARENA_CHAT, PRIVACY, LOBBY,
                 CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT,
                 GUEST_SIGN_UP, GUEST_LOG_IN,
+                // Share run is opened from the lobby, a full page of its own like it.
+                TRAIL_SHARE,
             )
     }
 
@@ -738,6 +753,8 @@ class WyrmOverlay(private val activity: Activity) :
                             },
                             onPlay = { requestArenaEntry(arenaLabel) },
                             onHome = ::leaveLobby,
+                            canShareRun = TRAILS_ENABLED && lastRun != null && repository.hasSession,
+                            onShareRun = ::openShareRun,
                         )
 
                         Route.NOTIFICATIONS -> NotificationsScreen(
@@ -1386,6 +1403,7 @@ class WyrmOverlay(private val activity: Activity) :
                             },
                             onOpen = ::openTrail,
                             onAuthor = { id -> openPlayer(id) },
+                            onTrySkin = ::tryTrailSkin,
                         )
 
                         Route.TRAIL -> if (!TRAILS_ENABLED) TrailsPausedExit() else TrailDetailScreen(
@@ -1397,6 +1415,7 @@ class WyrmOverlay(private val activity: Activity) :
                                 if (trailReturn.growsFromHome) route = trailReturn else panelOpen = false
                             },
                             onAuthor = { id -> openPlayer(id) },
+                            onTrySkin = ::tryTrailSkin,
                         )
 
                         Route.TRAIL_STUDIO -> if (!TRAILS_ENABLED) TrailsPausedExit() else androidx.compose.runtime.CompositionLocalProvider(
@@ -1407,6 +1426,22 @@ class WyrmOverlay(private val activity: Activity) :
                                 insetBottom = insetBottom,
                                 onClose = { route = studioReturn },
                             )
+                        }
+
+                        // Share run: the studio as the Share editor, portrait, over Home.
+                        Route.TRAIL_SHARE -> {
+                            val run = shareRun
+                            if (!TRAILS_ENABLED || run == null) TrailsPausedExit() else androidx.compose.runtime.CompositionLocalProvider(
+                                androidx.activity.compose.LocalActivityResultRegistryOwner provides resultOwner,
+                            ) {
+                                TrailStudioScreen(
+                                    insetTop = insetTop,
+                                    insetBottom = insetBottom,
+                                    onClose = ::closeShareRun,
+                                    share = ShareRunInput(run, skinState, WyrmLookStore.spec()),
+                                    onPosted = ::openTrailsAfterShare,
+                                )
+                            }
                         }
 
                         Route.HELP -> HelpCenterScreen(
@@ -1762,6 +1797,8 @@ class WyrmOverlay(private val activity: Activity) :
 
                     // Where the player is, for a crash report.
                     LaunchedEffect(route) {
+                        // A tried skin lives only on the Skin tab: leaving it is "Back to mine".
+                        if (route != Route.SKIN) skinTrial = null
                         com.wyrm.omrajput.data.CrashWatch.screen = route.name
                         // A manual report names where the player came from, not Help.
                         if (route !in setOf(Route.HELP, Route.SUPPORT_COMPOSE, Route.SUPPORT_REPORTS)) {
@@ -2034,14 +2071,25 @@ class WyrmOverlay(private val activity: Activity) :
             change()
             host?.onSkinSync(true)
         }
+        // "Try this skin": every pick changes the draft only; Wear sends it.
+        val trial = skinTrial.takeIf { interactive }
         IosSkinScreen(
-            state = skinState,
+            state = trial?.skin ?: skinState,
             background = arenaBackground,
             settings = settings,
             insetTop = insetTop,
-            onPickPreset = { index -> saved { host?.onSkinPreset(index) } },
-            onCode = { code, colours -> saved { host?.onSkinCode(code, colours) } },
-            onPickAccessory = { id -> saved { host?.onSkinAccessory(id) } },
+            onPickPreset = { index ->
+                if (trial != null) editTrial { it.copy(skin = it.skin.copy(preset = index, custom = false)) }
+                else saved { host?.onSkinPreset(index) }
+            },
+            onCode = { code, colours ->
+                if (trial != null) editTrial { it.copy(skin = it.skin.copy(code = code, colours = colours, custom = code.isNotEmpty())) }
+                else saved { host?.onSkinCode(code, colours) }
+            },
+            onPickAccessory = { id ->
+                if (trial != null) editTrial { it.copy(skin = it.skin.copy(accessory = id)) }
+                else saved { host?.onSkinAccessory(id) }
+            },
             onPickBackground = { index ->
                 saved {
                     arenaBackground = index
@@ -2049,6 +2097,11 @@ class WyrmOverlay(private val activity: Activity) :
                 }
             },
             onSettingChange = { setting, values -> if (interactive) writeSetting(setting, values) },
+            look = trial?.look,
+            onLook = if (trial != null) ({ next -> editTrial { it.copy(look = next) } }) else null,
+            banner = if (trial != null) ({
+                SkinTrialBanner(trial.author, onWear = ::wearSkinTrial, onBack = { skinTrial = null })
+            }) else null,
         )
     }
 
@@ -4550,6 +4603,9 @@ class WyrmOverlay(private val activity: Activity) :
             // that answer literally would drop Home in place and cut the
             // closing animation off at its first frame.
             if (next == Route.HOME && route == Route.SKIN_EDIT && panelOpen) return@runOnUiThread
+            // Share run leaves the lobby first; the engine then reports its
+            // title screen, which means Home everywhere else but not here.
+            if (next == Route.HOME && route == Route.TRAIL_SHARE) return@runOnUiThread
             route = if (next == Route.HOME && !repository.hasSession) Route.AUTH else next
             if (route == Route.LOBBY) watchLobbyArena()
             else lobbyJob?.cancel()
@@ -4913,15 +4969,42 @@ class WyrmOverlay(private val activity: Activity) :
 
     private fun localTotalKills(): Long = stats.getLong("total_kills", 0L)
 
-    /** Records every death, whether or not Auto Respawn shows a card. */
-    fun recordRunFromNative(score: Int, kills: Int) {
+    /**
+     * Records every death, whether or not Auto Respawn shows a card, and keeps
+     * it as the last run for Share run. Called on the main thread; returns the
+     * run's number for its screenshot ([setRunScreenshot]).
+     */
+    fun recordRunFromNative(score: Int, kills: Int, seconds: Double): Int {
+        val run = ++lastRunSeq
         activity.runOnUiThread {
+            lastRun = LastRun(score, kills, if (seconds.isFinite()) seconds.coerceAtLeast(0.0) else 0.0, System.currentTimeMillis())
             recordFinishedRun(score, kills)
             val playerId = profile.id
             if (repository.hasSession && playerId.isNotBlank()) {
                 pendingRuns.enqueue(playerId, score, kills)
                 flushPendingRuns()
             }
+        }
+        return run
+    }
+
+    /** The arena at death (WyrmActivity's PixelCopy). Dropped when a newer run has begun since. */
+    fun setRunScreenshot(run: Int, shot: Bitmap) {
+        activity.runOnUiThread {
+            val current = lastRun ?: return@runOnUiThread
+            if (run != lastRunSeq) return@runOnUiThread
+            val updated = current.copy(screenshot = shot)
+            lastRun = updated
+            if (shareRun?.endedAt == current.endedAt) shareRun = updated
+        }
+    }
+
+    /** A run began (the engine went to PLAYING, or a new life started): the last one is no longer shareable. */
+    fun clearLastRun() {
+        activity.runOnUiThread {
+            lastRunSeq++
+            lastRun = null
+            if (route != Route.TRAIL_SHARE) shareRun = null
         }
     }
 
@@ -5810,6 +5893,69 @@ class WyrmOverlay(private val activity: Activity) :
         host?.onLeaveLobby()
         host?.onRequestLandscape(false)
         route = Route.HOME
+    }
+
+    /**
+     * Lobby › Share run: out of the lobby (portrait again, the engine back on
+     * its title screen) and into the Share editor on the last run. showRoute
+     * ignores the engine's title echo while it is open.
+     */
+    private fun openShareRun() {
+        val run = lastRun ?: return
+        if (!TRAILS_ENABLED || !repository.hasSession) return
+        shareRun = run
+        lobbyJob?.cancel()
+        lobbyQuickSettings = false
+        host?.onLeaveLobby()
+        host?.onRequestLandscape(false)
+        // The sticker wears what the engine says is worn.
+        host?.onSkinSync(false)
+        panelOpen = false
+        tabRoot = Route.HOME
+        route = Route.TRAIL_SHARE
+    }
+
+    private fun closeShareRun() {
+        tabRoot = Route.HOME
+        route = Route.HOME
+    }
+
+    /** Posted: the Trails feed, where the upload shows its progress. */
+    private fun openTrailsAfterShare() {
+        tabRoot = Route.SOCIAL
+        panelOrigin = Rect.Zero
+        panelOpen = true
+        route = Route.TRAILS
+    }
+
+    /** Trail › Try this skin: the Skin tab with the poster's look as a draft. */
+    private fun tryTrailSkin(trail: com.wyrm.omrajput.data.Trail) {
+        val skin = trail.skin ?: return
+        skinTrial = SkinTrial(trail.author.name, skin.toSkinState(), skin.lookSpec())
+        openSkinTab()
+    }
+
+    private fun editTrial(change: (SkinTrial) -> SkinTrial) {
+        skinTrial = skinTrial?.let(change)
+    }
+
+    /**
+     * "Try this skin" › Wear: the calls the Skin tab makes, then saved (a
+     * preset skin keeps the player's own code underneath, as picking a preset
+     * does), and the Wyrm look.
+     */
+    private fun wearSkinTrial() {
+        val trial = skinTrial ?: return
+        val skin = trial.skin
+        val custom = skin.custom && skin.code.isNotEmpty()
+        host?.onSkinPreset(skin.preset)
+        if (custom) host?.onSkinCode(skin.code, skin.coloursFor(skin.code.length))
+        host?.onSkinAccessory(skin.accessory)
+        host?.onSkinSync(true)
+        WyrmLookStore.wear(trial.look)
+        // Shown at once; the engine's answer confirms it.
+        skinState = if (custom) skin else skinState.copy(custom = false, preset = skin.preset, accessory = skin.accessory)
+        skinTrial = null
     }
 
     /**

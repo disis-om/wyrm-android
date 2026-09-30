@@ -173,6 +173,9 @@ object TrailsStore {
     var pendingActive by mutableStateOf(false); private set
     var pendingImage by mutableStateOf<Bitmap?>(null); private set
     var pendingCaption by mutableStateOf(""); private set
+    /** A shared run's skin choice, kept so "Try again" posts the same thing. */
+    private var pendingSkin: com.wyrm.omrajput.data.TrailSkin? = null
+    private var pendingShareSkin: Boolean? = null
     val comments = mutableStateMapOf<String, List<TrailComment>>()
     var toast by mutableStateOf("")
     private var cursor: String? = null
@@ -347,20 +350,26 @@ object TrailsStore {
         }
     }
 
-    /** A photo trail, or a text trail when [image] is null. Returns at once. */
-    fun post(image: Bitmap?, caption: String) {
+    /**
+     * A photo trail, or a text trail when [image] is null. Returns at once.
+     * A shared run ("Share this run") also carries [shareSkin] and, when that
+     * is on, the poster's [skin]; other posts leave both null.
+     */
+    fun post(image: Bitmap?, caption: String, skin: com.wyrm.omrajput.data.TrailSkin? = null, shareSkin: Boolean? = null) {
         val repo = repository ?: return
         if (posting.busy) return
         val words = caption.trim()
         pendingImage = image
         pendingCaption = words
+        pendingSkin = skin
+        pendingShareSkin = shareSkin
         pendingActive = true
         posting = TrailPostPhase.Preparing
         scope.launch {
             try {
                 val trail = if (image == null) {
                     posting = TrailPostPhase.Uploading(0.5f)
-                    repo.createTrail(words, null, null)
+                    repo.createTrail(words, null, null, skin, shareSkin)
                 } else {
                     val files = withContext(Dispatchers.Default) { TrailEncoder.prepare(image) }
                     posting = TrailPostPhase.Uploading(0f)
@@ -372,12 +381,14 @@ object TrailsStore {
                     val photoId = repo.uploadTrailMedia(files.first) { value ->
                         scope.launch { posting = TrailPostPhase.Uploading((thumbShare + value * (1 - thumbShare)) * 0.97f) }
                     }
-                    repo.createTrail(words, photoId, thumbId)
+                    repo.createTrail(words, photoId, thumbId, skin, shareSkin)
                 }
                 trails.add(0, trail)
                 authors[trail.author.playerId]?.let { authors[trail.author.playerId] = it.copy(trails = listOf(trail) + it.trails) }
                 persistFeed()
                 pendingImage = null
+                pendingSkin = null
+                pendingShareSkin = null
                 pendingActive = false
                 posting = TrailPostPhase.Posted
                 toast = "Trail posted"
@@ -396,12 +407,14 @@ object TrailsStore {
         val image = pendingImage
         val caption = pendingCaption
         posting = TrailPostPhase.Idle
-        post(image, caption)
+        post(image, caption, pendingSkin, pendingShareSkin)
     }
 
     fun discardPending() {
         if (posting.busy) return
         pendingImage = null
+        pendingSkin = null
+        pendingShareSkin = null
         pendingActive = false
         posting = TrailPostPhase.Idle
     }
@@ -649,6 +662,32 @@ private fun TrailRepliesPill(count: Int, onClick: () -> Unit) {
     }
 }
 
+/** "Try this skin" (OM, 2026-09-30): opens the Skin tab with the poster's look as a draft. */
+@Composable
+private fun TrailTrySkinPill(onClick: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        Modifier
+            .clip(CircleShape)
+            .background(Wyrm.Live.copy(alpha = 0.14f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                onClick()
+            }
+            .padding(horizontal = 11.dp)
+            .height(34.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        androidx.compose.material3.Icon(
+            androidx.compose.ui.res.painterResource(com.composables.icons.lucide.R.drawable.lucide_ic_shirt),
+            contentDescription = null, tint = Wyrm.Ink, modifier = Modifier.size(15.dp),
+        )
+        Text("Try this skin", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp,
+            color = Wyrm.Ink, maxLines = 1)
+    }
+}
+
 /** A text trail: the words themselves, set large, with the live colour's trail mark. */
 @Composable
 private fun TrailTextBody(text: String) {
@@ -836,6 +875,8 @@ internal fun TrailCard(
     insetBottom: Dp,
     onOpen: () -> Unit,
     onAuthor: () -> Unit,
+    /** "Try this skin": shown only when the poster shared their skin. */
+    onTrySkin: (() -> Unit)? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -939,11 +980,16 @@ internal fun TrailCard(
                 )
             }
             Row(
-                Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 14.dp),
+                Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 TrailBead(trail.liked, trail.likeCount) { TrailsStore.toggleLike(trail.id) }
                 TrailRepliesPill(trail.commentCount, onOpen)
+                if (trail.skin != null && onTrySkin != null) {
+                    Spacer(Modifier.weight(1f))
+                    TrailTrySkinPill(onTrySkin)
+                }
             }
         }
         if (dying && cardSize != IntSize.Zero) {
@@ -1043,6 +1089,7 @@ fun TrailsFeedScreen(
     onNew: () -> Unit,
     onOpen: (String) -> Unit,
     onAuthor: (String) -> Unit,
+    onTrySkin: (Trail) -> Unit = {},
 ) {
     LaunchedEffect(Unit) { if (!TrailsStore.loaded) TrailsStore.refresh() }
     val list = rememberLazyListState()
@@ -1096,7 +1143,8 @@ fun TrailsFeedScreen(
                             items(TrailsStore.trails, key = { it.id }) { trail ->
                                 Box(Modifier.animateItem(fadeInSpec = tween(250), placementSpec = spring(0.82f, 380f), fadeOutSpec = tween(150))) {
                                     TrailCard(trail, insetBottom = insetBottom, onOpen = { onOpen(trail.id) },
-                                        onAuthor = { onAuthor(trail.author.playerId) })
+                                        onAuthor = { onAuthor(trail.author.playerId) },
+                                        onTrySkin = { onTrySkin(trail) })
                                 }
                             }
                             if (TrailsStore.loadingMore) item(key = "more") {
@@ -1152,6 +1200,7 @@ fun TrailDetailScreen(
     insetBottom: Dp,
     onBack: () -> Unit,
     onAuthor: (String) -> Unit,
+    onTrySkin: (Trail) -> Unit = {},
 ) {
     LaunchedEffect(trailId) {
         if (TrailsStore.trail(trailId) == null) TrailsStore.reload(trailId)
@@ -1172,7 +1221,8 @@ fun TrailDetailScreen(
                             Box(Modifier.padding(top = 12.dp)) {
                                 if (trail != null) {
                                     TrailCard(trail, expanded = true, insetBottom = insetBottom, onOpen = {},
-                                        onAuthor = { onAuthor(trail.author.playerId) })
+                                        onAuthor = { onAuthor(trail.author.playerId) },
+                                        onTrySkin = { onTrySkin(trail) })
                                 } else {
                                     TrailPlaceholder()
                                 }

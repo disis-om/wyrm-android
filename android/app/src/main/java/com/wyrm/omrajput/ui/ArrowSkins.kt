@@ -128,6 +128,12 @@ object ArrowSkinStore {
         publish(skin, brightness)
     }
 
+    /** After a log in or log out rewrote the file (AccountSync): read it again and republish. */
+    fun reload(context: Context) {
+        val publish = sink ?: return
+        attach(context, publish)
+    }
+
     fun select(image: Int) {
         skin = if (image in ArrowImages.names.indices) image else -1
         prefs?.edit()?.putInt(KEY_SKIN, skin)?.apply()

@@ -90,6 +90,11 @@ object DropWatch {
         autoSend = prefs(app).getBoolean(KEY_AUTO, false)
     }
 
+    /** After a log in or log out rewrote the file (AccountSync). */
+    fun reloadPrefs() {
+        appContext?.let { autoSend = prefs(it).getBoolean(KEY_AUTO, false) }
+    }
+
     fun applyAutoSend(on: Boolean) {
         autoSend = on
         appContext?.let { prefs(it).edit().putBoolean(KEY_AUTO, on).apply() }

@@ -133,6 +133,9 @@ private data class NotificationOpen(
     val kind: String,
     val id: String,
     val actorId: String,
+    /** "play": a Battledome notification's Play button (with [address]). */
+    val action: String = "",
+    val address: String = "",
 )
 
 /** A skin being tried from a trail: whose it is, the skin as a Skin-tab state, and the Wyrm look. */
@@ -494,7 +497,6 @@ class WyrmOverlay(private val activity: Activity) :
     /** The root tab bar folded into its circle, as iOS minimizes it on scroll. */
     private var rootBarCollapsed by mutableStateOf(false)
     private var betaUpdates by mutableStateOf(com.wyrm.omrajput.UpdateChannel.isBetaEnabled(activity))
-    private var backupFirst by mutableStateOf(com.wyrm.omrajput.UpdateChannel.isBackupBeforeUpdate(activity))
     private var arenaNativePortBusySeen = false
     /* Compose state, not a plain field: the Play button reads it. As a plain
        field its release changed nothing Compose could see, so after a match the
@@ -528,7 +530,7 @@ class WyrmOverlay(private val activity: Activity) :
         CROP_PHOTO, SETTINGS, SETTINGS_GENERAL, SETTINGS_ASSIST, SETTINGS_NORMAL,
         SETTINGS_CONTROLS, SETTINGS_BUTTONS, SETTINGS_BOT, SETTINGS_NOTIFICATIONS,
         SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_BACKUP,
-        SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT,
+        SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR,
         CHAT, THREAD, PLAYER, CONNECTIONS, TEAM, VOICE, ARENA_CHAT, PRIVACY, NOTIFICATIONS,
         GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT, TRAILS, TRAIL, TRAIL_STUDIO,
         HELP, SUPPORT_COMPOSE, SUPPORT_REPORTS, TRAIL_SHARE;
@@ -553,7 +555,7 @@ class WyrmOverlay(private val activity: Activity) :
         val growsFromHome: Boolean
             get() = this !in setOf(
                 AUTH, ONBOARDING, HOME, SOCIAL, SKIN, SETTINGS, NOTIFICATIONS, DEATH, ARENA_CHAT, PRIVACY, LOBBY,
-                CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT,
+                CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR,
                 GUEST_SIGN_UP, GUEST_LOG_IN,
                 // Share run is opened from the lobby, a full page of its own like it.
                 TRAIL_SHARE,
@@ -713,7 +715,7 @@ class WyrmOverlay(private val activity: Activity) :
                                     onFailure = ::friendlyAuthError,
                                 )
                             },
-                            bootstrap = { bootstrapSession() },
+                            bootstrap = { restoreAccountSettings(); bootstrapSession() },
                             onComplete = {
                                 tabRoot = Route.HOME
                                 route = Route.HOME
@@ -963,7 +965,6 @@ class WyrmOverlay(private val activity: Activity) :
                                 viewedPlayer = null
                                 openConnections(profile.id, "following")
                             },
-                            onSignOut = ::signOut,
                             onToggleFollow = {},
                             onMessage = {},
                             onOpenTrail = ::openTrail,
@@ -1139,7 +1140,6 @@ class WyrmOverlay(private val activity: Activity) :
                                 onRefresh = { other?.let { refreshPlayer(it.id) } },
                                 onFollowers = { other?.let { openConnections(it.id, "followers") } },
                                 onFollowing = { other?.let { openConnections(it.id, "following") } },
-                                onSignOut = {},
                                 onToggleFollow = ::toggleFollow,
                                 onMessage = {
                                     other?.takeIf { it.canMessage }?.let { person ->
@@ -1263,6 +1263,20 @@ class WyrmOverlay(private val activity: Activity) :
                             backLabel = settingsBackLabel(),
                             onBack = { panelOpen = false },
                             onChange = ::writeSetting,
+                            onAdjustBackground = { openBackgroundSizeEditor(route) },
+                        )
+
+                        Route.BACKGROUND_SIZE_EDITOR -> ArenaBackgroundSizeEditor(
+                            scale = value("normal.bg_scale", DEFAULT_BG_SCALE),
+                            minimap = layoutPosition("hud.minimap_x", "hud.minimap_y"),
+                            leaderboard = layoutPosition("hud.leaderboard_x", "hud.leaderboard_y"),
+                            minimapSize = value("general.minimap_size", 300f),
+                            leaderboardFont = value("general.lb_font", 1f).toInt(),
+                            safeInsets = SafeInsets(),
+                            onScale = ::setBackgroundScale,
+                            onReset = { setBackgroundScale(DEFAULT_BG_SCALE) },
+                            onSave = { closeEditor(backgroundEditorReturn, save = true) },
+                            onCancel = { closeEditor(backgroundEditorReturn, save = false) },
                         )
 
                         Route.SETTINGS_BOT -> SettingsBotScreen(
@@ -1520,8 +1534,6 @@ class WyrmOverlay(private val activity: Activity) :
                         )
 
                         Route.SETTINGS_BACKUP, Route.SETTINGS_UPDATES -> BackupScreen(
-                            state = backupState,
-                            activeAction = backupAction,
                             update = updateState,
                             installedVersion = BuildConfig.VERSION_NAME,
                             settingsVersion = settingsVersion,
@@ -1532,15 +1544,9 @@ class WyrmOverlay(private val activity: Activity) :
                                 else -> "Settings"
                             },
                             onBack = { route = backupReturn; if (backupReturn == Route.SETTINGS) panelOpen = false },
-                            onCreate = { requestBackupAction(BackupAction.CREATE, 0) },
-                            onCheck = { requestBackupAction(BackupAction.CHECK, 1) },
-                            onRestore = { requestBackupAction(BackupAction.RESTORE, 2) },
-                            onChooseFolder = { requestBackupAction(BackupAction.CHOOSE_FOLDER, 3) },
                             onCheckUpdate = { host?.onUpdateAction(0) },
                             betaUpdates = betaUpdates,
                             onBetaUpdates = ::applyBetaUpdates,
-                            backupFirst = backupFirst,
-                            onBackupFirst = ::applyBackupFirst,
                             onInstall = ::startUpdate,
                             onOpenInstalledNotes = {
                                 openWhatsNew(
@@ -1690,16 +1696,7 @@ class WyrmOverlay(private val activity: Activity) :
                      * Home having to know. It never appears over a live match
                      * — the check runs at launch, when Home is what is there.
                      */
-                    if (backupResultPromptVisible) {
-                        BackupRestorePrompt(
-                            state = backupState,
-                            insetTop = insetTop,
-                            insetBottom = insetBottom,
-                            onLater = ::dismissBackupPrompt,
-                            onRestore = ::restoreBackup,
-                            onClose = ::closeBackupPrompt,
-                        )
-                    } else if (updatePromptVisible) {
+                    if (updatePromptVisible) {
                         UpdatePrompt(
                             state = updateState,
                             backup = backupState,
@@ -1708,7 +1705,7 @@ class WyrmOverlay(private val activity: Activity) :
                             insetBottom = insetBottom,
                             onLater = ::dismissUpdatePrompt,
                             onUpdate = ::startUpdate,
-                            onChooseFolder = { host?.onBackupAction(3) },
+                            onChooseFolder = {},
                             beta = com.wyrm.omrajput.UpdateChannel.isOfferedBeta(activity),
                             onBetaSettings = ::openBetaUpdateSetting,
                         )
@@ -1729,15 +1726,6 @@ class WyrmOverlay(private val activity: Activity) :
                                 },
                             )
                         }
-                    } else if (backupPromptVisible) {
-                        BackupRestorePrompt(
-                            state = backupState,
-                            insetTop = insetTop,
-                            insetBottom = insetBottom,
-                            onLater = ::dismissBackupPrompt,
-                            onRestore = ::restoreBackup,
-                            onClose = ::closeBackupPrompt,
-                        )
                     }
 
                     // Also outside the route table: an invite is opened over
@@ -1818,7 +1806,7 @@ class WyrmOverlay(private val activity: Activity) :
                         !backupResultPromptVisible &&
                         route !in setOf(
                             Route.LOBBY, Route.DEATH, Route.ARENA_CHAT,
-                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT,
+                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT, Route.BACKGROUND_SIZE_EDITOR,
                         )
                     ) {
                         CrashPromptHost(repository = repository, insetBottom = insetBottom, insetTop = insetTop)
@@ -1835,7 +1823,7 @@ class WyrmOverlay(private val activity: Activity) :
                         !enteringArena &&
                         route !in setOf(
                             Route.DEATH, Route.ARENA_CHAT,
-                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT,
+                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT, Route.BACKGROUND_SIZE_EDITOR,
                         )
                     ) {
                         DropPromptHost(repository = repository, insetBottom = insetBottom, insetTop = insetTop)
@@ -1843,6 +1831,24 @@ class WyrmOverlay(private val activity: Activity) :
 
                     // Wyrm iOS's session transition: the W and "Signing you out…".
                     sessionTransitionTitle?.let { WyrmSessionTransition(it) }
+                    logOutFailure?.let { reason ->
+                        LogOutSaveFailed(
+                            message = reason,
+                            onRetry = { logOut() },
+                            onLogOutAnyway = { logOut(skipSave = true) },
+                            onStay = { logOutFailure = null },
+                        )
+                    }
+                    LogOutSheet(
+                        visible = logOutAsking,
+                        name = profile.displayName.ifBlank { profile.username.ifBlank { "Wyrm player" } },
+                        handle = if (profile.username.isBlank()) "" else "@${profile.username}",
+                        avatarUrl = profile.avatarUrl,
+                        avatarKey = profile.avatarKey,
+                        insetBottom = insetBottom,
+                        onLogOut = { logOut() },
+                        onCancel = { logOutAsking = false },
+                    )
 
                     if (voiceCall.active && !enteringArena) {
                         FloatingVoiceCall(
@@ -2106,6 +2112,7 @@ class WyrmOverlay(private val activity: Activity) :
             }) else null,
             // Only the worn skin is shared, never one being tried.
             onShareSkin = if (interactive && trial == null && TRAILS_ENABLED && repository.hasSession) ::openShareSkin else null,
+            onAdjustBackgroundSize = if (interactive) ({ openBackgroundSizeEditor(Route.SKIN) }) else null,
         )
     }
 
@@ -2147,6 +2154,8 @@ class WyrmOverlay(private val activity: Activity) :
                 "Global and direct"
             },
             unreadMessages = unreadDmCount,
+            voiceBadge = unreadOf(NotificationKind.VOICE_INVITE),
+            followBadge = unreadOf(NotificationKind.FOLLOW),
             voiceDetail = when {
                 liveRooms == 0 -> "Rooms and calls"
                 mineOpen -> "$liveRooms live · yours is open"
@@ -2176,7 +2185,7 @@ class WyrmOverlay(private val activity: Activity) :
             },
             // Trails paused: no teaser, and Social closes up with no gap.
             trailsTeaser = if (!TRAILS_ENABLED) null else ({
-                TrailsTeaser {
+                TrailsTeaser(badge = unreadOf(NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY)) {
                     if (interactive) {
                         tabRoot = Route.SOCIAL
                         openPanel(Rect.Zero) { route = Route.TRAILS }
@@ -2340,7 +2349,8 @@ class WyrmOverlay(private val activity: Activity) :
                     openPanel(origin) { route = Route.ABOUT }
                 }
             },
-            helpValue = com.wyrm.omrajput.data.SupportStore.unseenReplies.let { if (it > 0) "$it new" else "" },
+            helpValue = "",
+            helpBadge = com.wyrm.omrajput.data.SupportStore.unseenReplies,
             onOpenHelp = { origin ->
                 if (interactive) {
                     tabRoot = Route.SETTINGS
@@ -2353,6 +2363,7 @@ class WyrmOverlay(private val activity: Activity) :
                     refreshSettingsSoon()
                 }
             },
+            onLogOut = { if (interactive && repository.hasSession) askLogOut() },
             onOpenAccessibility = { origin ->
                 if (interactive) {
                     tabRoot = Route.SETTINGS
@@ -2651,6 +2662,7 @@ class WyrmOverlay(private val activity: Activity) :
             selected = selected,
             unreadNotifications = visibleNotifications().count { !it.read },
             settingsBadge = com.wyrm.omrajput.data.SupportStore.unseenReplies,
+            socialBadge = socialBadgeCount(),
             modifier = modifier,
             collapsed = rootBarCollapsed,
             onExpand = { rootBarCollapsed = false },
@@ -3185,6 +3197,8 @@ class WyrmOverlay(private val activity: Activity) :
 
     /** A trail from the feed, a profile's grid or an alert; Back returns there. */
     private fun openTrail(id: String) {
+        // The end of the trail-reply trail: this trail's likes and replies, seen.
+        notifications.filter { !it.read && it.trailId == id }.forEach { setNotificationRead(it.id, true) }
         if (!TRAILS_ENABLED || id.isBlank()) return
         trailOpenId = id
         trailReturn = if (route == Route.TRAIL) trailReturn else route
@@ -3249,6 +3263,8 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     private fun openConnections(playerId: String, kind: String) {
+        // The end of the new-follower trail: your own followers, seen.
+        if (playerId == profile.id && kind == "followers") markKindsRead(NotificationKind.FOLLOW)
         connectionsPlayerId = playerId
         connectionsKind = kind
         connectionsReturn = when (route) {
@@ -3300,6 +3316,8 @@ class WyrmOverlay(private val activity: Activity) :
      * the door cannot drift from what is on screen.
      */
     private fun openVoiceChat() {
+        // The end of the voice-invite trail: seen once the rooms are open.
+        markKindsRead(NotificationKind.VOICE_INVITE)
         route = Route.VOICE
         voiceState = voiceState.copy(
             page = if (VoiceCallController.state.value.active) VoicePage.CALL else VoicePage.DIRECTORY,
@@ -3761,10 +3779,6 @@ class WyrmOverlay(private val activity: Activity) :
         host?.onUpdateAction(0)
     }
 
-    private fun applyBackupFirst(enabled: Boolean) {
-        backupFirst = enabled
-        com.wyrm.omrajput.UpdateChannel.setBackupBeforeUpdate(activity, enabled)
-    }
 
     /**
      * Where a page draws an engine setting, as `WyrmSettingsIndex.place` on iOS.
@@ -3804,6 +3818,7 @@ class WyrmOverlay(private val activity: Activity) :
     private fun settingsIndex(): List<SettingsSearchEntry> {
         val out = mutableListOf<SettingsSearchEntry>()
         settings.forEach { setting ->
+            if (setting.id.endsWith(".bg_scale")) return@forEach
             val (page, label) = placeSetting(setting) ?: return@forEach
             out += SettingsSearchEntry(
                 id = setting.id,
@@ -3813,6 +3828,21 @@ class WyrmOverlay(private val activity: Activity) :
                 keywords = setting.id.replace('_', ' ').replace('.', ' '),
                 open = { openSettingsPage(page) },
             ) { SettingTypedRow(setting, first = true, onChange = ::writeSetting) }
+        }
+        out += SettingsSearchEntry(
+            id = "app.bg-size",
+            title = "Adjust arena background size",
+            detail = "See the arena and choose how big its floor looks",
+            page = "Modes",
+            keywords = "background scale size floor zoom arena bg",
+            open = { openSettingsPage(Route.SETTINGS_ASSIST) },
+        ) {
+            SettingsValueRow(
+                title = "Adjust arena background size",
+                value = bgScaleLabel(value("normal.bg_scale", DEFAULT_BG_SCALE)),
+                first = true,
+                onOpen = { openBackgroundSizeEditor(Route.SETTINGS_ASSIST) },
+            )
         }
         val byAction = hotkeys.associateBy { it.action }
         listOf(1, 2, 3, 4, 6, 7, 8, 9).mapNotNull(byAction::get).forEach { key ->
@@ -3905,7 +3935,7 @@ class WyrmOverlay(private val activity: Activity) :
             id = "app.beta-updates",
             title = "Beta updates",
             detail = "Early builds before everyone else; they can have rough edges",
-            page = "Backup & version",
+            page = "Updates & version",
             keywords = "update beta test early stable channel version",
             open = { openSettingsPage(Route.SETTINGS_BACKUP) },
         ) {
@@ -3915,22 +3945,6 @@ class WyrmOverlay(private val activity: Activity) :
                 on = betaUpdates,
                 first = true,
                 onToggle = ::applyBetaUpdates,
-            )
-        }
-        out += SettingsSearchEntry(
-            id = "app.backup-first",
-            title = "Back up before updating",
-            detail = "Saves skins, controls and settings to your backup folder first",
-            page = "Backup & version",
-            keywords = "update backup save restore",
-            open = { openSettingsPage(Route.SETTINGS_BACKUP) },
-        ) {
-            SettingsBoolRow(
-                title = "Back up before updating",
-                detail = "Saves skins, controls and settings to your backup folder first.",
-                on = backupFirst,
-                first = true,
-                onToggle = ::applyBackupFirst,
             )
         }
         out += SettingsSearchEntry(
@@ -4284,6 +4298,24 @@ class WyrmOverlay(private val activity: Activity) :
         hotkeys = hotkeys.map { if (it.action == action) moved else it }
     }
 
+    /** Where the background-size editor goes back to: Modes, or the Skin tab. */
+    private var backgroundEditorReturn = Route.SETTINGS_ASSIST
+
+    /**
+     * Adjust arena background size (OM, 2026-10-01): the AI arena sideways with
+     * one slider. One size for both modes, written live; Cancel puts it back.
+     */
+    private fun openBackgroundSizeEditor(from: Route) {
+        backgroundEditorReturn = from
+        openEditor(Route.BACKGROUND_SIZE_EDITOR)
+    }
+
+    private fun setBackgroundScale(scale: Float) {
+        listOf("normal.bg_scale", "assist.bg_scale").forEach { id ->
+            settings.named(id)?.let { writeSetting(it, listOf(scale)) }
+        }
+    }
+
     /** The editors are the only Compose screens that want the phone sideways. */
     private fun openEditor(editor: Route) {
         editorSettingsSnapshot = settings
@@ -4321,6 +4353,7 @@ class WyrmOverlay(private val activity: Activity) :
             "keys.key_scale", "keys.opacity", "general.minimap_size", "general.lb_font", "general.stats_font",
             "layout.joystick_opacity", "layout.boost_opacity", "layout.zoom_opacity",
             "layout.stats_scale", "layout.stats_opacity", "layout.chat_scale", "layout.chat_opacity",
+            "normal.bg_scale", "assist.bg_scale",
         ) }.forEach { setting ->
             setting.raw.toFloatOrNull()?.let { host?.onWriteSetting(setting.id, floatArrayOf(it)) }
         }
@@ -4814,7 +4847,7 @@ class WyrmOverlay(private val activity: Activity) :
         route == Route.LOBBY || route == Route.DEATH || isLayoutEditorActive() || enteringArena
 
     fun isLayoutEditorActive(): Boolean = route in setOf(
-        Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT,
+        Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT, Route.BACKGROUND_SIZE_EDITOR,
     )
 
     fun consumeLayoutEditorExit(): Boolean {
@@ -5115,6 +5148,7 @@ class WyrmOverlay(private val activity: Activity) :
             }
             bootstrapSession()
             launchSyncing = false
+            resumeAccountSync()
         }
     }
 
@@ -5458,6 +5492,7 @@ class WyrmOverlay(private val activity: Activity) :
             nickname = stored
         }
         registerPushToken()
+        if (activityResumed) startLiveInbox()
         refreshNotifications()
         refreshUnreadDmCount()
         com.wyrm.omrajput.data.SupportStore.refresh()
@@ -5578,12 +5613,207 @@ class WyrmOverlay(private val activity: Activity) :
         }
     }
 
-    private fun signOut() {
-        if (sessionTransitionTitle != null) return
-        sessionTransitionTitle = "Signing you out…"
+    /* ------------------------------------------------ account-linked settings */
+    /*
+     * OM, 2026-10-01: settings live in the account (data/AccountSync.kt,
+     * backend account-settings.mjs). Saved when the app goes to the background
+     * and on log out; restored behind the W on log in; log out wipes the phone.
+     */
+
+    /** The Log out sheet (Settings, very bottom). */
+    private var logOutAsking by mutableStateOf(false)
+    /** Why the settings could not be saved during log out; the three choices show. */
+    private var logOutFailure by mutableStateOf<String?>(null)
+    /**
+     * True once this phone holds the account's own settings: after a restore,
+     * or on a relaunch with nothing left to restore. Every save waits for it,
+     * so a fresh phone can never upload its defaults over the account's copy.
+     */
+    private var accountSyncReady = false
+    private var accountSaveJob: Job? = null
+    private var lastAccountSave = 0L
+    private var accountRestoreJob: Job? = null
+    private val accountSyncPrefs = activity.getSharedPreferences("wyrm_account_sync", android.content.Context.MODE_PRIVATE)
+
+    private val accountEngine = object : com.wyrm.omrajput.data.AccountSync.Engine {
+        override fun readSettings(): String = host?.onReadSettings().orEmpty()
+        override fun readHotkeys(): String = host?.onReadHotkeys().orEmpty()
+        override fun writeSetting(id: String, values: FloatArray) { host?.onWriteSetting(id, values) }
+        override fun writeHotkey(action: Int, key: Int, mode: Int, visible: Boolean, x: Float, y: Float) {
+            host?.onWriteHotkey(action, key, mode, visible, x, y)
+        }
+        override fun action(mask: Int) { host?.onSettingsAction(mask) }
+    }
+
+    /** What is the same on every platform: skin, look, arena background, in-game name. */
+    private fun sharedSettingsDocument(): org.json.JSONObject = org.json.JSONObject()
+        .put("schema", 1)
+        .put("skin", skinState.toTrailSkin(WyrmLookStore.spec()).toJson())
+        .put("arenaBackground", arenaBackground)
+        .put("nickname", nickname)
+        .put("nicknameChosen", uiPreferences.getBoolean("nickname_chosen", false))
+
+    private fun applySharedSettings(doc: org.json.JSONObject) {
+        com.wyrm.omrajput.data.TrailSkin.from(doc.optJSONObject("skin"))?.let { skin ->
+            val state = skin.toSkinState()
+            // A preset keeps the player's own pattern underneath, as picking one does.
+            if (state.code.isNotEmpty()) host?.onSkinCode(state.code, state.coloursFor(state.code.length))
+            if (!state.custom) host?.onSkinPreset(state.preset)
+            host?.onSkinAccessory(state.accessory)
+            WyrmLookStore.wear(skin.lookSpec())
+            skinState = state
+        }
+        val background = doc.optInt("arenaBackground", -1)
+        if (background >= 0) {
+            host?.onSkinBackground(background)
+            arenaBackground = background
+        }
+        host?.onSkinSync(true)
+        if (doc.has("nickname")) {
+            val name = doc.optString("nickname").take(24)
+            nickname = name
+            host?.onSetNickname(name)
+            uiPreferences.edit().putBoolean("nickname_chosen", doc.optBoolean("nicknameChosen", name.isNotEmpty())).apply()
+        }
+    }
+
+    /** Stores that read their files once: read them again after a restore or a wipe. */
+    private fun reloadAccountStores() {
+        ArrowSkinStore.reload(activity)
+        WyrmLookStore.reload(activity)
+        com.wyrm.omrajput.data.DropWatch.reloadPrefs()
+        com.wyrm.omrajput.data.CrashWatch.reloadPrefs()
+        appTheme = WyrmThemeId.fromStored(uiPreferences.getString("theme", null))
+        themeIntensity = uiPreferences.getFloat("theme_intensity", 0.5f).coerceIn(0f, 1f)
+        Wyrm.applyTheme(appTheme, themeIntensity)
+        publishArenaTheme()
+        betaUpdates = com.wyrm.omrajput.UpdateChannel.isBetaEnabled(activity)
+        enabledNotificationKinds = NotificationPreferences.enabledKinds(activity)
+        refreshSettingsSoon()
+    }
+
+    /**
+     * Saves this phone's settings to the account. Refuses (and says so) when
+     * the phone does not hold the account's settings yet, or when the engine
+     * has not described its settings yet: a partial copy would replace a whole one.
+     */
+    private suspend fun saveAccountSettings(force: Boolean = false): Result<Unit> {
+        if (!repository.hasSession || !accountSyncReady) return Result.failure(IllegalStateException("NOT_READY"))
+        if (!force && SystemClock.elapsedRealtime() - lastAccountSave < 20_000L) return Result.success(Unit)
+        // The engine publishes the worn skin when asked; give it a moment.
+        host?.onSkinSync(false)
+        delay(250)
+        val platform = com.wyrm.omrajput.data.AccountSync.platformDocument(activity, accountEngine)
+        if (!platform.has("engine")) return Result.failure(IllegalStateException("ENGINE_NOT_READY"))
+        // Before the engine has published the skin, the shared copy on the account stays as it is.
+        val shared = if (skinReady) sharedSettingsDocument() else null
+        return runCatching {
+            repository.saveAccountSettings(com.wyrm.omrajput.data.AccountSync.PLATFORM, platform, shared)
+        }.onSuccess { lastAccountSave = SystemClock.elapsedRealtime() }
+    }
+
+    /** The app went to the background (Activity.onPause): keep the account's copy current. */
+    fun onAppBackground() {
+        if (!repository.hasSession || !accountSyncReady) return
+        accountSaveJob?.cancel()
+        accountSaveJob = scope.launch { saveAccountSettings() }
+    }
+
+    /**
+     * Log in: the account's Android settings and the shared ones go in behind
+     * the W, key by key. Offline: the phone keeps what it has, marks the
+     * restore as owed (it survives a relaunch) and tries again every 30 s;
+     * until then nothing is saved, so the account's copy is never overwritten.
+     */
+    private suspend fun restoreAccountSettings() {
+        accountSyncReady = false
+        accountRestoreJob?.cancel()
+        val owner = profile.id
+        accountSyncPrefs.edit().putString("restore_owed", owner).commit()
+        if (tryRestoreAccountSettings()) return
+        accountRestoreJob = scope.launch {
+            while (repository.hasSession && profile.id == owner && !accountSyncReady) {
+                delay(30_000L)
+                if (tryRestoreAccountSettings()) break
+            }
+        }
+    }
+
+    /** One attempt: fetch, apply key by key, reload the stores. False when offline. */
+    private suspend fun tryRestoreAccountSettings(): Boolean {
+        val (platform, shared) = runCatching {
+            repository.accountSettings(com.wyrm.omrajput.data.AccountSync.PLATFORM)
+        }.getOrElse { return false }
+        if (platform != null) {
+            runCatching { com.wyrm.omrajput.data.AccountSync.applyPlatform(activity, platform, accountEngine) }
+        }
+        if (shared != null) runCatching { applySharedSettings(shared) }
+        reloadAccountStores()
+        accountSyncPrefs.edit().remove("restore_owed").commit()
+        accountSyncReady = true
+        return true
+    }
+
+    /** Relaunch with a session: finish an owed restore, or start keeping the copy current. */
+    private fun resumeAccountSync() {
+        val owed = accountSyncPrefs.getString("restore_owed", null)
         scope.launch {
+            if (owed != null && owed == profile.id) {
+                restoreAccountSettings()
+            } else {
+                accountSyncReady = true
+                // The first save after this build arrives uploads what the phone
+                // already had, so nobody who upgrades loses a setting.
+                delay(6_000L)
+                saveAccountSettings()
+            }
+        }
+    }
+
+    /** Settings › Log out: the question first. */
+    private fun askLogOut() {
+        if (sessionTransitionTitle != null) return
+        logOutAsking = true
+    }
+
+    /**
+     * Log out: save the settings to the account (unless [skipSave]), stop this
+     * phone's pushes for the account, then wipe the phone and go to the start.
+     */
+    private fun logOut(skipSave: Boolean = false) {
+        logOutAsking = false
+        logOutFailure = null
+        if (sessionTransitionTitle != null) return
+        sessionTransitionTitle = "Saving your settings…"
+        scope.launch {
+            if (!skipSave && accountSyncReady) {
+                accountSaveJob?.cancel()
+                val saved = saveAccountSettings(force = true)
+                if (saved.isFailure && saved.exceptionOrNull()?.message != "ENGINE_NOT_READY") {
+                    sessionTransitionTitle = null
+                    logOutFailure = "Wyrm could not reach your account. If you log out anyway, " +
+                        "the changes you made since the last save are cleared with this phone."
+                    return@launch
+                }
+            }
+            sessionTransitionTitle = "Logging you out…"
+            val token = kotlinx.coroutines.withTimeoutOrNull(3_000L) {
+                kotlinx.coroutines.suspendCancellableCoroutine<String?> { done ->
+                    FirebaseMessaging.getInstance().token
+                        .addOnSuccessListener { if (done.isActive) done.resumeWith(Result.success(it)) }
+                        .addOnFailureListener { if (done.isActive) done.resumeWith(Result.success(null)) }
+                }
+            }
+            if (!token.isNullOrBlank()) runCatching { repository.forgetDeviceToken(token) }
+            accountRestoreJob?.cancel()
+            accountSyncReady = false
+            stopLiveInbox()
             repository.signOut()
             socialCache.clear()
+            com.wyrm.omrajput.data.AccountSync.wipeDevice(activity, accountEngine)
+            reloadAccountStores()
+            skinState = SkinState()
+            arenaBackground = 0
             // As on iOS: the account's surfaces clear behind the W, then auth.
             delay(920)
             resetToSignedOut()
@@ -5668,8 +5898,12 @@ class WyrmOverlay(private val activity: Activity) :
             runCatching { repository.deleteAccount() }
                 .onSuccess {
                     formBusy = false
+                    accountSyncReady = false
                     repository.signOut()
                     socialCache.clear()
+                    com.wyrm.omrajput.data.AccountSync.wipeDevice(activity, accountEngine)
+                    reloadAccountStores()
+                    skinState = SkinState()
                     resetToSignedOut()
                 }
                 .onFailure { error ->
@@ -5804,6 +6038,29 @@ class WyrmOverlay(private val activity: Activity) :
         }
     }
 
+    /* ------------------------------------------------------ the badge trail */
+    /*
+     * OM, 2026-10-01: a mark never sits on a tab alone. Every count on a tab is
+     * also on the row that leads to the thing, and on the thing itself; opening
+     * the thing clears the whole trail. Alerts keeps every notification too.
+     *   dm            Social tab › Messages › the thread (and Chat › Direct)
+     *   voice_invite  Social tab › Voice rooms (read when the rooms open)
+     *   follow        Social tab › Connections (read when your followers open)
+     *   trail_*       Social tab › Trails (read when the trail opens)
+     *   support       Settings tab › Help & feedback › Your reports › the report
+     */
+    private fun unreadOf(vararg kinds: NotificationKind): Int =
+        visibleNotifications().count { !it.read && it.kind in kinds }
+
+    private fun socialBadgeCount(): Int {
+        val trails = if (TRAILS_ENABLED) unreadOf(NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY) else 0
+        return unreadDmCount.toInt() + unreadOf(NotificationKind.VOICE_INVITE, NotificationKind.FOLLOW) + trails
+    }
+
+    private fun markKindsRead(vararg kinds: NotificationKind) {
+        notifications.filter { !it.read && it.kind in kinds }.forEach { setNotificationRead(it.id, true) }
+    }
+
     private fun setNotificationRead(id: String, read: Boolean) {
         if (notifications.none { it.id == id }) return
         notifications = notifications.map { if (it.id == id) it.copy(read = read) else it }
@@ -5847,7 +6104,10 @@ class WyrmOverlay(private val activity: Activity) :
         if (!repository.hasSession) return
         scope.launch {
             runCatching { repository.conversations() }
-                .onSuccess { unreadDmCount = it.sumOf { conversation -> conversation.unread } }
+                .onSuccess {
+                    conversations = it
+                    unreadDmCount = it.sumOf { conversation -> conversation.unread }
+                }
         }
     }
 
@@ -6025,8 +6285,8 @@ class WyrmOverlay(private val activity: Activity) :
     private fun joinBattledomeEvent(address: String) = requestArenaEntry(address)
 
     /** Routes a system-notification tap only after the account is validated. */
-    fun openFromNotification(kind: String, id: String, actorId: String) {
-        val target = NotificationOpen(kind, id, actorId)
+    fun openFromNotification(kind: String, id: String, actorId: String, action: String, address: String) {
+        val target = NotificationOpen(kind, id, actorId, action, address)
         if (!sessionReady) {
             pendingNotificationOpen = target
             return
@@ -6035,6 +6295,18 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     private fun routeNotificationOpen(target: NotificationOpen) {
+        // Play on a Battledome notification: that event's arena, not the lobby's
+        // selection. The alerts load first, so an event that has not begun gets
+        // its "starts in" pause instead of an early entry.
+        if (target.action == "play" && target.address.isNotBlank()) {
+            scope.launch {
+                runCatching { repository.notifications() }
+                    .onSuccess { rows -> mergeNotifications(rows.map { it.toWyrmNotification() }) }
+                target.id.takeIf { it.isNotBlank() }?.let { setNotificationRead(it, true) }
+                joinBattledomeEvent(target.address)
+            }
+            return
+        }
         when (target.kind) {
             "voice_call" -> openVoiceChat()
             "voice_invite" -> if (target.id.isBlank()) openNotifications() else openVoiceInviteDeepLink(target.id)
@@ -6275,6 +6547,49 @@ class WyrmOverlay(private val activity: Activity) :
         refreshNotifications()
         // The Settings badge counts replies from Wyrm; keep it fresh.
         com.wyrm.omrajput.data.SupportStore.refresh()
+        startLiveInbox()
+    }
+
+    /* --------------------------------------------------------- live inbox */
+
+    /** `/v1/me/live` while Wyrm is on screen: new notifications land without a refresh. */
+    private val liveInbox = com.wyrm.omrajput.data.LiveInbox(activity, BuildConfig.WYRM_API_URL, scope) { kind, _ ->
+        onLiveInbox(kind)
+    }
+    private var inboxPollJob: Job? = null
+
+    private fun startLiveInbox() {
+        if (!repository.hasSession) return
+        liveInbox.start()
+        // Belt and braces: while the Notifications page is open it also asks every 15 s.
+        if (inboxPollJob?.isActive != true) {
+            inboxPollJob = scope.launch {
+                while (activityResumed && repository.hasSession) {
+                    delay(15_000L)
+                    if (route == Route.NOTIFICATIONS) refreshNotifications()
+                }
+            }
+        }
+    }
+
+    private fun stopLiveInbox() {
+        liveInbox.stop()
+        inboxPollJob?.cancel()
+        inboxPollJob = null
+    }
+
+    /** Something new for this player: refetch what it touches. Empty kind: catch up on everything. */
+    private fun onLiveInbox(kind: String) {
+        when (kind) {
+            "dm" -> refreshUnreadDmCount()
+            "support" -> { refreshNotifications(); com.wyrm.omrajput.data.SupportStore.refresh() }
+            "" -> {
+                refreshNotifications()
+                refreshUnreadDmCount()
+                com.wyrm.omrajput.data.SupportStore.refresh()
+            }
+            else -> refreshNotifications()
+        }
     }
 
     /** Runtime permission dialogs do not always pause the Activity. */
@@ -6284,6 +6599,7 @@ class WyrmOverlay(private val activity: Activity) :
 
     fun onActivityPaused() {
         activityResumed = false
+        stopLiveInbox()
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
     }
 

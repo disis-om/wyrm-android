@@ -134,6 +134,12 @@ object WyrmLookStore {
         publish()
     }
 
+    /** After a log in or log out rewrote the file (AccountSync): read it again and republish. */
+    fun reload(context: Context) {
+        val publish = sink ?: return
+        attach(context, publish)
+    }
+
     fun pickHair(style: Int) { hair = if (style in WyrmLook.hairNames.indices) style else -1; save() }
     fun pickHairTone(tone: Float) { hairTone = tone.coerceIn(0f, 1f); save() }
     fun pickEars(style: Int) { ears = if (style in WyrmLook.earNames.indices) style else -1; save() }

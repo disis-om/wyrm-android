@@ -15,7 +15,6 @@ import android.content.Context;
 public final class UpdateChannel {
     private static final String PREFS = UpdateManager.PREFS_NAME;
     private static final String PREF_BETA = "beta_updates";
-    private static final String PREF_BACKUP_FIRST = "backup_before_update";
     private static final String PREF_OFFERED_BETA = "offered_update_is_beta";
 
     public static final String STABLE_MANIFEST = "latest.json";
@@ -42,13 +41,4 @@ public final class UpdateChannel {
                 .edit().putBoolean(PREF_OFFERED_BETA, beta).apply();
     }
 
-    /** Whether an update first writes a dated backup. On by default. */
-    public static boolean isBackupBeforeUpdate(Context context) {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(PREF_BACKUP_FIRST, true);
-    }
-
-    public static void setBackupBeforeUpdate(Context context, boolean enabled) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putBoolean(PREF_BACKUP_FIRST, enabled).apply();
-    }
 }

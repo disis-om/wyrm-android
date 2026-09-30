@@ -156,7 +156,6 @@ fun IosProfileScreen(
     onRefresh: () -> Unit,
     onFollowers: () -> Unit,
     onFollowing: () -> Unit,
-    onSignOut: () -> Unit,
     onToggleFollow: () -> Unit,
     onMessage: () -> Unit,
     onOpenTrail: (String) -> Unit,
@@ -311,15 +310,6 @@ fun IosProfileScreen(
                                                 .aspectRatio(1f)
                                                 .background(Wyrm.Well.copy(alpha = if ((row * 3 + column) % 2 == 0) 1f else 0.7f)),
                                         )
-                                    }
-                                }
-                            }
-                        }
-                        if (own) {
-                            item(key = "sign-out") {
-                                Column(Modifier.padding(top = 28.dp)) {
-                                    IosPaperCard {
-                                        IosListRow("Sign out", destructive = true, showsChevron = false, onClick = onSignOut)
                                     }
                                 }
                             }

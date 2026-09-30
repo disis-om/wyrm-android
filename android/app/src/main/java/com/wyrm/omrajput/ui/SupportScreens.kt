@@ -678,7 +678,7 @@ private val supportFaqs = listOf(
     ),
     SupportFaq(
         "How do I keep my settings when I reinstall?",
-        "Settings › Backup & version › Create backup saves skins, controls and settings to your backup folder. Restore from it on the new install.",
+        "Your settings, skin and layouts are saved to your Wyrm account. Log in on the new install and they come back.",
     ),
     SupportFaq(
         "I'm not getting notifications",
@@ -688,7 +688,7 @@ private val supportFaqs = listOf(
     ),
     SupportFaq(
         "How do I get Wyrm updates?",
-        "Wyrm tells you when a new build is out. Turn on Beta updates in Backup & version to get early builds.",
+        "Wyrm tells you when a new build is out. Turn on Beta updates in Updates & version to get early builds.",
     ),
     SupportFaq(
         "How do I delete my account?",
@@ -748,7 +748,8 @@ fun HelpCenterScreen(
                     else -> "${SupportStore.reports.size}"
                 }
             }
-            SettingsValueRow(title = "Your reports", value = summary, first = true, onOpen = { onReports() })
+            SettingsValueRow(title = "Your reports", value = summary, first = true, onOpen = { onReports() },
+                badge = SupportStore.unseenReplies)
         }
 
         SettingsSectionLabel("Crash reports")
@@ -1052,9 +1053,14 @@ fun SupportReportsScreen(
     onNew: () -> Unit,
 ) {
     LaunchedEffect(Unit) { SupportStore.refresh() }
-    // Opening the list is reading the replies in it.
+    // The end of the badge trail: replies new when the list opened keep a red
+    // mark while it is open, even though opening it is reading them.
+    val fresh = remember { mutableStateOf(emptySet<String>()) }
     LaunchedEffect(SupportStore.loaded, SupportStore.loading, SupportStore.reports) {
-        if (SupportStore.loaded && !SupportStore.loading) SupportStore.markRepliesSeen()
+        if (SupportStore.loaded && !SupportStore.loading) {
+            fresh.value = fresh.value + SupportStore.reports.filter { SupportStore.isUnseen(it) }.map { it.id }
+            SupportStore.markRepliesSeen()
+        }
     }
     SettingsDrillScaffold(
         title = "Your reports",
@@ -1083,16 +1089,17 @@ fun SupportReportsScreen(
                     fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet, textAlign = TextAlign.Center)
             }
             else -> Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SupportStore.reports.forEach { report -> SupportReportCard(report) }
+                SupportStore.reports.forEach { report -> SupportReportCard(report, fresh = report.id in fresh.value) }
             }
         }
     }
 }
 
 @Composable
-private fun SupportReportCard(report: SupportReport) {
+private fun SupportReportCard(report: SupportReport, fresh: Boolean = false) {
     val shape = wyrmRounded(17.dp)
     val status = when {
+        fresh -> "New reply from Wyrm"
         report.reply.isNotBlank() -> "Wyrm replied"
         report.status == "resolved" -> "Resolved"
         report.status == "read" -> "Seen"
@@ -1114,8 +1121,13 @@ private fun SupportReportCard(report: SupportReport) {
                 fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, letterSpacing = 1.sp, color = Wyrm.Ink,
                 modifier = Modifier.clip(WyrmCapsule).background(Wyrm.Well).padding(horizontal = 8.dp, vertical = 3.dp),
             )
+            if (fresh) Box(Modifier.size(8.dp).clip(WyrmCapsule).background(Wyrm.Badge))
             Text(status, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp,
-                color = if (report.reply.isBlank()) Wyrm.Quiet else Wyrm.Live, modifier = Modifier.weight(1f))
+                color = when {
+                    fresh -> Wyrm.Badge
+                    report.reply.isBlank() -> Wyrm.Quiet
+                    else -> Wyrm.Live
+                }, modifier = Modifier.weight(1f))
             Text(trailTime(report.createdAt), fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet)
         }
         Text(report.message.ifBlank { if (report.kind == "drop") "Arena drop report" else "Crash report" }, fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 19.sp,

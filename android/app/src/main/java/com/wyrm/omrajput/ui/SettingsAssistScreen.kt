@@ -49,6 +49,8 @@ fun SettingsAssistScreen(
     backLabel: String = "Settings",
     onBack: () -> Unit,
     onChange: (Setting, List<Float>) -> Unit,
+    /** Opens the live background-size editor (the slider moved there, OM 2026-10-01). */
+    onAdjustBackground: () -> Unit = {},
 ) {
     // Settings search picks the tab that holds the row it opened.
     var mode by remember { mutableIntStateOf(if (SettingsFocus.target?.startsWith("normal.") == true) 0 else 1) }
@@ -128,8 +130,9 @@ fun SettingsAssistScreen(
             val headDotSize = modeSettings.firstOrNull { it.id.substringAfter('.') == "head_dot_size" }
             val headDotColor = modeSettings.firstOrNull { it.id.substringAfter('.') == "head_dot_color" }
             val rest = modeSettings.filter {
-                it !in colours && it.id.substringAfter('.') !in foodIds + dotIds
+                it !in colours && it.id.substringAfter('.') !in foodIds + dotIds + "bg_scale"
             }
+            val backgroundScale = modeSettings.firstOrNull { it.id.substringAfter('.') == "bg_scale" }
 
             Column {
                 SettingsSectionLabel("Arena colours")
@@ -138,6 +141,18 @@ fun SettingsAssistScreen(
                         Box(Modifier.settingAnchor(setting.id)) {
                             SettingsColourRow(setting = setting, first = index == 0, onChange = onChange)
                         }
+                    }
+                }
+
+                SettingsSectionLabel("Arena background")
+                SettingsCard {
+                    Box(Modifier.settingAnchor("app.bg-size")) {
+                        SettingsValueRow(
+                            title = "Adjust arena background size",
+                            value = backgroundScale?.let { bgScaleLabel(it.number) } ?: "",
+                            first = true,
+                            onOpen = { onAdjustBackground() },
+                        )
                     }
                 }
 

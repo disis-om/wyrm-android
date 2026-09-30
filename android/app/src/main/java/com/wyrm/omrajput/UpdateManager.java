@@ -78,7 +78,6 @@ final class UpdateManager {
     private static final int TRANSFER_ATTEMPTS = 4;
 
     private final WyrmActivity activity;
-    private final BackupManager backupManager;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final SharedPreferences preferences;
     private final AtomicBoolean checking = new AtomicBoolean(false);
@@ -87,9 +86,8 @@ final class UpdateManager {
             new AtomicBoolean(false);
     private volatile UpdateManifest availableManifest;
 
-    UpdateManager(WyrmActivity activity, BackupManager backupManager) {
+    UpdateManager(WyrmActivity activity) {
         this.activity = activity;
-        this.backupManager = backupManager;
         this.preferences = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         removeStaleDownloads();
     }
@@ -156,18 +154,8 @@ final class UpdateManager {
             checkForUpdates(true);
             return;
         }
-        // The player can turn the backup off in Settings › Backup.
-        if (!UpdateChannel.isBackupBeforeUpdate(activity)) {
-            beginDownload(manifest);
-            return;
-        }
-        if (settingsPayload == null || settingsPayload.length == 0) {
-            emitError("Backup preparation failed",
-                    "Current settings could not be captured, so the update was not started.");
-            return;
-        }
-        backupManager.createBackup(settingsPayload,
-                () -> beginDownload(manifest));
+        // No backup first any more: the settings are in the account (AccountSync).
+        beginDownload(manifest);
     }
 
     void resumePendingInstall() {
@@ -730,9 +718,6 @@ final class UpdateManager {
             long current = installedVersionCode();
             long previous = preferences.getLong(PREF_LAST_SEEN_VERSION, 0L);
             preferences.edit().putLong(PREF_LAST_SEEN_VERSION, current).apply();
-            if (previous > 0L && current > previous) {
-                backupManager.checkAfterUpdate(currentSettings);
-            }
         } catch (Exception error) {
             Log.w(TAG, "Could not record installed version", error);
         }

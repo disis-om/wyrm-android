@@ -63,6 +63,10 @@ fun SocialScreen(
     killRank: Int?,
     messageDetail: String,
     unreadMessages: Long,
+    /** Unread voice invitations: a red count on Voice rooms. */
+    voiceBadge: Int = 0,
+    /** New followers not yet seen: a red count on Connections. */
+    followBadge: Int = 0,
     voiceDetail: String,
     followerCount: Long,
     followingCount: Long,
@@ -124,6 +128,7 @@ fun SocialScreen(
                     detail = if (unreadMessages == 0L) "No unread messages" else "$unreadMessages unread",
                     glyph = IosGlyph.MESSAGE,
                     tint = Wyrm.Link,
+                    badge = unreadMessages.toInt(),
                 ) { onOpenMessages(Rect.Zero) }
                 IosListRow(
                     title = "Global chat",
@@ -133,14 +138,16 @@ fun SocialScreen(
                 ) { onOpenGlobalChat(Rect.Zero) }
                 IosListRow(
                     title = "Voice rooms",
-                    detail = "$liveRooms live",
+                    detail = if (voiceBadge > 0) "$voiceBadge invitation${if (voiceBadge == 1) "" else "s"} · $liveRooms live" else "$liveRooms live",
                     glyph = IosGlyph.MIC,
                     tint = Wyrm.Live,
+                    badge = voiceBadge,
                 ) { onOpenVoice(Rect.Zero) }
                 IosListRow(
                     title = "Connections",
-                    detail = "$followerCount followers · $followingCount following",
+                    detail = if (followBadge > 0) "$followBadge new · $followerCount followers" else "$followerCount followers · $followingCount following",
                     glyph = IosGlyph.PERSON_2,
+                    badge = followBadge,
                 ) { onOpenFollowers(Rect.Zero) }
                 IosListRow(
                     title = "Your profile",

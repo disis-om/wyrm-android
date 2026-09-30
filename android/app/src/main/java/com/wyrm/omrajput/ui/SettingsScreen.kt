@@ -81,6 +81,8 @@ private data class SettingsHubRow(
     val sub: String,
     val value: String,
     val onOpen: (Rect) -> Unit,
+    /** The badge trail: a red count for something new behind this row. */
+    val badge: Int = 0,
 )
 
 /**
@@ -120,8 +122,12 @@ fun SettingsScreen(
     onOpenAbout: (Rect) -> Unit = {},
     /** "n new" when Wyrm has replied to a report the player has not opened. */
     helpValue: String = "",
+    /** The same count as the Settings tab's badge, on the row that leads to it. */
+    helpBadge: Int = 0,
     onOpenHelp: (Rect) -> Unit = {},
     onResetAll: () -> Unit,
+    /** Very bottom of Settings (OM, 2026-10-01): asks first, then saves and wipes. */
+    onLogOut: () -> Unit = {},
     onTabNotifications: (Rect) -> Unit,
     onTabPlay: (Rect) -> Unit,
     onTabSocial: (Rect) -> Unit,
@@ -191,10 +197,8 @@ fun SettingsScreen(
             "This device",
             listOf(
                 SettingsHubRow(
-                    "Backup & version",
-                    backupDetail.ifBlank { "Skins, controls, settings and team keys" } +
-                        " · Wyrm $appVersion" +
-                        if (settingsVersion.isNotBlank()) " · format v$settingsVersion" else "",
+                    "Updates & version",
+                    "Wyrm $appVersion · your settings are saved to your account",
                     updateDetail,
                     onOpenBackup,
                 ),
@@ -202,7 +206,7 @@ fun SettingsScreen(
         ),
         SettingsHubGroup(
             "Help & feedback",
-            listOf(SettingsHubRow("Help & feedback", "Report a problem, suggest an idea, crash reports", helpValue, onOpenHelp)),
+            listOf(SettingsHubRow("Help & feedback", "Report a problem, suggest an idea, crash reports", helpValue, onOpenHelp, badge = helpBadge)),
         ),
         SettingsHubGroup(
             "About",
@@ -276,6 +280,15 @@ fun SettingsScreen(
                     },
                 )
             }
+            Spacer(Modifier.height(22.dp))
+            SettingsCard {
+                SettingsActionRow(
+                    title = "Log out",
+                    first = true,
+                    danger = true,
+                    onClick = onLogOut,
+                )
+            }
             Text(
                 text = if (settingsVersion.isNotBlank()) {
                     "Wyrm · settings format v$settingsVersion"
@@ -338,6 +351,10 @@ private fun SettingsHubLine(row: SettingsHubRow, first: Boolean) {
             if (row.value.isNotBlank()) {
                 Text(text = row.value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Quiet)
                 Spacer(Modifier.width(6.dp))
+            }
+            if (row.badge > 0) {
+                WyrmCountBadge(row.badge)
+                Spacer(Modifier.width(8.dp))
             }
             Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = Wyrm.Chevron)
         }

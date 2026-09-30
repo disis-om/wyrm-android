@@ -36,21 +36,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.wyrm.omrajput.data.BackupState
 import com.wyrm.omrajput.data.UpdateState
 
 enum class BackupAction { CREATE, CHECK, RESTORE, CHOOSE_FOLDER }
 
 /**
- * Spec page 16 — Settings › Backup & version.
- *
- * Real backup actions and the signed updater. No invented daily/keep-versions
- * rows — those are not in the engine.
+ * Settings › Updates & version. Until 2026-10-01 this page also held manual
+ * `.wyrm` backups; settings now live in the account (data/AccountSync.kt), so
+ * only the signed updater, the beta switch and the version remain.
  */
 @Composable
 fun BackupScreen(
-    state: BackupState,
-    activeAction: BackupAction?,
     update: UpdateState = UpdateState(),
     installedVersion: String = "",
     settingsVersion: String = "",
@@ -58,34 +54,14 @@ fun BackupScreen(
     insetBottom: Dp,
     backLabel: String = "Settings",
     onBack: () -> Unit,
-    onCreate: () -> Unit,
-    onCheck: () -> Unit,
-    onRestore: () -> Unit,
-    onChooseFolder: () -> Unit,
     onCheckUpdate: () -> Unit = {},
     betaUpdates: Boolean = false,
     onBetaUpdates: (Boolean) -> Unit = {},
-    backupFirst: Boolean = true,
-    onBackupFirst: (Boolean) -> Unit = {},
     onInstall: () -> Unit = {},
     onOpenInstalledNotes: () -> Unit = {},
     onOpenAvailableNotes: () -> Unit = {},
     onResetAll: (() -> Unit)? = null,
 ) {
-    val waiting = state.busy || activeAction != null
-    val creating = state.saving || activeAction == BackupAction.CREATE
-    val checking = state.status == 4 || activeAction == BackupAction.CHECK
-    val restoring = state.restoring || activeAction == BackupAction.RESTORE
-    val openingFolder = activeAction == BackupAction.CHOOSE_FOLDER
-    // The item-by-item restore report belongs to its modal result card. Keeping
-    // it underneath made one completed action look like two separate reports.
-    val restoreResult = state.restored || state.partial ||
-        (state.failed && state.title.startsWith("Restore", ignoreCase = true))
-    val headline = when {
-        restoreResult -> "Backup restore finished"
-        state.title.isNotBlank() -> state.title
-        else -> "No backup on this phone yet"
-    }
     val updateLabel = when {
         update.busy -> update.title.ifBlank { "Checking…" }
         update.available -> "Update available"
@@ -96,7 +72,7 @@ fun BackupScreen(
     var confirmingReset by remember { mutableStateOf(false) }
 
     SettingsDrillScaffold(
-        title = "Backup",
+        title = "Updates",
         parent = backLabel,
         insetTop = insetTop,
         insetBottom = insetBottom,
@@ -104,94 +80,6 @@ fun BackupScreen(
     ) {
         // Clear of the header rule, as on iOS.
         Spacer(Modifier.height(18.dp))
-        SettingsCard {
-            Column(modifier = Modifier.padding(16.dp, 16.dp, 14.dp, 16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(androidx.compose.foundation.shape.CircleShape)
-                            .background(if (state.failed) Wyrm.Badge else Wyrm.Live),
-                    )
-                    Spacer(Modifier.size(7.dp))
-                    Text(
-                        text = "LAST BACKUP",
-                        fontFamily = Wyrm.Body,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 11.5.sp,
-                        letterSpacing = 0.8.sp,
-                        color = if (state.failed) Wyrm.Badge else Wyrm.Live,
-                    )
-                }
-                Text(
-                    text = headline,
-                    fontFamily = Wyrm.Body,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 19.sp,
-                    color = Wyrm.Ink,
-                    modifier = Modifier.padding(top = 9.dp),
-                )
-                Text(
-                    text = if (state.detail.isNotBlank() && !restoreResult) {
-                        state.detail
-                    } else {
-                        "Skins, controls, settings and team keys."
-                    },
-                    fontFamily = Wyrm.Body,
-                    fontSize = 13.sp,
-                    color = Wyrm.Quiet,
-                    modifier = Modifier.padding(top = 3.dp),
-                )
-                if (state.busy) {
-                    Spacer(Modifier.height(12.dp))
-                    BackupLoadingState(
-                        title = state.title.ifEmpty { "Working on your backup" },
-                        fraction = state.count / 100f,
-                    )
-                }
-                Row(
-                    modifier = Modifier.padding(top = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp),
-                ) {
-                    if (state.selectingFolder) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            PaperPrimaryButton(
-                                label = if (openingFolder) "Opening folder…" else "OK",
-                                enabled = !openingFolder,
-                                onClick = onChooseFolder,
-                            )
-                        }
-                    } else {
-                        Box(modifier = Modifier.weight(1f)) {
-                            PaperPrimaryButton(
-                                label = if (creating) "Backing up…" else "Back up now",
-                                enabled = !waiting || creating,
-                                onClick = onCreate,
-                            )
-                        }
-                        Box(modifier = Modifier.weight(1f)) {
-                            PaperOutlineButton(
-                                label = if (checking) "Loading…" else "Restore",
-                                enabled = !waiting || checking || restoring,
-                                onClick = if (state.found) onRestore else onCheck,
-                            )
-                        }
-                    }
-                }
-                if (!state.selectingFolder && state.found && !waiting) {
-                    Text(
-                        text = "View previous backups",
-                        fontFamily = Wyrm.Body,
-                        fontSize = 14.sp,
-                        color = Wyrm.Link,
-                        modifier = Modifier
-                            .padding(top = 10.dp)
-                            .clickable(onClick = onCheck),
-                    )
-                }
-            }
-        }
-
         // An update that is ready, or on its way in, gets its own card and a
         // real button rather than only a row label.
         val updating = update.busy && update.status != 1
@@ -244,15 +132,6 @@ fun BackupScreen(
                     onToggle = onBetaUpdates,
                 )
             }
-            Box(Modifier.settingAnchor("app.backup-first")) {
-                SettingsBoolRow(
-                    title = "Back up before updating",
-                    detail = "Saves skins, controls and settings to your backup folder first.",
-                    on = backupFirst,
-                    first = false,
-                    onToggle = onBackupFirst,
-                )
-            }
             if (settingsVersion.isNotBlank()) {
                 SettingsValueRow("Settings format", "v$settingsVersion", first = false)
             }
@@ -291,8 +170,8 @@ fun BackupScreen(
             }
         }
         SettingsCaption(
-            "With Back up before updating on, Wyrm creates a dated backup in the folder you choose. " +
-                "Team credentials are included only as Android-Keystore ciphertext.",
+            "Your settings, skin and layouts are saved to your Wyrm account, so an update or a new phone " +
+                "never loses them. Log in and they come back.",
         )
     }
 }

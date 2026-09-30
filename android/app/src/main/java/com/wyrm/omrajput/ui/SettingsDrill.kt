@@ -415,6 +415,8 @@ internal fun SettingsValueRow(
     value: String,
     first: Boolean,
     onOpen: ((Rect) -> Unit)? = null,
+    /** The badge trail: a red count for something new behind this row. */
+    badge: Int = 0,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -449,6 +451,10 @@ internal fun SettingsValueRow(
             )
             if (value.isNotBlank()) {
                 Text(text = value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Quiet)
+            }
+            if (badge > 0) {
+                Spacer(Modifier.width(8.dp))
+                WyrmCountBadge(badge)
             }
             if (onOpen != null) {
                 Spacer(Modifier.width(6.dp))

@@ -970,11 +970,14 @@ fun FloatingRootTabs(
     onExpand: () -> Unit = {},
     /** Unseen replies from Wyrm (Help & feedback), on the Settings tab. */
     settingsBadge: Int = 0,
+    /** Unread DMs, voice invites, new followers and trail replies: the Social trail. */
+    socialBadge: Int = 0,
 ) {
     val order = RootTab.entries
     val tabs = order.map { tab ->
         val badge = when (tab) {
             RootTab.NOTIFICATIONS -> unreadNotifications
+            RootTab.SOCIAL -> socialBadge
             RootTab.SETTINGS -> settingsBadge
             else -> 0
         }
@@ -1022,7 +1025,7 @@ private fun FloatingTabLabel(tab: RootTab, chosen: Boolean, badge: Int) {
                         .height(14.dp)
                         .widthIn(min = 16.dp)
                         .clip(WyrmCapsule)
-                        .background(Wyrm.Live)
+                        .background(Wyrm.Badge)
                         .padding(horizontal = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1030,7 +1033,7 @@ private fun FloatingTabLabel(tab: RootTab, chosen: Boolean, badge: Int) {
                         text = minOf(badge, 99).toString(),
                         fontWeight = FontWeight.Bold,
                         fontSize = 8.sp,
-                        color = Wyrm.OnInk,
+                        color = Wyrm.contentOn(Wyrm.Badge),
                         maxLines = 1,
                     )
                 }

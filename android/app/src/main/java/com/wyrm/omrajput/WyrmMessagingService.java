@@ -139,6 +139,36 @@ public class WyrmMessagingService extends FirebaseMessagingService {
                 .setGroup(SHADE_GROUP)
                 .setContentIntent(pendingIntent);
 
+        // A Battledome event: a live countdown to its start, Copy IP and Play (OM, 2026-10-01).
+        String address = data.getOrDefault("address", "");
+        if ("event".equals(kind) && address != null && !address.isEmpty()) {
+            long start = 0L;
+            try {
+                start = java.time.Instant.parse(data.getOrDefault("startsAt", "")).toEpochMilli();
+            } catch (Exception ignored) {
+                // No start time: no countdown, the buttons still work.
+            }
+            if (start > System.currentTimeMillis()) {
+                notification.setWhen(start).setShowWhen(true)
+                        .setUsesChronometer(true).setChronometerCountDown(true)
+                        .setSubText("Starts in");
+            }
+            Intent copy = new Intent(this, WyrmNotificationActions.class)
+                    .setAction(WyrmNotificationActions.ACTION_COPY_IP)
+                    .putExtra(WyrmNotificationActions.EXTRA_ADDRESS, address);
+            PendingIntent copyIntent = PendingIntent.getBroadcast(this, notificationId * 2 + 1, copy,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            Intent play = new Intent(this, WyrmActivity.class);
+            play.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            play.putExtra("wyrm.kind", "event");
+            play.putExtra("wyrm.id", data.getOrDefault("id", ""));
+            play.putExtra("wyrm.action", "play");
+            play.putExtra("wyrm.address", address);
+            PendingIntent playIntent = PendingIntent.getActivity(this, notificationId * 2 + 2, play,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            notification.addAction(0, "Copy IP", copyIntent).addAction(0, "Play", playIntent);
+        }
+
         manager.notify(notificationId, notification.build());
     }
 

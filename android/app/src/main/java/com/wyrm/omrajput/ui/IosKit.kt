@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -104,6 +105,8 @@ fun IosListRow(
     tint: Color = Wyrm.Mute,
     destructive: Boolean = false,
     showsChevron: Boolean = true,
+    /** Something new behind this row (the badge trail, OM 2026-10-01): a red count. */
+    badge: Int = 0,
     onClick: (() -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -139,6 +142,10 @@ fun IosListRow(
                     textAlign = TextAlign.End, maxLines = 2)
                 Spacer(Modifier.width(12.dp))
             }
+            if (badge > 0) {
+                WyrmCountBadge(badge)
+                Spacer(Modifier.width(10.dp))
+            }
             if (showsChevron && onClick != null) IosIcon(IosGlyph.CHEVRON_RIGHT, Wyrm.Chevron, size = 12.dp, semibold = true)
         }
         Box(
@@ -148,6 +155,33 @@ fun IosListRow(
                 .fillMaxWidth()
                 .height(1.dp)
                 .background(Wyrm.RowRule),
+        )
+    }
+}
+
+/**
+ * The badge trail (OM, 2026-10-01): the same red count on the tab, on the row
+ * that leads to the thing, and on the thing itself, so a player can follow it.
+ */
+@Composable
+internal fun WyrmCountBadge(count: Int, modifier: Modifier = Modifier) {
+    if (count <= 0) return
+    Box(
+        modifier
+            .heightIn(min = 20.dp)
+            .widthIn(min = 20.dp)
+            .clip(WyrmCapsule)
+            .background(Wyrm.Badge)
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (count > 99) "99+" else count.toString(),
+            fontFamily = Wyrm.Body,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 11.5.sp,
+            color = Wyrm.contentOn(Wyrm.Badge),
+            maxLines = 1,
         )
     }
 }

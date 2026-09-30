@@ -68,6 +68,9 @@ fun LobbyScreen(
     onPlayAi: () -> Unit,
     onPlay: () -> Unit,
     onHome: () -> Unit,
+    /** "Share run": only while the last finished run can still be shared. */
+    canShareRun: Boolean = false,
+    onShareRun: () -> Unit = {},
 ) {
     var quickSettings by remember { mutableStateOf(false) }
 
@@ -104,6 +107,8 @@ fun LobbyScreen(
                 onPlay = onPlay,
                 onHome = onHome,
                 onQuickSettings = { quickSettings = true },
+                canShareRun = canShareRun,
+                onShareRun = onShareRun,
             )
         }
     }
@@ -123,6 +128,8 @@ private fun LobbyReadyRoom(
     onPlay: () -> Unit,
     onHome: () -> Unit,
     onQuickSettings: () -> Unit,
+    canShareRun: Boolean,
+    onShareRun: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
         WyrmMark(
@@ -228,6 +235,16 @@ private fun LobbyReadyRoom(
                     onClick = onHome,
                 )
                 Spacer(Modifier.weight(1f))
+                // The last run, as a trail (OM, 2026-09-30).
+                if (canShareRun) {
+                    LobbyPaperButton(
+                        label = "Share run",
+                        icon = com.composables.icons.lucide.R.drawable.lucide_ic_share,
+                        modifier = Modifier.width(128.dp),
+                        enabled = !entering,
+                        onClick = onShareRun,
+                    )
+                }
                 LobbyPaperButton(
                     label = "Play with AI",
                     icon = R.drawable.ic_play_assist,

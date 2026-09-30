@@ -111,12 +111,17 @@ static void record_finished_run(tenv* env) {
   JNIEnv* jni = NULL;
   jclass activity_class = NULL;
   if (!get_activity(&jni, &activity_class)) return;
+  /* The third value is the life's length in seconds (play_time, set by
+     game_capture_final_score) for the lobby's "Share run" stats. */
   jmethodID method = (*jni)->GetStaticMethodID(
-      jni, activity_class, "recordRunFromNative", "(II)V");
+      jni, activity_class, "recordRunFromNative", "(IID)V");
   if (method) {
+    double seconds = settings->play_time;
+    if (!isfinite(seconds) || seconds < 0) seconds = 0;
     (*jni)->CallStaticVoidMethod(jni, activity_class, method,
                                  (jint)settings->score,
-                                 (jint)settings->kills);
+                                 (jint)settings->kills,
+                                 (jdouble)seconds);
     clear_exception(jni);
   } else {
     (*jni)->ExceptionClear(jni);

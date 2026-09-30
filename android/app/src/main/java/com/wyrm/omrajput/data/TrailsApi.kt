@@ -35,6 +35,68 @@ data class TrailAuthor(
 
 data class TrailPhoto(val url: String, val width: Int, val height: Int)
 
+/** The Wyrm look in a shared skin: -1 is "none"; the hair colour is the slider's 0..1 position. */
+data class TrailSkinLook(val hair: Int = -1, val hairTone: Float = 0.22f, val ears: Int = -1, val glasses: Int = -1)
+
+/**
+ * A poster's skin for "Try this skin" (OM, 2026-09-30). The same JSON from
+ * both apps, stored by the backend as text and returned only when the poster
+ * chose to share it:
+ * `{"v":1,"custom","preset","code","colours":["AARRGGBB"…],"accessory","look":{"hair","hairTone","ears","glasses"}}`.
+ * [colours] pairs with [code] position by position; 0 ("00000000") is the
+ * palette colour, and the alpha byte keeps the AIR / Wyrm bead tags.
+ */
+data class TrailSkin(
+    val custom: Boolean,
+    val preset: Int,
+    val code: String,
+    val colours: List<Int>,
+    val accessory: Int,
+    val look: TrailSkinLook,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("v", 1)
+        .put("custom", custom)
+        .put("preset", preset.coerceIn(0, 255))
+        .put("code", code)
+        .put("colours", org.json.JSONArray().apply { colours.take(256).forEach { put("%08X".format(it)) } })
+        .put("accessory", accessory.coerceIn(-1, 255))
+        .put("look", JSONObject()
+            .put("hair", look.hair.coerceIn(-1, 255))
+            .put("hairTone", Math.round(look.hairTone.coerceIn(0f, 1f) * 10000.0) / 10000.0)
+            .put("ears", look.ears.coerceIn(-1, 255))
+            .put("glasses", look.glasses.coerceIn(-1, 255)))
+
+    companion object {
+        private val HEX8 = Regex("^[0-9A-Fa-f]{8}$")
+
+        /** Another player's JSON, checked and clamped; anything unreadable is no skin at all. */
+        fun from(json: JSONObject?): TrailSkin? {
+            if (json == null || json.optInt("v", 0) != 1) return null
+            fun slot(value: Int) = if (value in 0..255) value else -1
+            val code = json.optString("code").filter { it.code in 0x20..0x7E }.take(256)
+            val rows = json.optJSONArray("colours")
+            val colours = (0 until minOf(rows?.length() ?: 0, 256)).map { index ->
+                rows!!.optString(index).takeIf { HEX8.matches(it) }?.toLong(16)?.toInt() ?: 0
+            }
+            val look = json.optJSONObject("look")
+            return TrailSkin(
+                custom = json.optBoolean("custom"),
+                preset = json.optInt("preset", 0).coerceIn(0, 255),
+                code = code,
+                colours = colours,
+                accessory = slot(json.optInt("accessory", -1)),
+                look = TrailSkinLook(
+                    hair = slot(look?.optInt("hair", -1) ?: -1),
+                    hairTone = (look?.optDouble("hairTone", 0.22) ?: 0.22).toFloat().takeIf { !it.isNaN() }?.coerceIn(0f, 1f) ?: 0.22f,
+                    ears = slot(look?.optInt("ears", -1) ?: -1),
+                    glasses = slot(look?.optInt("glasses", -1) ?: -1),
+                ),
+            )
+        }
+    }
+}
+
 data class Trail(
     val id: String,
     val kind: String,
@@ -47,6 +109,8 @@ data class Trail(
     val mine: Boolean,
     val createdAt: String,
     val author: TrailAuthor,
+    /** The poster's look, only when they shared it ("Try this skin"). */
+    val skin: TrailSkin? = null,
 ) {
     /** Width over height, held between a tall 4:5 and a wide 1.91:1. */
     val aspect: Float
@@ -101,6 +165,7 @@ internal fun JSONObject.toTrail(base: String): Trail {
         mine = optBoolean("mine"),
         createdAt = optString("createdAt"),
         author = getJSONObject("author").toTrailAuthor(base),
+        skin = TrailSkin.from(optJSONObject("skin")),
     )
 }
 
@@ -122,6 +187,7 @@ internal fun Trail.toJson(): JSONObject = JSONObject()
         .put("username", author.handle.removePrefix("@"))
         .put("avatarUrl", author.avatarUrl)
         .put("avatarKey", author.avatarKey))
+    .put("skin", skin?.toJson() ?: JSONObject.NULL)
 
 internal fun JSONObject.toTrailComment(base: String) = TrailComment(
     id = getString("id"),

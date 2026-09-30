@@ -80,6 +80,22 @@ internal object WyrmLook {
 }
 
 /**
+ * A look as plain values: the saved one ([WyrmLookStore.spec]), a skin being
+ * tried from a trail, or the one drawn on a "Share run" sticker.
+ */
+internal data class WyrmLookSpec(val hair: Int = -1, val hairTone: Float = 0.22f, val ears: Int = -1, val glasses: Int = -1) {
+    val hairRgb: Int get() = WyrmLook.hairTone(hairTone)
+
+    /** Only styles this app has; anything else is "none". */
+    fun checked() = WyrmLookSpec(
+        hair = hair.takeIf { it in WyrmLook.hairNames.indices } ?: -1,
+        hairTone = hairTone.coerceIn(0f, 1f),
+        ears = ears.takeIf { it in WyrmLook.earNames.indices } ?: -1,
+        glasses = glasses.takeIf { it in WyrmLook.glassesNames.indices } ?: -1,
+    )
+}
+
+/**
  * The saved look, handed to the engine through `nativeSetWyrmLook`, the way
  * `ArrowSkinStore` hands over the arrow.
  */
@@ -122,6 +138,19 @@ object WyrmLookStore {
     fun pickHairTone(tone: Float) { hairTone = tone.coerceIn(0f, 1f); save() }
     fun pickEars(style: Int) { ears = if (style in WyrmLook.earNames.indices) style else -1; save() }
     fun pickGlasses(style: Int) { glasses = if (style in WyrmLook.glassesNames.indices) style else -1; save() }
+
+    /** The saved look as values. Read in composition, it follows every change. */
+    internal fun spec() = WyrmLookSpec(hair, hairTone, ears, glasses)
+
+    /** Wears a whole look at once ("Try this skin" › Wear): saved and published once. */
+    internal fun wear(look: WyrmLookSpec) {
+        val next = look.checked()
+        hair = next.hair
+        hairTone = next.hairTone
+        ears = next.ears
+        glasses = next.glasses
+        save()
+    }
 
     private fun save() {
         prefs?.edit()?.putInt("hair", hair)?.putFloat("hair_tone", hairTone)?.putInt("ears", ears)

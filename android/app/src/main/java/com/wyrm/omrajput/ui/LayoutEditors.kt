@@ -558,9 +558,9 @@ internal fun bgSliderOf(scale: Float): Float =
 internal fun bgScaleLabel(scale: Float): String = "${Math.round(scale / DEFAULT_BG_SCALE * 100f)}%"
 
 /**
- * Adjust arena background size (OM, 2026-10-01). The AI arena in landscape,
- * as the HUD editor opens it, with the minimap and leaderboard where the
- * player keeps them, and one slider along the bottom. The engine redraws the
+ * Adjust arena background size (OM, 2026-10-01). The AI arena in landscape
+ * with only its real minimap and leaderboard (the engine's bare editor: no
+ * controls, no buttons, assist off), and one slider along the bottom. The engine redraws the
  * floor at the new size every frame, so what the player sees is what they get.
  * The floor is the one chosen in Skin › Arena background.
  */
@@ -577,30 +577,10 @@ fun ArenaBackgroundSizeEditor(
     onSave: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    var size by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current
-    val mapDp = with(density) { minimapSize.coerceIn(128f, 512f).toDp() }
-    val leaderboardScale = 1f + leaderboardFont.coerceIn(0, 2) * 0.16f
-    Box(Modifier.fillMaxSize().onSizeChanged { size = Offset(it.width.toFloat(), it.height.toFloat()) }) {
+    Box(Modifier.fillMaxSize()) {
+        // The engine draws the real minimap and leaderboard (bare editor); nothing on top.
         ArenaHint()
-        if (size.x > 0f) {
-            val area = safeInsets.area(size)
-            // References only: where the player keeps them; they do not move here.
-            Draggable(minimap, area, {}) {
-                Box(
-                    Modifier.size(mapDp).background(Wyrm.Card.copy(alpha = 0.18f), CircleShape)
-                        .border(3.dp, Wyrm.Ink.copy(alpha = 0.76f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) { Text("MAP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = Wyrm.Ink) }
-            }
-            Draggable(leaderboard, area, {}) {
-                HudPreviewPanel(
-                    "LEADERBOARD\n1  Wyrm Player     9503\n2  Northwind       2819\n3  Orbit            418\n4  Meadow           389\n5  Drift            248",
-                    with(density) { (250f * leaderboardScale).toDp() },
-                    with(density) { (132f * leaderboardScale).toDp() },
-                )
-            }
-        }
         Column(
             Modifier
                 .align(Alignment.BottomCenter)

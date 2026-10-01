@@ -88,7 +88,7 @@ internal object AboutInfo {
     const val EMAIL = "ommanav.mail@gmail.com"
     const val WEBSITE = "https://www.omrajput.in"
     /** Not published yet: the button says so until a link is set here. */
-    val DISCORD_INVITE: String? = null
+    val DISCORD_INVITE: String? = "https://discord.gg/efqjEmQdeq"
 
     val upiPay: Uri
         get() = Uri.Builder().scheme("upi").authority("pay")

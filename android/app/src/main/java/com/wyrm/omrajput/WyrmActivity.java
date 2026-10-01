@@ -93,6 +93,7 @@ public final class WyrmActivity extends SDLActivity {
     private static native void nativeEnterAiLayoutEditor(String nickname);
     private static native void nativeExitAiLayoutEditor();
     private static native void nativeToggleEditorLeaderboard();
+    private static native void nativeSetEditorBare(boolean bare);
     private static native void nativeSetNickname(String nickname);
     private static native void nativeSelectArena(String address);
     private static native void nativeSetArenaTheme(int[] colours, boolean dark);
@@ -215,6 +216,11 @@ public final class WyrmActivity extends SDLActivity {
             @Override
             public void onExitAiLayoutEditor() {
                 nativeExitAiLayoutEditor();
+            }
+
+            @Override
+            public void onSetEditorBare(boolean bare) {
+                nativeSetEditorBare(bare);
             }
 
             @Override

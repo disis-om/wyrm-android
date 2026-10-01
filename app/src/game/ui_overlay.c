@@ -1,4 +1,5 @@
 #include "ui_overlay.h"
+#include "ai_mode.h"
 
 #include "arena_theme.h"
 #include "../mobile/mobile_controls.h"
@@ -412,7 +413,8 @@ void ui_overlay(tenv* env) {
     }
 
     /* ---- what you are doing, directly under the leaderboard ---- */
-    {
+    /* Not in the background-size editor: only the map and the board there. */
+    if (!ai_mode_editor_bare()) {
       const char* labels[] = {"SCORE", "KILLS", "RANK", "TIME", "PING", "FPS"};
       const char* values[] = {score_text, kills_text, rank_text,
                               time_text,  ping_text,  fps_text};
@@ -530,8 +532,9 @@ void ui_overlay(tenv* env) {
 
     /* The team, under the map it is drawn on. Nothing at all when there is no
        team, which is the common case. */
-    android_team_draw_roster_centered(env, usrs->hud_team_x * ctx->size[0],
-                                      usrs->hud_team_y * ctx->size[1]);
+    if (!ai_mode_editor_bare())
+      android_team_draw_roster_centered(env, usrs->hud_team_x * ctx->size[0],
+                                        usrs->hud_team_y * ctx->size[1]);
   }
 
   /* Last, so it can be placed against a leaderboard that has already been

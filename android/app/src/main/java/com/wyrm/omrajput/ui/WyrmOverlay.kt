@@ -569,6 +569,8 @@ class WyrmOverlay(private val activity: Activity) :
         fun onEnterAiLayoutEditor(nickname: String)
         fun onExitAiLayoutEditor()
         fun onToggleEditorLeaderboard()
+        /** The background-size editor: the engine draws only its map and board, assist off. */
+        fun onSetEditorBare(bare: Boolean)
         fun onSetNickname(nickname: String)
         fun onOpenLobby()
         fun onLeaveLobby()
@@ -4307,6 +4309,7 @@ class WyrmOverlay(private val activity: Activity) :
      */
     private fun openBackgroundSizeEditor(from: Route) {
         backgroundEditorReturn = from
+        host?.onSetEditorBare(true)
         openEditor(Route.BACKGROUND_SIZE_EDITOR)
     }
 

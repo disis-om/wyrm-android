@@ -114,9 +114,17 @@ fun IosArenaPicker(
     val filtered = live.filter(::matches).sortedWith(
         compareBy<Arena> { a -> state.pings[a.endpoint]?.takeIf { it > 0 } ?: Int.MAX_VALUE }.thenBy { it.iosCode() },
     )
+    // Phase 3 I (OM, 2026-10-01): Recent is ranked by ping too (unmeasured
+    // last, joined order kept between equals). Uses only the pings the picker
+    // already measured; no new probes.
     val recentRows = recent.mapNotNull { endpoint ->
         live.firstOrNull { it.endpoint == endpoint } ?: if (endpoint in saved) customArena(endpoint) else null
-    }.filter(::matches)
+    }.filter(::matches).sortedWith(compareBy { a -> latency(a)?.takeIf { it > 0 } ?: Int.MAX_VALUE })
+    // "Best for you": the live arena with the lowest measured ping (never a
+    // custom address). Selecting it is a plain tap; nothing auto-joins.
+    val best = if (search.isEmpty()) {
+        live.filter { (state.pings[it.endpoint] ?: 0) > 0 }.minByOrNull { state.pings[it.endpoint] ?: Int.MAX_VALUE }
+    } else null
     val ranked = filtered.filter { it.endpoint !in recent }
     val positive = state.pings.values.filter { it > 0 }
     val low = positive.minOrNull()
@@ -150,7 +158,7 @@ fun IosArenaPicker(
     }
 
     @Composable
-    fun ArenaRow(arena: Arena) {
+    fun ArenaRow(arena: Arena, tag: String? = null) {
         val chosen = selection == arena.endpoint
         val shape = wyrmRounded(15.dp)
         Row(
@@ -166,7 +174,23 @@ fun IosArenaPicker(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(arena.iosTitle(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(arena.iosTitle(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+                    if (tag != null) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            tag,
+                            fontFamily = Wyrm.Body,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            color = Wyrm.Live,
+                            modifier = Modifier
+                                .clip(WyrmCapsule)
+                                .background(Wyrm.Live.copy(alpha = 0.12f))
+                                .padding(horizontal = 7.dp, vertical = 2.dp),
+                        )
+                    }
+                }
                 Text(arena.endpoint, fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet)
             }
             Text(latencyText(arena), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = latencyColour(arena))
@@ -268,6 +292,10 @@ fun IosArenaPicker(
                         }
                     }
                 }
+            }
+            best?.let { top ->
+                item(key = "best-label") { SectionLabel("BEST FOR YOU") }
+                item(key = "best-" + top.endpoint) { ArenaRow(top, tag = "Lowest ping") }
             }
             if (recentRows.isNotEmpty()) {
                 item(key = "recent-label") { SectionLabel("RECENTLY JOINED") }

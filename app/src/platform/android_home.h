@@ -109,6 +109,9 @@ bool android_home_death_active(void);
 
 /** Whether a death is still being dealt with — the wait, or the card itself. */
 bool android_home_death_pending(void);
+/* Phase 3 H: the HUD performance chip, "" for none (set by the app). */
+void android_home_set_performance_chip(const char* text);
+const char* android_home_performance_chip(void);
 float android_home_death_opacity(void);
 void android_home_advance_death(tenv* env, float vfr);
 

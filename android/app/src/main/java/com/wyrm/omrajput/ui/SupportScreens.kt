@@ -752,7 +752,9 @@ fun HelpCenterScreen(
                 badge = SupportStore.unseenReplies)
         }
 
-        SettingsSectionLabel("Crash reports")
+        // OM, 2026-10-01: the "Always send" switches live here only (moved
+        // from Settings › Performance), so a choice made on a prompt can be undone.
+        SettingsSectionLabel("Reports")
         SettingsCard {
             Box(Modifier.settingAnchor("app.crash.auto")) {
                 SettingsBoolRow(
@@ -817,6 +819,7 @@ fun HelpCenterScreen(
             Text(lastError, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp))
         }
+        SettingsCaption("Off: Wyrm asks you each time, with Send and Not now. On: the report goes by itself and only a short note shows.")
         SettingsCaption(
             "A crash report holds your phone model, Android and Wyrm version, where in Wyrm it stopped and the last few minutes of Wyrm's log. A drop report adds the arena, ping, how long you were in and your network type. Never your password, keys, Team ID or messages.",
         )

@@ -5,6 +5,7 @@
 #include "../mobile/mobile_controls.h"
 #include "../platform/android_team.h"
 #include "../platform/android_voice.h"
+#include "../platform/android_home.h"
 #include "../user.h"
 
 /*
@@ -465,6 +466,29 @@ void ui_overlay(tenv* env) {
       for (int i = 0; i < 6; ++i) {
         draw_stat_row(env, draw, max.x - pad, y, labels[i], values[i], 0.88f);
         y += row_height;
+      }
+
+      /* Phase 3 H (OM, 2026-10-01): when Auto has stepped the frame rate down
+         (heat, Battery Saver / Low Power Mode), a small chip under the stats
+         says why ms or smoothness changed. The app sets the text; nothing
+         here touches input or gameplay. */
+      const char* chip = android_home_performance_chip();
+      if (chip && chip[0] && stats_alpha > 0.01f) {
+        ImVec2 chip_text = measure_scaled(stats_label_font, chip, stats_scale);
+        float chip_pad = 8.0f * stats_scale;
+        float chip_w = chip_text.x + chip_pad * 2;
+        float chip_h = chip_text.y + chip_pad;
+        float chip_y = max.y + 6.0f * stats_scale;
+        if (chip_y + chip_h > ctx->size[1] - edge)
+          chip_y = min.y - 6.0f * stats_scale - chip_h;
+        ImVec2 chip_min = {max.x - chip_w, chip_y};
+        ImVec2 chip_max = {max.x, chip_y + chip_h};
+        draw_hud_paper(draw, chip_min, chip_max, stats_alpha);
+        ImDrawList_AddText_FontPtr(
+            draw, stats_label_font, stats_label_font->LegacySize * stats_scale,
+            (ImVec2){chip_min.x + chip_pad, chip_min.y + chip_pad * 0.5f},
+            arena_theme_colour(ARENA_THEME_INK, 0.86f * stats_alpha), chip,
+            NULL, 0, NULL);
       }
     }
 

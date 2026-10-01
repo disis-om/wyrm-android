@@ -51,7 +51,7 @@ object WyrmPerformance {
     enum class Heat { COOL, WARM, HOT }
 
     /** What the engine is told. [cap] 0 = no cap. */
-    data class Policy(val vsync: Boolean, val cap: Int, val displayHz: Int, val reason: String)
+    data class Policy(val vsync: Boolean, val cap: Int, val displayHz: Int, val reason: String, val chip: String = "")
 
     /** Implemented by WyrmActivity: the engine's present mode and cap, and the display rate. */
     fun interface FrameSink {
@@ -271,15 +271,26 @@ object WyrmPerformance {
                     cap < wanted && lowPower -> "Battery Saver is on, so Auto holds $cap FPS."
                     else -> "The phone is cool: $cap FPS with vsync. Auto steps down by itself if it warms up or Battery Saver comes on."
                 }
-                Policy(true, cap, cap, reason)
+                // Phase 3 H: the HUD chip, only when Auto stepped down.
+                val chip = when {
+                    cap < wanted && (hot == Heat.HOT || hot == Heat.WARM) -> "Cooling down · $cap FPS"
+                    cap < wanted && lowPower -> "Battery Saver · $cap FPS"
+                    else -> ""
+                }
+                Policy(true, cap, cap, reason, chip)
             }
         }
     }
+
+    /** Phase 3 H: the engine's HUD chip (WyrmActivity → nativeSetPerformanceChip). */
+    var chipSink: ((String) -> Unit)? = null
+    private var sentChip: String? = null
 
     private fun publish() {
         heat = maxOf(statusHeat, headroomHeat)
         val next = resolve()
         policy = next
+        chipSink?.let { send -> if (next.chip != sentChip) { sentChip = next.chip; send(next.chip) } }
         val target = sink ?: return
         val before = applied
         if (before != null && before.vsync == next.vsync && before.cap == next.cap && before.displayHz == next.displayHz) return

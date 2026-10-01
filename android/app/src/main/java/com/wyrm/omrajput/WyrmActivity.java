@@ -96,6 +96,7 @@ public final class WyrmActivity extends SDLActivity {
     private static native void nativeSetEditorBare(boolean bare);
     /** Settings › Performance: present mode (vsync) and frame cap (0 = none). */
     private static native void nativeSetFramePolicy(boolean vsync, int cap);
+    private static native void nativeSetPerformanceChip(String text);
     private static native void nativeSetNickname(String nickname);
     private static native void nativeSelectArena(String address);
     private static native void nativeSetArenaTheme(int[] colours, boolean dark);
@@ -164,6 +165,11 @@ public final class WyrmActivity extends SDLActivity {
             return kotlin.Unit.INSTANCE;
         });
         // Settings › Performance: the engine's frame policy and the display rate.
+        // Phase 3 H: set before attach, which publishes at once.
+        com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.setChipSink(text -> {
+            try { nativeSetPerformanceChip(text); } catch (UnsatisfiedLinkError ignored) { }
+            return kotlin.Unit.INSTANCE;
+        });
         com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.attach(this, this::applyFramePolicy);
         // Wyrm looks (hair, ears, glasses): drawn on this phone only, never sent.
         com.wyrm.omrajput.ui.WyrmLookStore.attach(this, (hair, hairRgb, ears, glasses) -> {

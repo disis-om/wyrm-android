@@ -197,6 +197,9 @@ internal data class LastRun(
     val endedAt: Long,
     /** The arena at death (long side at most 1440 px), when it could be read. */
     val screenshot: Bitmap? = null,
+    /** Where the run ended on the arena (0..1, the minimap's frame); NaN when unknown. */
+    val mapX: Float = Float.NaN,
+    val mapY: Float = Float.NaN,
 )
 
 /** What the Share editor starts from: the run (null for "Share this skin"), and the skin and look the player wears. */

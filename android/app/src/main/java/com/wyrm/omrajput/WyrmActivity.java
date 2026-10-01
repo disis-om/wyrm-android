@@ -829,6 +829,13 @@ public final class WyrmActivity extends SDLActivity {
         }));
     }
 
+    /** Where the run just recorded ended, 0..1 of the arena (-1 when unknown). */
+    public static void recordRunPositionFromNative(float u, float v) {
+        withActivity(activity -> activity.runOnUiThread(() -> {
+            if (activity.overlay != null) activity.overlay.setLastRunPosition(u, v);
+        }));
+    }
+
     /**
      * One copy of SDL's surface, the long side at most 1440 px. Any failure
      * (no surface, a protected buffer, no memory) simply means no screenshot.

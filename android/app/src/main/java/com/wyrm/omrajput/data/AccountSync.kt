@@ -86,13 +86,15 @@ object AccountSync {
         PrefFile("wyrm_receipts", Scope.WIPE),
         PrefFile("wyrm_local_notifications", Scope.WIPE),
         PrefFile("wyrm_support_seen", Scope.WIPE),
-        PrefFile("wyrm_release_notes", Scope.WIPE),
         PrefFile("wyrm_account_sync", Scope.WIPE),             // an owed restore, per account
         // The retired manual backups (2026-10-01): their folder grant goes too.
         PrefFile("wyrm_backup_state", Scope.WIPE),
         PrefFile("vlither_backup_state", Scope.WIPE),
         // About the phone itself: kept.
         PrefFile("hidapi", Scope.KEEP),                        // SDL game controllers
+        // Which build's "What's new" this phone has seen (OM, 2026-10-02): a log
+        // out must not bring the sheet back on the next launch.
+        PrefFile("wyrm_release_notes", Scope.KEEP),
     )
 
     /** Old preference key → new, per file, for documents saved by older builds. */

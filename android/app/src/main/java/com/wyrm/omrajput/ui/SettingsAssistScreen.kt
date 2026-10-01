@@ -190,7 +190,7 @@ fun SettingsAssistScreen(
                         }
                         SettingsBoolRow(
                             title = "Assist laser in joystick",
-                            detail = "With assist on, a line from your head shows where the joystick is steering.",
+                            detail = "With assist on, a line from your head shows where your snake is heading.",
                             on = JoystickLaserStore.on,
                             first = false,
                             onToggle = { JoystickLaserStore.applyOn(it) },

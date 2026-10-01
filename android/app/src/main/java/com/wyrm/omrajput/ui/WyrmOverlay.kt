@@ -761,6 +761,7 @@ class WyrmOverlay(private val activity: Activity) :
                             onHome = ::leaveLobby,
                             canShareRun = TRAILS_ENABLED && lastRun != null && repository.hasSession,
                             onShareRun = ::openShareRun,
+                            lastRun = lastRun,
                         )
 
                         Route.NOTIFICATIONS -> NotificationsScreen(
@@ -1399,8 +1400,12 @@ class WyrmOverlay(private val activity: Activity) :
                             onResetLayout = { resetOrientationLayout(listOf(4)) },
                         )
 
-                        // Trails paused: reached somehow anyway, the page leaves at once.
-                        Route.TRAILS -> if (!TRAILS_ENABLED) TrailsPausedExit() else TrailsFeedScreen(
+                        // Trails switched off: the Social card opens the "in development" page.
+                        Route.TRAILS -> if (!TRAILS_ENABLED) TrailsComingSoonScreen(
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onBack = { panelOpen = false },
+                        ) else TrailsFeedScreen(
                             insetTop = insetTop,
                             insetBottom = insetBottom,
                             onBack = { panelOpen = false },
@@ -1712,9 +1717,8 @@ class WyrmOverlay(private val activity: Activity) :
                                 onRetry = { loadWhatsNew(notes) },
                                 onClosing = { whatsNewBackdropVisible = false },
                                 onAcknowledged = {
-                                    if (notes.automatic && notes.error.isBlank()) {
-                                        releaseNotes.acknowledge(notes.versionCode)
-                                    }
+                                    // Seen once is enough, even if a retry failed.
+                                    if (notes.automatic) releaseNotes.acknowledge(notes.versionCode)
                                     whatsNewBackdropVisible = false
                                     whatsNewState = null
                                 },
@@ -2177,15 +2181,15 @@ class WyrmOverlay(private val activity: Activity) :
                     done()
                 }
             },
-            // Trails paused: no teaser, and Social closes up with no gap.
-            trailsTeaser = if (!TRAILS_ENABLED) null else ({
-                TrailsTeaser(badge = unreadOf(NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY)) {
+            // Trails switched off: the same card, no count; it opens the "in development" page.
+            trailsTeaser = {
+                TrailsTeaser(badge = if (TRAILS_ENABLED) unreadOf(NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY) else 0) {
                     if (interactive) {
                         tabRoot = Route.SOCIAL
                         openPanel(Rect.Zero) { route = Route.TRAILS }
                     }
                 }
-            }),
+            },
             onOpenLeaderboard = { origin ->
                 if (interactive) {
                     tabRoot = Route.SOCIAL
@@ -3918,14 +3922,14 @@ class WyrmOverlay(private val activity: Activity) :
         out += SettingsSearchEntry(
             id = "app.joystick-laser",
             title = "Assist laser in joystick",
-            detail = "With assist on, a line from your head shows where the joystick steers",
+            detail = "With assist on, a line from your head shows where your snake is heading",
             page = "Modes · Assist",
             keywords = "laser line aim joystick assist helper length guide",
             open = { openSettingsPage(Route.SETTINGS_ASSIST) },
         ) {
             SettingsBoolRow(
                 title = "Assist laser in joystick",
-                detail = "With assist on, a line from your head shows where the joystick steers.",
+                detail = "With assist on, a line from your head shows where your snake is heading.",
                 on = JoystickLaserStore.on,
                 first = true,
                 onToggle = { JoystickLaserStore.applyOn(it) },
@@ -4211,17 +4215,47 @@ class WyrmOverlay(private val activity: Activity) :
         route = Route.SETTINGS_BACKUP
     }
 
-    /** First authenticated Home shows this installed build once per device. */
+    /**
+     * "What's new" shows by itself once, on the first Home after an UPDATE
+     * (OM, 2026-10-02: it was showing on every launch). A fresh install never
+     * shows it. The notes are fetched first: only notes that loaded are shown,
+     * and a build whose notes cannot be read (a test build has none) is marked
+     * seen silently, so it can never come back on each start. Closing the
+     * sheet marks it seen; Settings › Updates still opens it any time.
+     */
     private fun maybeShowAutomaticWhatsNew() {
         if (automaticWhatsNewRequested || whatsNewState != null) return
         if (!releaseNotes.needsAcknowledgement(BuildConfig.VERSION_CODE)) return
         automaticWhatsNewRequested = true
-        openWhatsNew(
-            BuildConfig.VERSION_NAME,
-            BuildConfig.VERSION_CODE,
+        val freshInstall = runCatching {
+            val info = activity.packageManager.getPackageInfo(activity.packageName, 0)
+            info.firstInstallTime == info.lastUpdateTime
+        }.getOrDefault(false)
+        if (freshInstall) {
+            releaseNotes.acknowledge(BuildConfig.VERSION_CODE)
+            return
+        }
+        val request = WhatsNewState(
+            versionName = BuildConfig.VERSION_NAME,
+            versionCode = BuildConfig.VERSION_CODE,
             automatic = true,
             newVersion = true,
+            title = "Wyrm ${BuildConfig.VERSION_NAME}",
         )
+        scope.launch {
+            runCatching { releaseNotes.fetch(request.versionName) }
+                .onSuccess { notes ->
+                    if (whatsNewState != null) return@onSuccess
+                    whatsNewBackdropVisible = true
+                    whatsNewState = request.copy(
+                        title = notes.title,
+                        markdown = notes.markdown,
+                        loading = false,
+                        error = "",
+                    )
+                }
+                .onFailure { releaseNotes.acknowledge(request.versionCode) }
+        }
     }
 
     /** Manual history and automatic first-view both use the same exact tag. */
@@ -5227,6 +5261,16 @@ class WyrmOverlay(private val activity: Activity) :
             }
         }
         return run
+    }
+
+    /** Where the run ended (engine `record_finished_run`, 0..1 of the arena), for the lobby's last-run map. */
+    fun setLastRunPosition(u: Float, v: Float) {
+        activity.runOnUiThread {
+            val current = lastRun ?: return@runOnUiThread
+            if (u !in 0f..1f || v !in 0f..1f) return@runOnUiThread
+            lastRun = current.copy(mapX = u, mapY = v)
+            if (shareRun?.endedAt == current.endedAt) shareRun = lastRun
+        }
     }
 
     /** The arena at death (WyrmActivity's PixelCopy). Dropped when a newer run has begun since. */

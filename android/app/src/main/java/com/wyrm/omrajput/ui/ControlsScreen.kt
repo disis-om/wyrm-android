@@ -263,7 +263,9 @@ fun ControlsScreen(
                     }
                 }
             }
-            handedness?.let { setting ->
+            // Upright there is no left or right hand (OM, 2026-10-02): the row
+            // hides; the stored choice stays for sideways play.
+            handedness?.takeIf { !portraitPlay }?.let { setting ->
                 Box(Modifier.settingAnchor(setting.id)) { SettingsEnumBlock(
                     title = setting.label,
                     detail = setting.hint,
@@ -284,6 +286,8 @@ fun ControlsScreen(
                 ) }
             }
         }
+
+        if (portraitPlay) SettingsCaption("Upright there is no left or right hand: your first finger steers, a second finger boosts.")
 
         SettingsSectionLabel("Basic · size")
         SettingsCard {

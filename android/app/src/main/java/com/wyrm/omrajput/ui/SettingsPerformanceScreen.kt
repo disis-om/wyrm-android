@@ -46,8 +46,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.R as LucideR
-import com.wyrm.omrajput.data.CrashWatch
-import com.wyrm.omrajput.data.DropWatch
 import com.wyrm.omrajput.data.WyrmPerformance
 
 /*
@@ -119,27 +117,6 @@ fun SettingsPerformanceScreen(
             "Auto lets the mode decide. A number holds Wyrm at that rate; Max is as many as the mode allows. " +
                 "In Auto mode, heat and Battery Saver can still bring it lower. This display goes up to ${WyrmPerformance.displayMaxHz} Hz.",
         )
-
-        // OM, 2026-10-01: the "Always send" switches from the crash and drop
-        // prompts, here too, so a choice made on a prompt can be undone.
-        SettingsSectionLabel("Reports")
-        SettingsCard {
-            SettingsBoolRow(
-                title = "Always send crash reports",
-                detail = "If Wyrm closes unexpectedly, the report goes without asking.",
-                on = CrashWatch.autoSend,
-                first = true,
-                onToggle = { CrashWatch.applyAutoSend(it) },
-            )
-            SettingsBoolRow(
-                title = "Always send drop reports",
-                detail = "If an arena drops you mid-match, the report goes without asking.",
-                on = DropWatch.autoSend,
-                first = false,
-                onToggle = { DropWatch.applyAutoSend(it) },
-            )
-        }
-        SettingsCaption("Off: Wyrm asks you each time, with Send and Not now. On: the report goes by itself and only a short note shows.")
 
         SettingsSectionLabel("Menus")
         SettingsCard {

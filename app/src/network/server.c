@@ -126,13 +126,57 @@ void server_poll(tenv* env) {
   tuser_data* usr = env->usr;
   game_data* gdata = &usr->gdata;
 
-  /* Vlither blocks 5ms here on Android and 0ms elsewhere. A non-blocking poll
-     is fine over plaintext, where a frame's worth of bytes is already sitting
-     in the socket; a TLS record has to be assembled before there is anything to
-     hand up, and starving that is how a working connection reads as a dead
-     one. */
 #ifdef VLITHER_ANDROID
-  mg_mgr_poll(&gdata->network_manager, 5);
+  /* Phase 3 G (OM, 2026-10-01). Vlither blocked 5 ms here on every frame; its
+     reason was TLS, but the arena socket is plain `ws://` now (see
+     server_connect), so there is no record to assemble. While the socket is
+     still connecting, upgrading or answering the challenge (until the arena's
+     'a') the 5 ms stays exactly as it was, so entry is untouched; once 'a'
+     has come the poll only drains what is already there (0 ms), so a
+     frame that finds the socket empty no longer loses up to 5 ms, and ping
+     (counted in frame time) stops carrying that wait. No packet, timing or
+     keepalive changed. Rollback: set WYRM_NET_POLL_OPEN_MS to 5. */
+#ifndef WYRM_NET_POLL_OPEN_MS
+#define WYRM_NET_POLL_OPEN_MS 0
+#endif
+  struct mg_connection* arena = gdata->connection;
+  int wait_ms = (arena && arena->is_websocket && gdata->arena_ready &&
+                 !gdata->closed)
+                    ? WYRM_NET_POLL_OPEN_MS : 5;
+  Uint64 started = SDL_GetTicksNS();
+  mg_mgr_poll(&gdata->network_manager, wait_ms);
+  Uint64 ended = SDL_GetTicksNS();
+
+  /* Measurement for OM's before/after check: every 10 s while a WebSocket is
+     open, how long the poll took and how far apart the frames were. */
+  static Uint64 window_start, last_call, poll_sum, poll_max, gap_sum, gap_max;
+  static unsigned frames;
+  if (arena && arena->is_websocket) {
+    if (!window_start) window_start = started;
+    Uint64 took = ended - started;
+    poll_sum += took;
+    if (took > poll_max) poll_max = took;
+    if (last_call) {
+      Uint64 gap = started - last_call;
+      gap_sum += gap;
+      if (gap > gap_max) gap_max = gap;
+    }
+    frames++;
+    if (ended - window_start >= 10000000000ULL && frames > 1) {
+      SDL_Log("Wyrm net poll: wait %d ms, poll avg %.2f ms max %.2f ms, "
+              "frame avg %.2f ms max %.2f ms over %u frames",
+              wait_ms, poll_sum / 1e6 / frames, poll_max / 1e6,
+              gap_sum / 1e6 / (frames - 1), gap_max / 1e6, frames);
+      window_start = ended;
+      poll_sum = poll_max = gap_sum = gap_max = 0;
+      frames = 0;
+    }
+    last_call = started;
+  } else {
+    window_start = last_call = 0;
+    poll_sum = poll_max = gap_sum = gap_max = 0;
+    frames = 0;
+  }
 #else
   mg_mgr_poll(&gdata->network_manager, 0);
 #endif

@@ -592,6 +592,26 @@ void android_home_notify_death(tenv* env) {
 }
 
 bool android_home_death_pending(void) { return death_watching || death_active; }
+
+/* Phase 3 H (OM, 2026-10-01): the HUD's performance chip ("Cooling down ·
+   60 FPS"). The app decides the text (Settings › Performance, Auto mode only)
+   and the engine only draws it. Two slots and an atomic index: the UI thread
+   writes the slot not being shown, the render thread reads the shown one. The
+   last byte of each slot is never written, so a read always ends. */
+static char performance_chip_text[2][48];
+static SDL_AtomicInt performance_chip_slot;
+
+void android_home_set_performance_chip(const char* text) {
+  int next = 1 - SDL_GetAtomicInt(&performance_chip_slot);
+  snprintf(performance_chip_text[next], sizeof(performance_chip_text[next]) - 1,
+           "%s", text ? text : "");
+  SDL_SetAtomicInt(&performance_chip_slot, next);
+}
+
+const char* android_home_performance_chip(void) {
+  return performance_chip_text[SDL_GetAtomicInt(&performance_chip_slot)];
+}
+
 float android_home_death_opacity(void) { return death_watching ? death_opacity : 1; }
 
 void android_home_advance_death(tenv* env, float vfr) {
@@ -924,6 +944,16 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeSetFramePolicy(JNIEnv* env,
   (void)env;
   (void)clazz;
   wyrm_set_frame_policy(vsync == JNI_TRUE, (int)cap);
+}
+
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetPerformanceChip(JNIEnv* env,
+                                                            jclass clazz,
+                                                            jstring text) {
+  (void)clazz;
+  const char* utf = text ? (*env)->GetStringUTFChars(env, text, NULL) : NULL;
+  android_home_set_performance_chip(utf ? utf : "");
+  if (utf) (*env)->ReleaseStringUTFChars(env, text, utf);
 }
 
 JNIEXPORT void JNICALL

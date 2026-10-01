@@ -55,6 +55,8 @@ bool mobile_controls_process_event(tenv* env, const void* event);
 bool mobile_controls_get_aim(tenv* env, int* x, int* y);
 bool mobile_controls_get_arrow_position(tenv* env, float* x, float* y);
 bool mobile_controls_boost_down(tenv* env);
+/* The steering actually in use: always the arrow upright (portrait play). */
+int mobile_controls_steering_mode(tenv* env);
 void mobile_controls_draw_gameplay(tenv* env);
 void mobile_controls_begin_editor(tenv* env);
 void mobile_controls_finish_editor(tenv* env, bool save);

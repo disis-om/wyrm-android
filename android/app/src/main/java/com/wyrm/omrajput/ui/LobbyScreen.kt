@@ -835,44 +835,6 @@ internal fun lobbyRunTime(seconds: Double): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
-/**
- * The arena as the in-game minimap draws it (a round world on a square frame),
- * with a dot where the last run ended (OM, 2026-10-02). `x`/`y` are 0..1 of
- * the arena square; the dot breathes so it reads as "here".
- */
-@Composable
-internal fun LobbyRunMap(x: Float, y: Float, size: Dp, modifier: Modifier = Modifier) {
-    val pulse by rememberInfiniteTransition(label = "run-map").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
-        label = "run-map-pulse",
-    )
-    val well = Wyrm.Well
-    val rule = Wyrm.Rule
-    val ink = Wyrm.Ink
-    val dot = Wyrm.Blood
-    val ring = Wyrm.Card
-    androidx.compose.foundation.Canvas(modifier.size(size)) {
-        val r = this.size.minDimension / 2f
-        val c = Offset(this.size.width / 2f, this.size.height / 2f)
-        drawCircle(well, r, c)
-        // Faint quarter lines, like the slither minimap's cross.
-        drawLine(rule, Offset(c.x - r, c.y), Offset(c.x + r, c.y), 1.dp.toPx())
-        drawLine(rule, Offset(c.x, c.y - r), Offset(c.x, c.y + r), 1.dp.toPx())
-        drawCircle(ink.copy(alpha = 0.07f), r * 0.5f, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
-        drawCircle(ink.copy(alpha = 0.16f), r - 0.5.dp.toPx(), c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
-        val at = Offset(
-            c.x + (x.coerceIn(0f, 1f) - 0.5f) * 2f * r,
-            c.y + (y.coerceIn(0f, 1f) - 0.5f) * 2f * r,
-        )
-        val dotR = (r * 0.085f).coerceAtLeast(3.dp.toPx())
-        drawCircle(dot.copy(alpha = 0.35f * (1f - pulse)), dotR * (1f + pulse * 2.2f), at)
-        drawCircle(ring, dotR + 1.5.dp.toPx(), at)
-        drawCircle(dot, dotR, at)
-    }
-}
-
 @Composable
 private fun LobbyRunStat(label: String, value: String, modifier: Modifier = Modifier, big: Boolean = false) {
     Column(modifier) {
@@ -899,14 +861,14 @@ private fun LobbyRunStat(label: String, value: String, modifier: Modifier = Modi
 }
 
 /**
- * The last run (OM, 2026-10-02): where it ended on the arena, the score, the
- * kills and how long it lasted. Only after a run since the app started; with
- * no run there is nothing at all (no empty text). `compact` is the sideways
- * room's header chip.
+ * The last run (OM, 2026-10-02): the score, the kills and how long it lasted.
+ * Only after a run since the app started; with no run there is nothing at all
+ * (no empty text). Where it ended is a red dot on the arena's own minimap
+ * during the next run (engine `ui_overlay.c`), not here. `compact` is the
+ * sideways room's header chip.
  */
 @Composable
 internal fun LobbyLastRunCard(run: LastRun, modifier: Modifier = Modifier, compact: Boolean = false) {
-    val hasMap = !run.mapX.isNaN() && !run.mapY.isNaN()
     val score = "%,d".format(run.score)
     if (compact) {
         Row(
@@ -914,13 +876,9 @@ internal fun LobbyLastRunCard(run: LastRun, modifier: Modifier = Modifier, compa
                 .clip(wyrmRounded(16.dp))
                 .background(Wyrm.Card)
                 .border(1.dp, Wyrm.Rule, wyrmRounded(16.dp))
-                .padding(start = 10.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (hasMap) {
-                LobbyRunMap(run.mapX, run.mapY, 48.dp)
-                Spacer(Modifier.width(12.dp))
-            }
             Column {
                 WyrmLabel("Last run", color = Wyrm.Quiet)
                 Spacer(Modifier.height(4.dp))
@@ -940,21 +898,16 @@ internal fun LobbyLastRunCard(run: LastRun, modifier: Modifier = Modifier, compa
             .background(Wyrm.Card)
             .border(1.dp, Wyrm.Rule, wyrmRounded(18.dp))
             .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Bottom,
     ) {
-        if (hasMap) {
-            LobbyRunMap(run.mapX, run.mapY, 92.dp)
-            Spacer(Modifier.width(16.dp))
-        }
         Column(Modifier.weight(1f)) {
             WyrmLabel("Last run", color = Wyrm.Quiet)
             Spacer(Modifier.height(8.dp))
             LobbyRunStat("Score", score, big = true)
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                LobbyRunStat("Kills", run.kills.toString())
-                LobbyRunStat("Time", lobbyRunTime(run.seconds))
-            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            LobbyRunStat("Kills", run.kills.toString())
+            LobbyRunStat("Time", lobbyRunTime(run.seconds))
         }
     }
 }

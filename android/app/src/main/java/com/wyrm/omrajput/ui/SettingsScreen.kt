@@ -138,7 +138,8 @@ fun SettingsScreen(
 ) {
     var confirming by remember { mutableStateOf(false) }
     val steering = settings.named("controls.joystick_mode")
-    val controlsValue = if ((steering?.index ?: 0) == 2) "Arrow" else "Joystick"
+    // Upright always steers with the arrow (OM, 2026-10-02).
+    val controlsValue = if (com.wyrm.omrajput.data.PlayOrientation.portrait || (steering?.index ?: 0) == 2) "Arrow" else "Joystick"
     val buttonsOn = hotkeys.count { it.visible }
     val groups = listOf(
         SettingsHubGroup(

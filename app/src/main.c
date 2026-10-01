@@ -119,11 +119,95 @@ static void sync_screen(tenv* env) {
   android_home_set_screen(screen);
 }
 
+
+/*
+ * Performance (OM, 2026-10-01): the engine draws only where it can be seen.
+ *
+ * Home, Social, Settings and every other Compose / SwiftUI page are opaque,
+ * and the engine used to draw a whole frame under them every pass anyway. Now
+ * it draws in the lobby, in a match (the AI editors are matches), in the skin
+ * editor and for the Skin postcard. Leaving those, it draws a few settle
+ * frames, so what stays on the surface is the plain clear colour and never a
+ * stale arena, and then stops drawing. The polls at the top of trender still
+ * run every pass, so mailboxes, settings and the socket behave exactly as
+ * before. Nothing here reads or writes the protocol or the game.
+ */
+#define WYRM_SETTLE_FRAMES 4
+static int wyrm_settle = WYRM_SETTLE_FRAMES;
+
+static bool wyrm_engine_visible(tenv* env) {
+  /* Until a frame has reached the screen (start, a new surface), keep drawing. */
+  if (!env->ctx->last_present_succeeded) return true;
+  if (env->usr->gdata.curr_screen != TITLE_SCREEN || ui_skin_editor_postcard()) {
+    wyrm_settle = WYRM_SETTLE_FRAMES;
+    return true;
+  }
+  if (wyrm_settle > 0) {
+    wyrm_settle--;
+    return true;
+  }
+  return false;
+}
+
+#ifdef __ANDROID__
+#include <stdatomic.h>
+#include <SDL3/SDL.h>
+
+/*
+ * Settings › Performance (OM, 2026-10-01), set by WyrmActivity: the present
+ * mode (vsync on = FIFO, off = IMMEDIATE where the phone offers it) and a frame
+ * cap (0 = none). Only how often a frame is drawn changes.
+ */
+static atomic_int wyrm_policy_vsync = -1;
+static atomic_int wyrm_policy_cap = 0;
+
+/* Any thread. */
+void wyrm_set_frame_policy(int vsync, int cap) {
+  atomic_store(&wyrm_policy_vsync, vsync ? 1 : 0);
+  atomic_store(&wyrm_policy_cap, cap > 0 ? cap : 0);
+}
+
+/* A changed present mode rebuilds the swapchain the way the old VSync switch
+ * did; `tresize` keeps the socket pumped while that happens. */
+static void wyrm_apply_present_mode(tenv* env) {
+  int want = atomic_load(&wyrm_policy_vsync);
+  if (want < 0 || env->config.vsync == (want == 1)) return;
+  env->config.vsync = want == 1;
+  twindow_request_refresh(env->wnd);
+}
+
+/* Idle under Compose: a light 40 Hz pass for the mailboxes. Drawing: hold the
+ * cap with a steady cadence (a late frame keeps the beat, a very late one
+ * starts a new one). */
+#define WYRM_IDLE_MS 25
+static void wyrm_pace(bool drew) {
+  static Uint64 next;
+  if (!drew) {
+    next = 0;
+    SDL_Delay(WYRM_IDLE_MS);
+    return;
+  }
+  int cap = atomic_load(&wyrm_policy_cap);
+  if (cap <= 0) {
+    next = 0;
+    return;
+  }
+  Uint64 period = (Uint64)SDL_NS_PER_SECOND / (Uint64)cap;
+  Uint64 now = SDL_GetTicksNS();
+  if (next == 0 || now > next + period) next = now;
+  else if (now < next) SDL_DelayPrecise(next - now);
+  next += period;
+}
+#endif
+
 void trender(tenv* env) {
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
   game_data* gdata = &usr->gdata;
 
+#ifdef __ANDROID__
+  wyrm_apply_present_mode(env);
+#endif
   android_update_apply_pending_settings(env);
   android_home_poll(env);
   android_settings_poll(env);
@@ -145,13 +229,6 @@ void trender(tenv* env) {
               ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
   igPopStyleVar(1);
   ui_theme_transition_begin(env);
-  if (usr->gdata.curr_screen != PLAYING &&
-      usr->gdata.curr_screen != SKIN_EDITOR &&
-      usr->gdata.curr_screen != TITLE_SCREEN &&
-      usr->gdata.curr_screen != LOBBY) {
-    ui_theme_draw_background(env);
-    ui_theme_draw_version(env);
-  }
   switch (usr->gdata.curr_screen) {
     case TITLE_SCREEN:
       // Home/Social are fully opaque Compose. Paper Skin punches a hole in
@@ -182,7 +259,8 @@ void trender(tenv* env) {
   // render end
 
   igRender();
-  if (tcontext_begin(ctx)) {
+  bool draw = wyrm_engine_visible(env);
+  if (draw && tcontext_begin(ctx)) {
     // On the Compose-owned screens this clear *is* the background the player
     // sees: the interface above it is transparent so the skin preview and the
     // accessory sprites can show through, so it has to be Wyrm's black rather
@@ -212,6 +290,9 @@ void trender(tenv* env) {
     tcontext_end(ctx);
   }
   renderer_clear_instances(usr->r);
+#ifdef __ANDROID__
+  wyrm_pace(draw);
+#endif
 }
 
 /**
@@ -238,6 +319,8 @@ void trender(tenv* env) {
  */
 void tresize(tenv* env) {
   ui_viewport_resize(env);
+  /* A new swapchain starts empty: give it the settle frames again. */
+  wyrm_settle = WYRM_SETTLE_FRAMES;
   /* Only once an arena socket exists: the manager is initialised with the game
    * and these callbacks also run during startup. */
   if (env->usr && env->usr->gdata.connection) server_poll(env);

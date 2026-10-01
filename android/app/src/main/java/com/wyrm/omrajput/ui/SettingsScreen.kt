@@ -103,6 +103,8 @@ fun SettingsScreen(
     appVersion: String,
     themeName: String,
     foodValue: String,
+    /** Settings › Performance: "Auto · 120 FPS". */
+    performanceValue: String = "",
     unreadNotifications: Int,
     insetTop: Dp,
     insetBottom: Dp,
@@ -118,6 +120,7 @@ fun SettingsScreen(
     onOpenPrivacy: (Rect) -> Unit,
     onOpenAccessibility: (Rect) -> Unit,
     onOpenFood: (Rect) -> Unit,
+    onOpenPerformance: (Rect) -> Unit = {},
     onOpenBackup: (Rect) -> Unit,
     onOpenAbout: (Rect) -> Unit = {},
     /** "n new" when Wyrm has replied to a report the player has not opened. */
@@ -166,6 +169,17 @@ fun SettingsScreen(
                     "Original, rings and geometric shapes",
                     foodValue,
                     onOpenFood,
+                ),
+            ),
+        ),
+        SettingsHubGroup(
+            "Performance",
+            listOf(
+                SettingsHubRow(
+                    "Performance",
+                    "Frame rate, heat and battery",
+                    performanceValue,
+                    onOpenPerformance,
                 ),
             ),
         ),

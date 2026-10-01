@@ -62,6 +62,7 @@ object AccountSync {
         PrefFile("wyrm_recent_arenas", Scope.SYNC),
         PrefFile("wyrm_local_stats", Scope.SYNC),
         PrefFile("wyrm_skin_studio", Scope.SYNC),
+        PrefFile("wyrm_performance", Scope.SYNC),              // Settings › Performance: mode, FPS limit
         // Run receipts not yet uploaded: carried by the account so none is lost
         // (the server ignores a receipt it already has, by event id).
         PrefFile("wyrm_pending_runs", Scope.SYNC),

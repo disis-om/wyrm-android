@@ -332,9 +332,16 @@ object CrashWatch {
             ApplicationExitInfo.REASON_ANR -> "anr"
             else -> "java"
         }
-        val trace = if (info.reason == ApplicationExitInfo.REASON_ANR) {
-            runCatching { info.traceInputStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty().take(60_000)
-        } else ""
+        val trace = when {
+            info.reason == ApplicationExitInfo.REASON_ANR ->
+                runCatching { info.traceInputStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty().take(56_000)
+            // Android 12+: the tombstone (protobuf) with the backtrace and the crashed process's last logs.
+            info.reason == ApplicationExitInfo.REASON_CRASH_NATIVE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                runCatching {
+                    info.traceInputStream?.use { stream -> Tombstone.describe(stream.readBytes()) }
+                }.getOrNull().orEmpty()
+            else -> ""
+        }
         val title = when (cause) {
             "native" -> "Native crash${info.description?.let { ": $it" }.orEmpty()}"
             "anr" -> "Wyrm stopped responding${info.description?.let { ": $it" }.orEmpty()}"

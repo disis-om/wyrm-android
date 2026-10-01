@@ -285,6 +285,13 @@ object WyrmPerformance {
         if (before != null && before.vsync == next.vsync && before.cap == next.cap && before.displayHz == next.displayHz) return
         applied = next
         val raising = before == null || next.displayHz > before.displayHz
-        target.apply(next.vsync, next.cap, next.displayHz.toFloat(), raising)
+        // Taps on the page come quickly: only the last choice of a burst
+        // reaches the engine and the display (one change, not five).
+        pendingApply?.let { main.removeCallbacks(it) }
+        val apply = Runnable { target.apply(next.vsync, next.cap, next.displayHz.toFloat(), raising) }
+        pendingApply = apply
+        main.postDelayed(apply, if (before == null) 0L else 350L)
     }
+
+    private var pendingApply: Runnable? = null
 }

@@ -167,13 +167,19 @@ void wyrm_set_frame_policy(int vsync, int cap) {
   atomic_store(&wyrm_policy_cap, cap > 0 ? cap : 0);
 }
 
-/* A changed present mode rebuilds the swapchain the way the old VSync switch
- * did; `tresize` keeps the socket pumped while that happens. */
+/* A changed present mode needs a new swapchain. While the engine is drawing
+ * it is rebuilt now, the way the old VSync switch did (`tresize` keeps the
+ * socket pumped). Under Compose nothing is drawn, so no extra rebuild is made
+ * there: the turn into the lobby rebuilds the swapchain anyway and takes the
+ * new mode. (6.3.2 crashed natively on the Moto while modes were switched on
+ * Home; this keeps swapchain rebuilds to the ones the app always made.) */
 static void wyrm_apply_present_mode(tenv* env) {
   int want = atomic_load(&wyrm_policy_vsync);
   if (want < 0 || env->config.vsync == (want == 1)) return;
   env->config.vsync = want == 1;
-  twindow_request_refresh(env->wnd);
+  game_data* g = &env->usr->gdata;
+  if (g->curr_screen != TITLE_SCREEN || ui_skin_editor_postcard())
+    twindow_request_refresh(env->wnd);
 }
 
 /* Idle under Compose: a light 40 Hz pass for the mailboxes. Drawing: hold the

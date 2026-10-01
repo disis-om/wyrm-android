@@ -29,7 +29,10 @@ static float clampf_local(float value, float lo, float hi) {
 }
 
 static float button_scale(tenv* env) {
-  return clampf_local(env->wnd->size[1] / 720.0f, 0.82f, 1.45f);
+  /* The short side: the height sideways, the width upright (portrait play). */
+  int short_side = env->wnd->size[0] < env->wnd->size[1] ? env->wnd->size[0]
+                                                         : env->wnd->size[1];
+  return clampf_local(short_side / 720.0f, 0.82f, 1.45f);
 }
 
 static void action_geometry(tenv* env, int action, float* cx, float* cy,

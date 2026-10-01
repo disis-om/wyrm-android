@@ -112,6 +112,11 @@ bool android_home_death_pending(void);
 /* Phase 3 H: the HUD performance chip, "" for none (set by the app). */
 void android_home_set_performance_chip(const char* text);
 const char* android_home_performance_chip(void);
+/* Assist laser in joystick mode: on/off and length (share of the short
+   side, 0.1-1.0). Set by the app (Settings > Modes > Assist). */
+void android_home_set_joystick_laser(bool on, float length);
+bool android_home_joystick_laser_on(void);
+float android_home_joystick_laser_length(void);
 float android_home_death_opacity(void);
 void android_home_advance_death(tenv* env, float vfr);
 

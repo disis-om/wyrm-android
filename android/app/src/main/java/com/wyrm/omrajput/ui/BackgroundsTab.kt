@@ -73,6 +73,15 @@ val ARENA_BACKGROUNDS = listOf(
     ArenaBackground("Blue cube", "textures/backgrounds/bg_bluecube.png"),
     ArenaBackground("Purple cube", "textures/backgrounds/bg_purplecube.png"),
     ArenaBackground("Red cube", "textures/backgrounds/bg_redcube.png"),
+    // Same order as the engine (backgrounds.h 22-29).
+    ArenaBackground("Black", null),
+    ArenaBackground("Midnight", "textures/backgrounds/wyrm_midnight.png"),
+    ArenaBackground("Carbon", "textures/backgrounds/wyrm_carbon.png"),
+    ArenaBackground("Abyss", "textures/backgrounds/wyrm_abyss.png"),
+    ArenaBackground("Nebula", "textures/backgrounds/wyrm_nebula.png"),
+    ArenaBackground("Dot grid", "textures/backgrounds/wyrm_dotgrid.png"),
+    ArenaBackground("Contours", "textures/backgrounds/wyrm_contours.png"),
+    ArenaBackground("Scales", "textures/backgrounds/wyrm_scales.png"),
 )
 
 @Composable
@@ -126,7 +135,7 @@ private fun BackgroundCell(
                 )
             } else if (background.asset == null) {
                 Text(
-                    "NONE",
+                    background.label.uppercase(),
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp,

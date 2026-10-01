@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.ui.draw.shadow
@@ -139,6 +140,9 @@ fun ControlsScreen(
     workspaceTab: ControlsWorkspaceTab? = null,
     onWorkspaceTab: (ControlsWorkspaceTab) -> Unit = {},
     contentOnly: Boolean = false,
+    /** Play orientation (OM, 2026-10-01): the lobby, the match and the editor upright. */
+    portraitPlay: Boolean = false,
+    onPortraitPlay: (Boolean) -> Unit = {},
 ) {
     val steeringSetting = settings.named("controls.joystick_mode")
     val steering = steeringSetting?.index ?: 0
@@ -202,7 +206,22 @@ fun ControlsScreen(
                 arrowColor = arrowColor,
                 arrowSkin = ArrowSkinStore.skin,
                 arrowBrightness = ArrowSkinStore.brightness,
+                portrait = portraitPlay,
             )
+        }
+
+        SettingsSectionLabel("Play orientation")
+        SettingsCard {
+            Box(Modifier.settingAnchor("app.play-orientation")) {
+                SettingsEnumBlock(
+                    title = "Hold the phone",
+                    detail = "Portrait turns the lobby, the match and the layout editor upright. Each way keeps its own layout.",
+                    options = listOf("Landscape", "Portrait"),
+                    selected = if (portraitPlay) 1 else 0,
+                    first = true,
+                    onSelect = { onPortraitPlay(it == 1) },
+                )
+            }
         }
 
         SettingsSectionLabel("Basic · steering")
@@ -697,11 +716,22 @@ private fun ControlsPreview(
     arrowColor: Color,
     arrowSkin: Int = -1,
     arrowBrightness: Float = 1f,
+    /** Playing upright: the preview is the shape of the phone held upright. */
+    portrait: Boolean = false,
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(190.dp)
+            .then(
+                if (portrait) {
+                    Modifier
+                        .wrapContentWidth(Alignment.CenterHorizontally)
+                        .width(160.dp)
+                        .height(300.dp)
+                } else {
+                    Modifier.height(190.dp)
+                },
+            )
             .clip(wyrmRounded(10.dp))
             .background(Wyrm.Well)
             .border(1.dp, Wyrm.Rule, wyrmRounded(10.dp)),

@@ -173,13 +173,28 @@ void wyrm_set_frame_policy(int vsync, int cap) {
  * there: the turn into the lobby rebuilds the swapchain anyway and takes the
  * new mode. (6.3.2 crashed natively on the Moto while modes were switched on
  * Home; this keeps swapchain rebuilds to the ones the app always made.) */
+static int wyrm_present_pending; /* frames the engine has been seen with a stale mode */
+
 static void wyrm_apply_present_mode(tenv* env) {
-  int want = atomic_load(&wyrm_policy_vsync);
-  if (want < 0 || env->config.vsync == (want == 1)) return;
-  env->config.vsync = want == 1;
   game_data* g = &env->usr->gdata;
-  if (g->curr_screen != TITLE_SCREEN || ui_skin_editor_postcard())
+  bool seen = g->curr_screen != TITLE_SCREEN || ui_skin_editor_postcard();
+  int want = atomic_load(&wyrm_policy_vsync);
+  if (want >= 0 && env->config.vsync != (want == 1)) {
+    env->config.vsync = want == 1;
+    if (seen) {
+      twindow_request_refresh(env->wnd);
+      wyrm_present_pending = 0;
+    } else {
+      wyrm_present_pending = 1;
+    }
+    return;
+  }
+  /* Changed while hidden: give the lobby's own rotation rebuild a moment (it
+     clears this in tresize), then rebuild here if none came. */
+  if (wyrm_present_pending && seen && ++wyrm_present_pending > 30) {
+    wyrm_present_pending = 0;
     twindow_request_refresh(env->wnd);
+  }
 }
 
 /* Idle under Compose: a light 40 Hz pass for the mailboxes. Drawing: hold the
@@ -327,6 +342,10 @@ void tresize(tenv* env) {
   ui_viewport_resize(env);
   /* A new swapchain starts empty: give it the settle frames again. */
   wyrm_settle = WYRM_SETTLE_FRAMES;
+#ifdef __ANDROID__
+  /* This rebuild used the current present mode. */
+  wyrm_present_pending = 0;
+#endif
   /* Only once an arena socket exists: the manager is initialised with the game
    * and these callbacks also run during startup. */
   if (env->usr && env->usr->gdata.connection) server_poll(env);

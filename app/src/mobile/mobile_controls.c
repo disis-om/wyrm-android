@@ -21,7 +21,10 @@ static float clampf(float value, float lo, float hi) {
 }
 
 static float control_scale(tenv* env) {
-  return clampf(env->wnd->size[1] / 720.0f, 1.0f, 1.55f);
+  /* The short side: the height sideways, the width upright (portrait play). */
+  int short_side = env->wnd->size[0] < env->wnd->size[1] ? env->wnd->size[0]
+                                                         : env->wnd->size[1];
+  return clampf(short_side / 720.0f, 1.0f, 1.55f);
 }
 
 static void normalized_position(tenv* env, float nx, float ny, float* x,
@@ -156,6 +159,25 @@ void mobile_controls_finish_editor(tenv* env, bool save) {
   state->editor_active = false;
   reset_touches(state);
   if (save) save_user_settings(&env->usr->usrs);
+}
+
+/*
+ * The joystick knob follows the snake (OM, 2026-10-01).
+ *
+ * The own snake's heading, as the head is drawn (`ehang`, the same smoothed
+ * angle the head bead turns with). A dynamic joystick starts with its knob on
+ * that side instead of in the centre, and a fixed one rests there between
+ * touches, so the stick always shows where the snake is going. Steering is
+ * unchanged: the first frame of a new touch aims exactly where the snake
+ * already goes, and moving the finger steers from there.
+ */
+static bool joystick_heading(tenv* env, float* hx, float* hy) {
+  game_data* gdata = &env->usr->gdata;
+  snake* own = get_snake(gdata, gdata->data.snake_id);
+  if (!own || own->dead) return false;
+  *hx = cosf(own->ehang);
+  *hy = sinf(own->ehang);
+  return true;
 }
 
 #ifdef VLITHER_ANDROID
@@ -440,6 +462,14 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
       state->joystick_finger = finger;
       state->joystick_origin[0] = x;
       state->joystick_origin[1] = y;
+      /* The base is placed so the finger holds the knob on the snake's side:
+         the stick starts where the snake is going, not in the centre. */
+      float hx, hy;
+      if (joystick_heading(env, &hx, &hy)) {
+        float reach = 92.0f * control_scale(env) * cfg->joystick_size;
+        state->joystick_origin[0] = x - hx * reach;
+        state->joystick_origin[1] = y - hy * reach;
+      }
       update_joystick(env, x, y);
       return true;
     }
@@ -680,8 +710,17 @@ static void draw_joystick(tenv* env, ImDrawList* dl, float cx, float cy,
                            : arena_theme_colour(ARENA_THEME_INK, alpha * 0.14f),
                        48, 1.0f);
 
-  float kx = cx + state->joystick_axis[0] * radius * 0.58f;
-  float ky = cy + state->joystick_axis[1] * radius * 0.58f;
+  float ax = state->joystick_axis[0];
+  float ay = state->joystick_axis[1];
+  /* At rest (or held in the dead zone) the knob shows where the snake goes. */
+  float hx, hy;
+  if (!editor && (!active || (fabsf(ax) < 0.08f && fabsf(ay) < 0.08f)) &&
+      joystick_heading(env, &hx, &hy)) {
+    ax = hx;
+    ay = hy;
+  }
+  float kx = cx + ax * radius * 0.58f;
+  float ky = cy + ay * radius * 0.58f;
   if (editor) {
     kx = cx;
     ky = cy;

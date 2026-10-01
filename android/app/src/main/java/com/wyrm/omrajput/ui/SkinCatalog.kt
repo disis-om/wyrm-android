@@ -310,7 +310,19 @@ object SkinCatalog {
         SkinBackgroundAsset(19, "bluecube", "Blue cube", "textures/backgrounds/bg_bluecube.png", 872.0f, 882.0f),
         SkinBackgroundAsset(20, "purplecube", "Purple cube", "textures/backgrounds/bg_purplecube.png", 872.0f, 882.0f),
         SkinBackgroundAsset(21, "redcube", "Red cube", "textures/backgrounds/bg_redcube.png", 872.0f, 882.0f),
+        // Wyrm's own (OM, 2026-10-01): engine backgrounds.h 22-29; iOS appends the same.
+        SkinBackgroundAsset(22, "black", "Black", null, 512.0f, 512.0f),
+        SkinBackgroundAsset(23, "wyrm_midnight", "Midnight", "textures/backgrounds/wyrm_midnight.png", 3790.04f, 3282.27f),
+        SkinBackgroundAsset(24, "wyrm_carbon", "Carbon", "textures/backgrounds/wyrm_carbon.png", 2954.04f, 2954.04f),
+        SkinBackgroundAsset(25, "wyrm_abyss", "Abyss", "textures/backgrounds/wyrm_abyss.png", 7002.18f, 7002.18f),
+        SkinBackgroundAsset(26, "wyrm_nebula", "Nebula", "textures/backgrounds/wyrm_nebula.png", 7002.18f, 7002.18f),
+        SkinBackgroundAsset(27, "wyrm_dotgrid", "Dot grid", "textures/backgrounds/wyrm_dotgrid.png", 2735.23f, 2735.23f),
+        SkinBackgroundAsset(28, "wyrm_contours", "Contours", "textures/backgrounds/wyrm_contours.png", 7002.18f, 7002.18f),
+        SkinBackgroundAsset(29, "wyrm_scales", "Scales", "textures/backgrounds/wyrm_scales.png", 3282.27f, 3282.27f),
     )
+
+    /** The grid's order (ids stay the engine's): Wyrm, Black, None, Wyrm's own, then the imported set. */
+    val backgroundOrder: List<Int> = listOf(0, 22, 1) + (23..29) + (2..21)
 
     fun code(groups: List<Int>): String = groups.take(256)
         .filter { it in groupCodes.indices && it in validGroups }

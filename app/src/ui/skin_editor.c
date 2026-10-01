@@ -206,7 +206,8 @@ void ui_skin_editor(tenv* env) {
       postcard_preview && usr->gdata.curr_screen != SKIN_EDITOR;
   usr->r->global.bg_opacity =
       postcard ? 0.0f
-               : (background_clamp(usrs->arena_background) == BACKGROUND_NONE
+               : (background_clamp(usrs->arena_background) == BACKGROUND_NONE ||
+                          background_clamp(usrs->arena_background) == BACKGROUND_BLACK
                       ? 0.0f
                       : 0.55f);
   usr->r->global.bg_scale = 1.0f;

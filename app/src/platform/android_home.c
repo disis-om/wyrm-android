@@ -612,6 +612,27 @@ const char* android_home_performance_chip(void) {
   return performance_chip_text[SDL_GetAtomicInt(&performance_chip_slot)];
 }
 
+/* Assist laser in joystick mode (OM, 2026-10-01): set by the app, read by
+   ui_overlay.c every frame. Length is kept in thousandths. */
+static SDL_AtomicInt joystick_laser_on_flag;
+static SDL_AtomicInt joystick_laser_milli;
+
+void android_home_set_joystick_laser(bool on, float length) {
+  if (!(length >= 0.1f)) length = 0.1f;
+  if (length > 1.0f) length = 1.0f;
+  SDL_SetAtomicInt(&joystick_laser_milli, (int)(length * 1000.0f + 0.5f));
+  SDL_SetAtomicInt(&joystick_laser_on_flag, on ? 1 : 0);
+}
+
+bool android_home_joystick_laser_on(void) {
+  return SDL_GetAtomicInt(&joystick_laser_on_flag) != 0;
+}
+
+float android_home_joystick_laser_length(void) {
+  int milli = SDL_GetAtomicInt(&joystick_laser_milli);
+  return milli > 0 ? milli / 1000.0f : 0.45f;
+}
+
 float android_home_death_opacity(void) { return death_watching ? death_opacity : 1; }
 
 void android_home_advance_death(tenv* env, float vfr) {
@@ -944,6 +965,17 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeSetFramePolicy(JNIEnv* env,
   (void)env;
   (void)clazz;
   wyrm_set_frame_policy(vsync == JNI_TRUE, (int)cap);
+}
+
+/* Settings > Modes > Assist: the assist laser in joystick mode. */
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetJoystickLaser(JNIEnv* env,
+                                                          jclass clazz,
+                                                          jboolean on,
+                                                          jfloat length) {
+  (void)env;
+  (void)clazz;
+  android_home_set_joystick_laser(on == JNI_TRUE, (float)length);
 }
 
 JNIEXPORT void JNICALL

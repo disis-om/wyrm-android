@@ -445,8 +445,8 @@ internal fun IosSkinScreen(
                     }
                     SkinSection.BACKGROUND -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
-                        TileGrid(minimum = 104.dp, count = SkinCatalog.backgrounds.size, aspect = null, fixedColumns = 3) { index ->
-                            val item = SkinCatalog.backgrounds[index]
+                        TileGrid(minimum = 104.dp, count = SkinCatalog.backgroundOrder.size, aspect = null, fixedColumns = 3) { index ->
+                            val item = SkinCatalog.backgrounds[SkinCatalog.backgroundOrder[index]]
                             BackgroundTile(item, textures?.backgrounds?.get(item.id), backgroundId == item.id) {
                                 backgroundId = item.id
                                 onPickBackground(item.id)
@@ -674,7 +674,14 @@ private fun BackgroundTile(item: SkinBackgroundAsset, image: ImageBitmap?, selec
                 .fillMaxWidth()
                 .height(78.dp)
                 .clip(wyrmRounded(13.dp))
-                .background(if (item.id == 1) Wyrm.Paper else Wyrm.Ink.copy(alpha = 0.05f)),
+                // Black is the floor itself: true black, as assist mode draws it.
+                .background(
+                    when (item.id) {
+                        1 -> Wyrm.Paper
+                        22 -> androidx.compose.ui.graphics.Color.Black
+                        else -> Wyrm.Ink.copy(alpha = 0.05f)
+                    },
+                ),
             contentAlignment = Alignment.Center,
         ) {
             if (image != null) {

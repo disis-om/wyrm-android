@@ -172,6 +172,45 @@ fun SettingsAssistScreen(
                     }
                 }
 
+                // OM, 2026-10-01: the assist laser for joystick players, with a live preview.
+                if (visibleMode == 1) {
+                    val laserColour = settings.named("general.laser_color")?.channels
+                        ?.let { Color(it[0], it[1], it[2], it.getOrElse(3) { 1f }) }
+                        ?: Color(0.5f, 1f, 0.5f, 1f)
+                    val laserThickness = settings.named("general.laser_thickness")?.number ?: 2f
+                    SettingsSectionLabel("Assist laser in joystick")
+                    SettingsCard {
+                        Box(Modifier.settingAnchor("app.joystick-laser")) {
+                            JoystickLaserPreview(
+                                length = JoystickLaserStore.length,
+                                on = JoystickLaserStore.on,
+                                colour = laserColour,
+                                thicknessPx = laserThickness,
+                            )
+                        }
+                        SettingsBoolRow(
+                            title = "Assist laser in joystick",
+                            detail = "With assist on, a line from your head shows where the joystick is steering.",
+                            on = JoystickLaserStore.on,
+                            first = false,
+                            onToggle = { JoystickLaserStore.applyOn(it) },
+                        )
+                        if (JoystickLaserStore.on) {
+                            SettingsSliderRow(
+                                title = "Laser length",
+                                valueText = joystickLaserLabel(JoystickLaserStore.length),
+                                detail = "A share of the screen's short side",
+                                value = JoystickLaserStore.length,
+                                range = JoystickLaserStore.RANGE,
+                                steps = 0,
+                                first = false,
+                                onChange = { JoystickLaserStore.applyLength(it) },
+                            )
+                        }
+                    }
+                    SettingsCaption("Colour and thickness are the laser's own, under Advanced · helper lines. Arrow steering keeps its own laser.")
+                }
+
                 AdvancedFold(
                     label = "Advanced · helper lines",
                     open = advanced,

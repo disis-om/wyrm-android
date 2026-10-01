@@ -94,6 +94,8 @@ public final class WyrmActivity extends SDLActivity {
     private static native void nativeExitAiLayoutEditor();
     private static native void nativeToggleEditorLeaderboard();
     private static native void nativeSetEditorBare(boolean bare);
+    /** Settings › Modes › Assist: the assist laser in joystick mode (length: share of the short side). */
+    private static native void nativeSetJoystickLaser(boolean on, float length);
     /** Settings › Performance: present mode (vsync) and frame cap (0 = none). */
     private static native void nativeSetFramePolicy(boolean vsync, int cap);
     private static native void nativeSetPerformanceChip(String text);
@@ -164,6 +166,8 @@ public final class WyrmActivity extends SDLActivity {
             try { nativeSetArrowSkin(skin, brightness); } catch (UnsatisfiedLinkError ignored) { }
             return kotlin.Unit.INSTANCE;
         });
+        // Play orientation (portrait play): read before any screen asks to turn.
+        com.wyrm.omrajput.data.PlayOrientation.INSTANCE.load(this);
         // Settings › Performance: the engine's frame policy and the display rate.
         // Phase 3 H: set before attach, which publishes at once.
         com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.setChipSink(text -> {
@@ -171,6 +175,11 @@ public final class WyrmActivity extends SDLActivity {
             return kotlin.Unit.INSTANCE;
         });
         com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.attach(this, this::applyFramePolicy);
+        // The assist laser in joystick mode: the saved choice reaches the engine first.
+        com.wyrm.omrajput.ui.JoystickLaserStore.attach(this, (on, length) -> {
+            try { nativeSetJoystickLaser(on, length); } catch (UnsatisfiedLinkError ignored) { }
+            return kotlin.Unit.INSTANCE;
+        });
         // Wyrm looks (hair, ears, glasses): drawn on this phone only, never sent.
         com.wyrm.omrajput.ui.WyrmLookStore.attach(this, (hair, hairRgb, ears, glasses) -> {
             try { nativeSetWyrmLook(hair, hairRgb, ears, glasses); } catch (UnsatisfiedLinkError ignored) { }
@@ -359,7 +368,10 @@ public final class WyrmActivity extends SDLActivity {
              */
             @Override
             public void onRequestLandscape(boolean landscape) {
+                // Playing upright (Settings › Controls › Play orientation):
+                // the engine's screens stay portrait like everything else.
                 runOnUiThread(() -> setRequestedOrientation(landscape
+                        && !com.wyrm.omrajput.data.PlayOrientation.INSTANCE.getPortrait()
                         ? ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                         : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
             }
@@ -710,7 +722,8 @@ public final class WyrmActivity extends SDLActivity {
             final boolean editorReturned = screen == SCREEN_TITLE
                     && activity.overlay != null
                     && activity.overlay.consumeLayoutEditorExit();
-            activity.setRequestedOrientation(composeOwns && !keepLandscape
+            final boolean upright = com.wyrm.omrajput.data.PlayOrientation.INSTANCE.getPortrait();
+            activity.setRequestedOrientation((composeOwns && !keepLandscape) || upright
                     ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
             if (activity.overlay != null) {

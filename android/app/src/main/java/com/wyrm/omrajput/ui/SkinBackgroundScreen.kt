@@ -112,7 +112,7 @@ private fun FloorCell(
                 )
             } else if (background.asset == null) {
                 Text(
-                    text = "None",
+                    text = background.label,
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 12.sp,

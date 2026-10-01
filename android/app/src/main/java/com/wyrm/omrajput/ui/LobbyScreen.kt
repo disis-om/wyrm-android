@@ -144,6 +144,14 @@ private fun LobbyReadyRoom(
     canShareRun: Boolean,
     onShareRun: () -> Unit,
 ) {
+    // Playing upright (Settings › Controls › Play orientation): the same room, stacked.
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (maxHeight > maxWidth) {
+            LobbyReadyRoomUpright(
+                address, serverId, cluster, nickname, entering, insetTop, insetBottom,
+                onNicknameChange, onPlayAi, onPlay, onHome, canShareRun, onShareRun,
+            )
+        } else {
     Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
         WyrmMark(
             modifier = Modifier
@@ -271,6 +279,138 @@ private fun LobbyReadyRoom(
                     onClick = onPlay,
                 )
             }
+        }
+    }
+        }
+    }
+}
+
+/**
+ * The Ready Room held upright (OM, 2026-10-01): the arena card and the name on
+ * top, then Play as the widest button at the bottom where the thumb is, with
+ * Play with AI and Share run beside each other above it and Home at the top.
+ */
+@Composable
+private fun LobbyReadyRoomUpright(
+    address: String,
+    serverId: Int,
+    cluster: Int,
+    nickname: String,
+    entering: Boolean,
+    insetTop: Dp,
+    insetBottom: Dp,
+    onNicknameChange: (String) -> Unit,
+    onPlayAi: () -> Unit,
+    onPlay: () -> Unit,
+    onHome: () -> Unit,
+    canShareRun: Boolean,
+    onShareRun: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
+        WyrmMark(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 22.dp, top = insetTop + 12.dp),
+            size = 84.dp,
+            ink = Wyrm.Ink.copy(alpha = 0.045f),
+            unfilled = androidx.compose.ui.graphics.Color.Transparent,
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = insetTop, bottom = insetBottom)
+                .padding(horizontal = 22.dp, vertical = 18.dp),
+        ) {
+            LobbyPaperButton(
+                label = "Home",
+                icon = R.drawable.ic_wyrm_home,
+                modifier = Modifier.width(118.dp),
+                enabled = !entering,
+                onClick = onHome,
+            )
+            Spacer(Modifier.height(18.dp))
+            WyrmLabel("Ready room", color = Wyrm.Quiet)
+            Text(
+                "Enter the arena",
+                fontFamily = Wyrm.Body,
+                fontWeight = FontWeight.Bold,
+                fontSize = 28.sp,
+                letterSpacing = (-0.6).sp,
+                color = Wyrm.Ink,
+            )
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+            Spacer(Modifier.height(18.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(wyrmRounded(16.dp))
+                    .background(Wyrm.Card)
+                    .border(1.dp, Wyrm.Rule, wyrmRounded(16.dp))
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+            ) {
+                WyrmLabel("Selected arena", color = Wyrm.Quiet)
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    address.ifBlank { "No arena selected" },
+                    fontFamily = Wyrm.Display,
+                    fontSize = 28.sp,
+                    lineHeight = 32.sp,
+                    color = if (address.isBlank()) Wyrm.Quiet else Wyrm.Ink,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    ArenaIdentity(
+                        label = "Server code",
+                        value = when {
+                            address.isBlank() -> "—"
+                            serverId == -2 -> "…"
+                            serverId >= 0 -> serverId.toString()
+                            else -> "CUSTOM"
+                        },
+                    )
+                    if (cluster >= 0) {
+                        ArenaIdentity("Cluster", cluster.toString())
+                    }
+                }
+            }
+            Spacer(Modifier.height(22.dp))
+            WyrmLabel("Playing as", color = Wyrm.Quiet)
+            Spacer(Modifier.height(7.dp))
+            LobbyName(
+                nickname = nickname,
+                enabled = !entering,
+                onNicknameChange = onNicknameChange,
+                onDone = onPlay,
+            )
+            Spacer(Modifier.weight(1f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                LobbyPaperButton(
+                    label = "Play with AI",
+                    icon = R.drawable.ic_play_assist,
+                    modifier = Modifier.weight(1f),
+                    enabled = !entering,
+                    onClick = onPlayAi,
+                )
+                if (canShareRun) {
+                    LobbyShareRunButton(
+                        modifier = Modifier.weight(1f),
+                        enabled = !entering,
+                        onClick = onShareRun,
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            LobbyPlayButton(
+                entering = entering,
+                enabled = address.isNotBlank() && !entering,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onPlay,
+            )
         }
     }
 }

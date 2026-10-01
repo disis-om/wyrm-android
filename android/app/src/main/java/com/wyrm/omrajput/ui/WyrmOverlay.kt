@@ -1299,10 +1299,9 @@ class WyrmOverlay(private val activity: Activity) :
                                 onBack = { panelOpen = false },
                                 onChange = ::writeSetting,
                                 onEditLayout = { openEditor(Route.CONTROL_LAYOUT) },
-                                onResetLayout = {
-                                    host?.onSettingsAction(2)
-                                    refreshSettingsSoon()
-                                },
+                                onResetLayout = { resetOrientationLayout(listOf(2)) },
+                                portraitPlay = com.wyrm.omrajput.data.PlayOrientation.portrait,
+                                onPortraitPlay = ::switchPlayOrientation,
                             )
                         } else SettingsDrillScaffold(
                             title = "Controls",
@@ -1347,13 +1346,12 @@ class WyrmOverlay(private val activity: Activity) :
                                     onBack = { panelOpen = false },
                                     onChange = ::writeSetting,
                                     onEditLayout = { openEditor(Route.CONTROL_LAYOUT) },
-                                    onResetLayout = {
-                                        host?.onSettingsAction(2)
-                                        refreshSettingsSoon()
-                                    },
+                                    onResetLayout = { resetOrientationLayout(listOf(2)) },
                                     workspaceTab = section,
                                     onWorkspaceTab = { controlsWorkspaceTab = it },
                                     contentOnly = true,
+                                    portraitPlay = com.wyrm.omrajput.data.PlayOrientation.portrait,
+                                    onPortraitPlay = ::switchPlayOrientation,
                                 )
                                 ControlsWorkspaceTab.BUTTONS -> SettingsButtonsScreen(
                                     buttons = hotkeys,
@@ -1365,10 +1363,7 @@ class WyrmOverlay(private val activity: Activity) :
                                     onChange = ::writeSetting,
                                     onButtonChange = ::writeHotkey,
                                     onEditLayout = { openEditor(Route.CONTROL_LAYOUT) },
-                                    onResetLayout = {
-                                        host?.onSettingsAction(4)
-                                        refreshSettingsSoon()
-                                    },
+                                    onResetLayout = { resetOrientationLayout(listOf(4)) },
                                     workspaceTab = section,
                                     onWorkspaceTab = { controlsWorkspaceTab = it },
                                     contentOnly = true,
@@ -1381,10 +1376,7 @@ class WyrmOverlay(private val activity: Activity) :
                                     onBack = { panelOpen = false },
                                     onChange = ::writeSetting,
                                     onEditLayout = { openEditor(Route.CONTROL_LAYOUT) },
-                                    onResetLayout = {
-                                        host?.onSettingsAction(8)
-                                        refreshSettingsSoon()
-                                    },
+                                    onResetLayout = { resetOrientationLayout(listOf(8)) },
                                     workspaceTab = section,
                                     onWorkspaceTab = { controlsWorkspaceTab = it },
                                     contentOnly = true,
@@ -1404,10 +1396,7 @@ class WyrmOverlay(private val activity: Activity) :
                             onChange = ::writeSetting,
                             onButtonChange = ::writeHotkey,
                             onEditLayout = { openEditor(Route.CONTROL_LAYOUT) },
-                            onResetLayout = {
-                                host?.onSettingsAction(4)
-                                refreshSettingsSoon()
-                            },
+                            onResetLayout = { resetOrientationLayout(listOf(4)) },
                         )
 
                         // Trails paused: reached somehow anyway, the page leaves at once.
@@ -1610,14 +1599,11 @@ class WyrmOverlay(private val activity: Activity) :
                                     writeSetting(setting, listOf(next))
                                 }
                             },
-                            onReset = {
-                                host?.onSettingsAction(2)
-                                host?.onSettingsAction(4)
-                                host?.onSettingsAction(8)
-                                refreshSettingsSoon()
-                            },
+                            onReset = { resetOrientationLayout(listOf(2, 4, 8)) },
                             onSave = { closeEditor(Route.SETTINGS_CONTROLS, save = true) },
                             onCancel = { closeEditor(Route.SETTINGS_CONTROLS, save = false) },
+                            portrait = com.wyrm.omrajput.data.PlayOrientation.portrait,
+                            onToggleOrientation = { switchPlayOrientation(!com.wyrm.omrajput.data.PlayOrientation.portrait) },
                         )
 
                         Route.ON_SCREEN_BUTTON_LAYOUT -> OnScreenButtonLayoutEditor(
@@ -3913,6 +3899,39 @@ class WyrmOverlay(private val activity: Activity) :
             }
         }
         out += SettingsSearchEntry(
+            id = "app.play-orientation",
+            title = "Play orientation",
+            detail = "Landscape or portrait: the lobby, the match and the layout editor",
+            page = "Controls",
+            keywords = "portrait landscape upright vertical orientation rotate hold phone",
+            open = { openSettingsPage(Route.SETTINGS_CONTROLS) },
+        ) {
+            SettingsEnumBlock(
+                title = "Play orientation",
+                detail = "Each way keeps its own layout",
+                options = listOf("Landscape", "Portrait"),
+                selected = if (com.wyrm.omrajput.data.PlayOrientation.portrait) 1 else 0,
+                first = true,
+                onSelect = { switchPlayOrientation(it == 1) },
+            )
+        }
+        out += SettingsSearchEntry(
+            id = "app.joystick-laser",
+            title = "Assist laser in joystick",
+            detail = "With assist on, a line from your head shows where the joystick steers",
+            page = "Modes · Assist",
+            keywords = "laser line aim joystick assist helper length guide",
+            open = { openSettingsPage(Route.SETTINGS_ASSIST) },
+        ) {
+            SettingsBoolRow(
+                title = "Assist laser in joystick",
+                detail = "With assist on, a line from your head shows where the joystick steers.",
+                on = JoystickLaserStore.on,
+                first = true,
+                onToggle = { JoystickLaserStore.applyOn(it) },
+            )
+        }
+        out += SettingsSearchEntry(
             id = "app.performance",
             title = "Performance mode",
             detail = "Auto, Balanced or Performance: frame rate, heat and battery",
@@ -4880,6 +4899,146 @@ class WyrmOverlay(private val activity: Activity) :
         }
     }
 
+    /* ---------------------------------------------------- play orientation */
+
+    /**
+     * Play orientation (OM, 2026-10-01; data/PlayOrientation.kt). The lobby,
+     * the match and the layout editors turn upright when this is on.
+     */
+    fun playPortrait(): Boolean = com.wyrm.omrajput.data.PlayOrientation.portrait
+
+    /** The positions that belong to one orientation: controls, then the HUD pieces. */
+    private val orientationPairs: List<String>
+        get() = listOf("layout.joystick", "layout.boost", "layout.zoom") + ArenaHudTarget.entries.map { it.prefix }
+
+    /** This orientation's layout as the engine holds it now, or null before the engine has described it. */
+    private fun captureLayout(): org.json.JSONObject? {
+        val pairs = org.json.JSONObject()
+        for (prefix in orientationPairs) {
+            val x = settings.firstOrNull { it.id == "${prefix}_x" }?.raw?.toFloatOrNull() ?: return null
+            val y = settings.firstOrNull { it.id == "${prefix}_y" }?.raw?.toFloatOrNull() ?: return null
+            pairs.put(prefix, org.json.JSONArray().put(x.toDouble()).put(y.toDouble()))
+        }
+        val keys = org.json.JSONObject()
+        hotkeys.forEach { keys.put(it.action.toString(), org.json.JSONArray().put(it.x.toDouble()).put(it.y.toDouble())) }
+        return org.json.JSONObject().put("pairs", pairs).put("keys", keys)
+    }
+
+    /** Writes a stored layout's positions to the engine (sizes and opacities are shared). */
+    private fun applyLayout(layout: org.json.JSONObject) {
+        val pairs = layout.optJSONObject("pairs")
+        for (prefix in orientationPairs) {
+            val xy = pairs?.optJSONArray(prefix) ?: continue
+            val fallback = ArenaHudTarget.entries.firstOrNull { it.prefix == prefix }?.fallback
+                ?: androidx.compose.ui.geometry.Offset(0.5f, 0.7f)
+            val safe = sanitizeLayoutPosition(
+                androidx.compose.ui.geometry.Offset(xy.optDouble(0, Double.NaN).toFloat(), xy.optDouble(1, Double.NaN).toFloat()),
+                fallback,
+            )
+            host?.onWriteSetting(prefix, floatArrayOf(safe.x, safe.y))
+            settings = settings.map { setting ->
+                when (setting.id) {
+                    "${prefix}_x" -> setting.copy(raw = formatSettingNumber(safe.x))
+                    "${prefix}_y" -> setting.copy(raw = formatSettingNumber(safe.y))
+                    else -> setting
+                }
+            }
+        }
+        val keys = layout.optJSONObject("keys") ?: return
+        hotkeys = hotkeys.map { hotkey ->
+            val xy = keys.optJSONArray(hotkey.action.toString()) ?: return@map hotkey
+            val x = xy.optDouble(0, Double.NaN).toFloat()
+            val y = xy.optDouble(1, Double.NaN).toFloat()
+            if (!x.isFinite() || !y.isFinite()) return@map hotkey
+            val moved = hotkey.copy(x = x.coerceIn(0f, 1f), y = y.coerceIn(0f, 1f))
+            host?.onWriteHotkey(moved.action, moved.key, moved.mode, moved.visible, moved.x, moved.y)
+            moved
+        }
+    }
+
+    /**
+     * A first layout for an orientation that has none yet. Upright: the stick
+     * low on the thumb's side, boost low on the other, zoom along the bottom,
+     * map and board across the top, stats and team under them, chat at the top
+     * centre. Sideways: the engine's own defaults. On-screen buttons keep their
+     * place (two banks along the sides suit both shapes).
+     */
+    private fun defaultLayout(portrait: Boolean, keysFrom: org.json.JSONObject?): org.json.JSONObject {
+        val right = value("layout.joystick_x", 0.8f) >= 0.5f
+        val pairs = org.json.JSONObject()
+        fun put(prefix: String, x: Float, y: Float) {
+            pairs.put(prefix, org.json.JSONArray().put(x.toDouble()).put(y.toDouble()))
+        }
+        if (portrait) {
+            put("layout.joystick", if (right) 0.74f else 0.26f, 0.80f)
+            put("layout.boost", if (right) 0.24f else 0.76f, 0.80f)
+            put("layout.zoom", 0.50f, 0.93f)
+            put("hud.minimap", 0.17f, 0.115f)
+            put("hud.leaderboard", 0.80f, 0.11f)
+            put("hud.stats", 0.86f, 0.32f)
+            put("hud.team", 0.17f, 0.32f)
+            put("hud.chat", 0.50f, 0.045f)
+        } else {
+            put("layout.joystick", if (right) 0.80f else 0.20f, 0.72f)
+            put("layout.boost", if (right) 0.18f else 0.82f, 0.72f)
+            put("layout.zoom", 0.50f, 0.88f)
+            ArenaHudTarget.entries.forEach { put(it.prefix, it.fallback.x, it.fallback.y) }
+        }
+        return org.json.JSONObject().put("pairs", pairs).put("keys", keysFrom?.optJSONObject("keys") ?: org.json.JSONObject())
+    }
+
+    /**
+     * Turns play upright or back. The layout in use is kept for the orientation
+     * it was made in, and the other orientation's layout (or a first one) comes
+     * in. In a layout editor the edits so far stay with the orientation they
+     * were made in, Cancel now goes back to the new one, and the phone turns
+     * at once.
+     */
+    fun switchPlayOrientation(portrait: Boolean) {
+        val orientation = com.wyrm.omrajput.data.PlayOrientation
+        if (portrait == orientation.portrait) return
+        if (!isLayoutEditorActive()) refreshSettings()
+        val current = captureLayout()
+        if (current == null) {
+            // The engine has not described its layout yet: switch without losing it.
+            orientation.applyPortrait(portrait)
+            return
+        }
+        orientation.saveLayout(orientation.portrait, current)
+        applyLayout(orientation.savedLayout(portrait) ?: defaultLayout(portrait, current))
+        orientation.applyPortrait(portrait)
+        if (isLayoutEditorActive()) {
+            editorSettingsSnapshot = settings
+            editorHotkeysSnapshot = hotkeys
+            host?.onRequestLandscape(true)
+        }
+    }
+
+    /** Reset layout: the engine's sideways defaults, or the upright first layout when playing upright. */
+    private fun resetOrientationLayout(actions: List<Int>) {
+        actions.forEach { host?.onSettingsAction(it) }
+        // Action 2 resets the controls, 8 the HUD (4, the buttons, suits both shapes).
+        val upright = buildSet {
+            if (2 in actions) addAll(listOf("layout.joystick", "layout.boost", "layout.zoom"))
+            if (8 in actions) addAll(ArenaHudTarget.entries.map { it.prefix })
+        }
+        if (!playPortrait() || upright.isEmpty()) {
+            refreshSettingsSoon()
+            return
+        }
+        scope.launch {
+            // The engine resets on its next frame; the upright positions go on top.
+            delay(250)
+            refreshSettings()
+            val all = defaultLayout(true, null).getJSONObject("pairs")
+            val pairs = org.json.JSONObject()
+            upright.forEach { prefix -> all.optJSONArray(prefix)?.let { pairs.put(prefix, it) } }
+            applyLayout(org.json.JSONObject().put("pairs", pairs))
+            delay(150)
+            refreshSettings()
+        }
+    }
+
     /** Shows or hides the whole interface layer. */
     /**
      * Whether the product is somewhere that wants the phone sideways.
@@ -5703,6 +5862,12 @@ class WyrmOverlay(private val activity: Activity) :
         .put("arenaBackground", arenaBackground)
         .put("nickname", nickname)
         .put("nicknameChosen", uiPreferences.getBoolean("nickname_chosen", false))
+        // Common to every platform (OM, 2026-10-01): the same on Android and iOS.
+        .put("joystickLaser", org.json.JSONObject()
+            .put("on", JoystickLaserStore.on)
+            .put("length", JoystickLaserStore.length.toDouble()))
+        .put("playPortrait", com.wyrm.omrajput.data.PlayOrientation.portrait)
+        .put("performanceMode", com.wyrm.omrajput.data.WyrmPerformance.mode.key)
 
     private fun applySharedSettings(doc: org.json.JSONObject) {
         com.wyrm.omrajput.data.TrailSkin.from(doc.optJSONObject("skin"))?.let { skin ->
@@ -5726,7 +5891,28 @@ class WyrmOverlay(private val activity: Activity) :
             host?.onSetNickname(name)
             uiPreferences.edit().putBoolean("nickname_chosen", doc.optBoolean("nicknameChosen", name.isNotEmpty())).apply()
         }
+        // Common settings (OM, 2026-10-01). Written into this platform's own
+        // files before the stores reload, so they win over the platform copy.
+        doc.optJSONObject("joystickLaser")?.let { laser ->
+            val length = laser.optDouble("length", Double.NaN)
+            activity.getSharedPreferences("wyrm_joystick_laser", android.content.Context.MODE_PRIVATE).edit().apply {
+                if (laser.has("on")) putBoolean("on", laser.optBoolean("on", true))
+                if (length.isFinite()) putFloat("length", length.toFloat().coerceIn(JoystickLaserStore.RANGE))
+            }.commit()
+        }
+        doc.optString("performanceMode").takeIf { key ->
+            com.wyrm.omrajput.data.WyrmPerformance.Mode.entries.any { it.key == key }
+        }?.let { key ->
+            activity.getSharedPreferences("wyrm_performance", android.content.Context.MODE_PRIVATE).edit()
+                .putString("mode", key).commit()
+        }
+        // The orientation swaps layouts, so it waits until the restored layout
+        // is in the engine (see tryRestoreAccountSettings).
+        sharedPortraitPending = if (doc.has("playPortrait")) doc.optBoolean("playPortrait") else null
     }
+
+    /** The account's common play orientation, applied once the restored layout is in. */
+    private var sharedPortraitPending: Boolean? = null
 
     /** Stores that read their files once: read them again after a restore or a wipe. */
     private fun reloadAccountStores() {
@@ -5735,6 +5921,8 @@ class WyrmOverlay(private val activity: Activity) :
         com.wyrm.omrajput.data.DropWatch.reloadPrefs()
         com.wyrm.omrajput.data.CrashWatch.reloadPrefs()
         com.wyrm.omrajput.data.WyrmPerformance.reload(activity)
+        com.wyrm.omrajput.data.PlayOrientation.reload(activity)
+        JoystickLaserStore.reload(activity)
         appTheme = WyrmThemeId.fromStored(uiPreferences.getString("theme", null))
         themeIntensity = uiPreferences.getFloat("theme_intensity", 0.5f).coerceIn(0f, 1f)
         Wyrm.applyTheme(appTheme, themeIntensity)
@@ -5801,6 +5989,16 @@ class WyrmOverlay(private val activity: Activity) :
         }
         if (shared != null) runCatching { applySharedSettings(shared) }
         reloadAccountStores()
+        // The account's common orientation: turn (and swap layouts) once the
+        // engine has the restored layout.
+        sharedPortraitPending?.let { portrait ->
+            sharedPortraitPending = null
+            scope.launch {
+                delay(700)
+                refreshSettings()
+                if (portrait != com.wyrm.omrajput.data.PlayOrientation.portrait) switchPlayOrientation(portrait)
+            }
+        }
         accountSyncPrefs.edit().remove("restore_owed").commit()
         accountSyncReady = true
         return true

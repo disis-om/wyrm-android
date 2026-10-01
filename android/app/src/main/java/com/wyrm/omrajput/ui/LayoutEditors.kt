@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -326,6 +327,9 @@ fun UnifiedArenaLayoutEditor(
     onReset: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
+    /** Play orientation (OM, 2026-10-01): the editor turns with it, and so does its layout. */
+    portrait: Boolean = false,
+    onToggleOrientation: (() -> Unit)? = null,
 ) {
     var canvas by remember { mutableStateOf(Offset.Zero) }
     var options by remember { mutableStateOf<LayoutOptions?>(null) }
@@ -453,7 +457,7 @@ fun UnifiedArenaLayoutEditor(
                 ) { Text("CHAT", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = Wyrm.Ink) }
             }
         }
-        EditorFooter(onReset, onSave, onCancel, Modifier.align(Alignment.BottomCenter))
+        EditorFooter(onReset, onSave, onCancel, Modifier.align(Alignment.BottomCenter), portrait, onToggleOrientation)
         options?.let { EditorOptionsPopup(it) { options = null } }
     }
 }
@@ -515,17 +519,45 @@ private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun EditorFooter(onReset: () -> Unit, onSave: () -> Unit, onCancel: () -> Unit, modifier: Modifier) {
-    Row(
-        modifier.padding(bottom = 14.dp).clip(wyrmRounded(999.dp)).background(Wyrm.Card.copy(alpha = 0.96f))
-            .border(1.dp, Wyrm.Rule, wyrmRounded(999.dp)).padding(start = 14.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("HOLD ANY OBJECT FOR MORE OPTIONS", fontFamily = Wyrm.Body, fontSize = 9.sp, letterSpacing = 0.6.sp, color = Wyrm.Quiet)
-        EditorFooterAction("CANCEL", Wyrm.Quiet, onCancel)
-        EditorFooterAction("RESET", Wyrm.Quiet, onReset)
-        EditorFooterAction("SAVE", Wyrm.OnInk, onSave, filled = true)
+private fun EditorFooter(
+    onReset: () -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier,
+    portrait: Boolean = false,
+    onToggleOrientation: (() -> Unit)? = null,
+) {
+    // Upright the bar is too narrow for the hint and the actions on one line:
+    // the hint goes above, in its own small pill.
+    BoxWithConstraints(modifier.padding(bottom = 14.dp)) {
+        val narrow = maxWidth < 560.dp
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (narrow) {
+                Text(
+                    "HOLD ANY OBJECT FOR MORE OPTIONS",
+                    fontFamily = Wyrm.Body, fontSize = 9.sp, letterSpacing = 0.6.sp, color = Wyrm.Quiet,
+                    modifier = Modifier.padding(bottom = 6.dp).clip(wyrmRounded(999.dp))
+                        .background(Wyrm.Card.copy(alpha = 0.92f)).padding(horizontal = 12.dp, vertical = 5.dp),
+                )
+            }
+            Row(
+                Modifier.clip(wyrmRounded(999.dp)).background(Wyrm.Card.copy(alpha = 0.96f))
+                    .border(1.dp, Wyrm.Rule, wyrmRounded(999.dp)).padding(start = 14.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (!narrow) {
+                    Text("HOLD ANY OBJECT FOR MORE OPTIONS", fontFamily = Wyrm.Body, fontSize = 9.sp, letterSpacing = 0.6.sp, color = Wyrm.Quiet)
+                }
+                // Turns the phone (and swaps to that orientation's layout).
+                onToggleOrientation?.let { toggle ->
+                    EditorFooterAction(if (portrait) "LANDSCAPE" else "PORTRAIT", Wyrm.Ink, toggle)
+                }
+                EditorFooterAction("CANCEL", Wyrm.Quiet, onCancel)
+                EditorFooterAction("RESET", Wyrm.Quiet, onReset)
+                EditorFooterAction("SAVE", Wyrm.OnInk, onSave, filled = true)
+            }
+        }
     }
 }
 
@@ -806,6 +838,9 @@ private fun EditorBar(
             fontFamily = Wyrm.Body,
             fontSize = 12.sp,
             color = Wyrm.Ink,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
         Text(
             text = "CANCEL",

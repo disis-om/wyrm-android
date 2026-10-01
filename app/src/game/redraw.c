@@ -1881,8 +1881,8 @@ void redraw(tenv* env) {
   /* "None" is the absence of a floor, so it is drawn as one: the pass still
      runs, with nothing of it reaching the frame, and the clear shows through
      as flat black. */
-  usr->r->global.bg_opacity =
-      background_clamp(usrs->arena_background) == BACKGROUND_NONE ? 0.0f : 1.0f;
+  const int floor_index = background_clamp(usrs->arena_background);
+  usr->r->global.bg_opacity = floor_index == BACKGROUND_NONE ? 0.0f : 1.0f;
   usr->r->global.bd_opacity = 0.8f;
   usr->r->global.minimap_data_size = gdata->data.mmsz;
 
@@ -1921,8 +1921,11 @@ void redraw(tenv* env) {
   }
 #endif
 
+  /* Black is drawn the way assist mode's hidden floor is: no colour, full
+     opacity, so it is true black in either mode. */
   usr->r->global.bg_color[0] = usr->r->global.bg_color[1] =
-      usr->r->global.bg_color[2] = mode->show_background;
+      usr->r->global.bg_color[2] =
+          floor_index == BACKGROUND_BLACK ? 0.0f : (float)mode->show_background;
   /* The solid pipeline now owns every analytic shape, including rings. Preys
    * remain original circles in fd_renderer_render(). */
   usr->r->fdr->pipeline_idx = 0;

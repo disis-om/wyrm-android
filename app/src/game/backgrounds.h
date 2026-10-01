@@ -25,6 +25,7 @@ typedef struct background_def {
 enum {
   BACKGROUND_WYRM = 0,
   BACKGROUND_NONE = 1,
+  BACKGROUND_BLACK = 22,
 };
 
 /**
@@ -54,6 +55,19 @@ static const background_def BACKGROUNDS[] = {
     {"bluecube", "Blue cube", "app/res/textures/backgrounds/bg_bluecube.png", 872.0f, 882.0f},
     {"purplecube", "Purple cube", "app/res/textures/backgrounds/bg_purplecube.png", 872.0f, 882.0f},
     {"redcube", "Red cube", "app/res/textures/backgrounds/bg_redcube.png", 872.0f, 882.0f},
+    /* Wyrm's own (OM, 2026-10-01). Black is assist mode's floor for any mode:
+       the pass draws at full opacity with no colour, so it is true black (None
+       lets the arena's slate clear show instead). The seven tiles come from
+       tools/generate-focus-backgrounds.py; their sizes put them at their
+       designed world size at the default bg_scale (599/4096). */
+    {"black", "Black", NULL, 512.0f, 512.0f},
+    {"wyrm_midnight", "Midnight", "app/res/textures/backgrounds/wyrm_midnight.png", 3790.04f, 3282.27f},
+    {"wyrm_carbon", "Carbon", "app/res/textures/backgrounds/wyrm_carbon.png", 2954.04f, 2954.04f},
+    {"wyrm_abyss", "Abyss", "app/res/textures/backgrounds/wyrm_abyss.png", 7002.18f, 7002.18f},
+    {"wyrm_nebula", "Nebula", "app/res/textures/backgrounds/wyrm_nebula.png", 7002.18f, 7002.18f},
+    {"wyrm_dotgrid", "Dot grid", "app/res/textures/backgrounds/wyrm_dotgrid.png", 2735.23f, 2735.23f},
+    {"wyrm_contours", "Contours", "app/res/textures/backgrounds/wyrm_contours.png", 7002.18f, 7002.18f},
+    {"wyrm_scales", "Scales", "app/res/textures/backgrounds/wyrm_scales.png", 3282.27f, 3282.27f},
 };
 
 enum { NUM_BACKGROUNDS = (int)(sizeof(BACKGROUNDS) / sizeof(BACKGROUNDS[0])) };

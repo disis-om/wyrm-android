@@ -117,7 +117,7 @@ internal fun JoystickLaserPreview(length: Float, on: Boolean, colour: Color, thi
     val aspect = (longSide / shortSide).coerceIn(1.3f, 2.4f)
     Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
         Text(
-            text = "Live preview: the line follows your stick, at this length",
+            text = "Live preview: the line goes where your snake goes, at this length",
             fontFamily = Wyrm.Body,
             fontSize = 12.5.sp,
             color = Wyrm.Quiet,

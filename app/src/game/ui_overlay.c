@@ -221,29 +221,24 @@ void ui_overlay(tenv* env) {
             usrs->laser_thickness);
       }
 
-      /* Assist laser in joystick mode (OM, 2026-10-01). With assist on and a
-         joystick (not the arrow, which has its own line), a line from the head
-         where the snake is being steered: the stick's way while it is held,
-         the head's own heading otherwise. Its length is a share of the
-         screen's short side, set in Settings > Modes > Assist; colour and
-         thickness are the laser's. Draw-only: no input, no packet. */
+      /* Assist laser in joystick mode (OM, 2026-10-01/02). With assist on and
+         a joystick (not the arrow, which has its own line), a line from the
+         front of the head where the snake is going, like the collision dot:
+         the drawn head's own angle (`ehang`), never the stick. Its length is a
+         share of the screen's short side, set in Settings > Modes > Assist;
+         colour and thickness are the laser's. Draw-only: no input, no packet. */
       if (usrs->hotkeys[HOTKEY_ASSIST].active &&
           usrs->mobile_controls.joystick_mode != MOBILE_STEERING_ARROW &&
           android_home_joystick_laser_on() && a > 0.01f) {
-        mobile_controls_state* stick = &usr->mobile_controls;
         float lx = cosf(me->ehang);
         float ly = sinf(me->ehang);
-        float held = sqrtf(stick->joystick_axis[0] * stick->joystick_axis[0] +
-                           stick->joystick_axis[1] * stick->joystick_axis[1]);
-        if (stick->joystick_down && held > 0.08f) {
-          lx = stick->joystick_axis[0] / held;
-          ly = stick->joystick_axis[1] / held;
-        }
         float shortest = ctx->size[0] < ctx->size[1] ? (float)ctx->size[0]
                                                      : (float)ctx->size[1];
         float reach = android_home_joystick_laser_length() * shortest;
-        ImVec2 from = {mww2 + (hx - gdata->data.view_xx) * gdata->data.gsc,
-                       mhh2 + (hy - gdata->data.view_yy) * gdata->data.gsc};
+        /* The head bead's half size (14.5), as the collision dot uses it. */
+        float front = 14.5f * me->sc * gdata->data.gsc;
+        ImVec2 from = {mww2 + (hx - gdata->data.view_xx) * gdata->data.gsc + lx * front,
+                       mhh2 + (hy - gdata->data.view_yy) * gdata->data.gsc + ly * front};
         ImDrawList_AddLine(
             igGetWindowDrawList(), from,
             (ImVec2){from.x + lx * reach, from.y + ly * reach},

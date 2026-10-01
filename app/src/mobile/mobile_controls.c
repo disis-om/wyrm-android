@@ -391,6 +391,15 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
     float mid = env->wnd->size[0] * 0.5f;
     bool joystick_left = cfg->handedness == MOBILE_LEFT_HANDED;
     bool in_joystick_half = joystick_left ? x < mid : x >= mid;
+    /* Upright there is no left or right hand (OM, 2026-10-02): the first free
+       finger anywhere starts the dynamic joystick, and once a joystick is
+       held (or it is a fixed one) any other finger is touch-zone boost, the
+       way Arrow steering already works. Fixed controls keep their drawn hit
+       circles above. Sideways is unchanged. Only which finger starts which
+       control changes; nothing is sent differently. */
+    if (env->wnd->size[1] > env->wnd->size[0])
+      in_joystick_half = cfg->joystick_mode == MOBILE_JOYSTICK_DYNAMIC &&
+                         !state->joystick_down;
     float jx, jy, bx, by;
     normalized_position(env, cfg->joystick_x, cfg->joystick_y, &jx, &jy);
     normalized_position(env, cfg->boost_x, cfg->boost_y, &bx, &by);

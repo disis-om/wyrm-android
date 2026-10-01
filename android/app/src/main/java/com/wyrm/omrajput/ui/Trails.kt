@@ -1340,8 +1340,9 @@ private fun TrailReplyRow(
 @Composable
 /** [badge]: unread likes and replies on your trails (the badge trail, OM 2026-10-01). */
 internal fun TrailsTeaser(badge: Int = 0, onOpen: () -> Unit) {
-    LaunchedEffect(Unit) { if (!TrailsStore.loaded) TrailsStore.refresh() }
-    val trails = TrailsStore.trails
+    // Switched off (TRAILS_ENABLED): the same card, empty, and no feed fetch.
+    LaunchedEffect(Unit) { if (com.wyrm.omrajput.data.TRAILS_ENABLED && !TrailsStore.loaded) TrailsStore.refresh() }
+    val trails = if (com.wyrm.omrajput.data.TRAILS_ENABLED) TrailsStore.trails else emptyList()
     Column(
         Modifier
             .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)

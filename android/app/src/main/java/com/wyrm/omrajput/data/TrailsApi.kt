@@ -10,13 +10,15 @@ import org.json.JSONObject
  */
 
 /**
- * Trails were paused for the beta (OM, 2026-09-29) and are back on the same
- * day. The flag stays: `false` hides every player-facing entry point again
- * (Social teaser, profile grid and Trails stat, trail badges, trail alerts and
- * pushes, the Trails group in Settings › Notifications).
+ * Trails are switched off while they are finished (OM, 2026-10-02; earlier
+ * paused 2026-09-29). `false` hides the feed, trail, studio, Share run / Share
+ * this skin, profile grid and Trails stat, trail badges, trail alerts and
+ * pushes, and the Trails group in Settings › Notifications. The Social card
+ * still shows, looking as it did, and opens the "in development" page
+ * (`TrailsComingSoonScreen`). `true` brings everything back.
  * Java reads it as `com.wyrm.omrajput.data.TrailsApiKt.TRAILS_ENABLED`.
  */
-const val TRAILS_ENABLED = true
+const val TRAILS_ENABLED = false
 
 /** Badges that only make sense with Trails on; hidden from the strip and its count while paused. */
 val TRAIL_BADGE_IDS = setOf("trailblazer", "crowd-favourite")

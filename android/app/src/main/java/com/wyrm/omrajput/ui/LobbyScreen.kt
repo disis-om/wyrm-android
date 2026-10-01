@@ -26,6 +26,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -69,7 +72,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
-fun LobbyScreen(
+internal fun LobbyScreen(
     address: String,
     serverId: Int,
     cluster: Int,
@@ -84,6 +87,8 @@ fun LobbyScreen(
     /** "Share run": only while the last finished run can still be shared. */
     canShareRun: Boolean = false,
     onShareRun: () -> Unit = {},
+    /** The last run since the app started (OM, 2026-10-02); null shows nothing. */
+    lastRun: LastRun? = null,
 ) {
     var quickSettings by remember { mutableStateOf(false) }
 
@@ -122,6 +127,7 @@ fun LobbyScreen(
                 onQuickSettings = { quickSettings = true },
                 canShareRun = canShareRun,
                 onShareRun = onShareRun,
+                lastRun = lastRun,
             )
         }
     }
@@ -143,24 +149,27 @@ private fun LobbyReadyRoom(
     onQuickSettings: () -> Unit,
     canShareRun: Boolean,
     onShareRun: () -> Unit,
+    lastRun: LastRun?,
 ) {
     // Playing upright (Settings › Controls › Play orientation): the same room, stacked.
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
         if (maxHeight > maxWidth) {
             LobbyReadyRoomUpright(
                 address, serverId, cluster, nickname, entering, insetTop, insetBottom,
-                onNicknameChange, onPlayAi, onPlay, onHome, canShareRun, onShareRun,
+                onNicknameChange, onPlayAi, onPlay, onHome, canShareRun, onShareRun, lastRun,
             )
         } else {
     Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
-        WyrmMark(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(end = 38.dp, top = insetTop + 5.dp),
-            size = 110.dp,
-            ink = Wyrm.Ink.copy(alpha = 0.045f),
-            unfilled = androidx.compose.ui.graphics.Color.Transparent,
-        )
+        if (lastRun == null) {
+            WyrmMark(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 38.dp, top = insetTop + 5.dp),
+                size = 110.dp,
+                ink = Wyrm.Ink.copy(alpha = 0.045f),
+                unfilled = androidx.compose.ui.graphics.Color.Transparent,
+            )
+        }
 
         Column(
             modifier = Modifier
@@ -168,7 +177,7 @@ private fun LobbyReadyRoom(
                 .padding(top = insetTop, bottom = insetBottom)
                 .padding(horizontal = 40.dp, vertical = 24.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column {
                     WyrmLabel("Ready room", color = Wyrm.Quiet)
                     Text(
@@ -180,6 +189,8 @@ private fun LobbyReadyRoom(
                         color = Wyrm.Ink,
                     )
                 }
+                Spacer(Modifier.weight(1f))
+                if (lastRun != null) LobbyLastRunCard(lastRun, compact = true)
             }
             Spacer(Modifier.height(18.dp))
             Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
@@ -286,9 +297,12 @@ private fun LobbyReadyRoom(
 }
 
 /**
- * The Ready Room held upright (OM, 2026-10-01): the arena card and the name on
- * top, then Play as the widest button at the bottom where the thumb is, with
- * Play with AI and Share run beside each other above it and Home at the top.
+ * The Ready Room held upright (OM, 2026-10-01; redesigned 2026-10-02 for the
+ * thumb zone). A top bar (round Home on the left, "READY ROOM" in the middle,
+ * a faint W on the right), then the title, the arena card and the name card,
+ * which scroll if the screen is short. The actions sit in a dock at the bottom
+ * where the thumb is: Play with AI and Share run side by side, and PLAY full
+ * width and tallest under them. Nothing important sits in the top corners.
  */
 @Composable
 private fun LobbyReadyRoomUpright(
@@ -305,48 +319,60 @@ private fun LobbyReadyRoomUpright(
     onHome: () -> Unit,
     canShareRun: Boolean,
     onShareRun: () -> Unit,
+    lastRun: LastRun?,
 ) {
-    Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
-        WyrmMark(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(end = 22.dp, top = insetTop + 12.dp),
-            size = 84.dp,
-            ink = Wyrm.Ink.copy(alpha = 0.045f),
-            unfilled = androidx.compose.ui.graphics.Color.Transparent,
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = insetTop, bottom = insetBottom)
-                .padding(horizontal = 22.dp, vertical = 18.dp),
+    Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 10.dp)
+                .height(48.dp),
         ) {
-            LobbyPaperButton(
-                label = "Home",
-                icon = R.drawable.ic_wyrm_home,
-                modifier = Modifier.width(118.dp),
+            LobbyRoundHome(
                 enabled = !entering,
                 onClick = onHome,
+                modifier = Modifier.align(Alignment.CenterStart),
             )
-            Spacer(Modifier.height(18.dp))
-            WyrmLabel("Ready room", color = Wyrm.Quiet)
+            WyrmLabel("Ready room", modifier = Modifier.align(Alignment.Center), color = Wyrm.Quiet)
+            // The real curvy Wyrm mark, in full ink (OM: the mark, never a letter).
+            WyrmMark(
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp),
+                size = 30.dp,
+                ink = Wyrm.Ink,
+                unfilled = Color.Transparent,
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+        ) {
+            Spacer(Modifier.height(12.dp))
             Text(
                 "Enter the arena",
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
-                fontSize = 28.sp,
+                fontSize = 30.sp,
                 letterSpacing = (-0.6).sp,
                 color = Wyrm.Ink,
             )
-            Spacer(Modifier.height(14.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Check your arena and name, then play.",
+                fontFamily = Wyrm.Body,
+                fontSize = 14.sp,
+                color = Wyrm.Quiet,
+            )
+            Spacer(Modifier.height(20.dp))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(wyrmRounded(16.dp))
+                    .clip(wyrmRounded(18.dp))
                     .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(16.dp))
+                    .border(1.dp, Wyrm.Rule, wyrmRounded(18.dp))
                     .padding(horizontal = 18.dp, vertical = 16.dp),
             ) {
                 WyrmLabel("Selected arena", color = Wyrm.Quiet)
@@ -375,16 +401,42 @@ private fun LobbyReadyRoomUpright(
                     }
                 }
             }
-            Spacer(Modifier.height(22.dp))
-            WyrmLabel("Playing as", color = Wyrm.Quiet)
-            Spacer(Modifier.height(7.dp))
-            LobbyName(
-                nickname = nickname,
-                enabled = !entering,
-                onNicknameChange = onNicknameChange,
-                onDone = onPlay,
-            )
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(12.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(wyrmRounded(18.dp))
+                    .background(Wyrm.Card)
+                    .border(1.dp, Wyrm.Rule, wyrmRounded(18.dp))
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+            ) {
+                WyrmLabel("Playing as", color = Wyrm.Quiet)
+                Spacer(Modifier.height(6.dp))
+                LobbyName(
+                    nickname = nickname,
+                    enabled = !entering,
+                    onNicknameChange = onNicknameChange,
+                    onDone = onPlay,
+                    fontSize = 36.sp,
+                )
+            }
+            if (lastRun != null) {
+                Spacer(Modifier.height(12.dp))
+                LobbyLastRunCard(lastRun)
+            }
+            Spacer(Modifier.height(20.dp))
+        }
+
+        // The dock: the thumb's reach, PLAY lowest and largest.
+        val dock = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(dock)
+                .background(Wyrm.Card)
+                .border(1.dp, Wyrm.Rule, dock)
+                .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 20.dp + insetBottom),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -412,6 +464,35 @@ private fun LobbyReadyRoomUpright(
                 onClick = onPlay,
             )
         }
+    }
+}
+
+/** The upright Ready Room's Home: a round 44 dp card button with the house. */
+@Composable
+private fun LobbyRoundHome(enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (pressed && enabled) 0.94f else 1f,
+        spring(dampingRatio = 0.58f, stiffness = 820f),
+        label = "lobby-home-press",
+    )
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .scale(scale)
+            .clip(CircleShape)
+            .background(Wyrm.Card)
+            .border(1.dp, Wyrm.Rule, CircleShape)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_wyrm_home),
+            contentDescription = "Home",
+            modifier = Modifier.size(20.dp),
+            colorFilter = ColorFilter.tint(if (enabled) Wyrm.Ink else Wyrm.Quiet),
+        )
     }
 }
 
@@ -450,6 +531,7 @@ private fun LobbyName(
     enabled: Boolean,
     onNicknameChange: (String) -> Unit,
     onDone: () -> Unit,
+    fontSize: androidx.compose.ui.unit.TextUnit = 48.sp,
 ) {
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -463,8 +545,8 @@ private fun LobbyName(
             singleLine = true,
             textStyle = TextStyle(
                 fontFamily = Wyrm.Display,
-                fontSize = 48.sp,
-                lineHeight = 52.sp,
+                fontSize = fontSize,
+                lineHeight = fontSize * 1.08f,
                 color = if (enabled) Wyrm.Ink else Wyrm.Quiet,
             ),
             cursorBrush = SolidColor(Wyrm.Link),
@@ -485,7 +567,7 @@ private fun LobbyName(
                         Text(
                             "Wyrm Player",
                             fontFamily = Wyrm.Display,
-                            fontSize = 48.sp,
+                            fontSize = fontSize,
                             color = Wyrm.Quiet,
                         )
                     }
@@ -740,6 +822,139 @@ fun LobbyQuickSettings(
                 }
             }
             Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+/** "4:12", or "1:04:12" past an hour. */
+internal fun lobbyRunTime(seconds: Double): String {
+    val total = seconds.coerceAtLeast(0.0).toLong()
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val s = total % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+/**
+ * The arena as the in-game minimap draws it (a round world on a square frame),
+ * with a dot where the last run ended (OM, 2026-10-02). `x`/`y` are 0..1 of
+ * the arena square; the dot breathes so it reads as "here".
+ */
+@Composable
+internal fun LobbyRunMap(x: Float, y: Float, size: Dp, modifier: Modifier = Modifier) {
+    val pulse by rememberInfiniteTransition(label = "run-map").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        label = "run-map-pulse",
+    )
+    val well = Wyrm.Well
+    val rule = Wyrm.Rule
+    val ink = Wyrm.Ink
+    val dot = Wyrm.Blood
+    val ring = Wyrm.Card
+    androidx.compose.foundation.Canvas(modifier.size(size)) {
+        val r = this.size.minDimension / 2f
+        val c = Offset(this.size.width / 2f, this.size.height / 2f)
+        drawCircle(well, r, c)
+        // Faint quarter lines, like the slither minimap's cross.
+        drawLine(rule, Offset(c.x - r, c.y), Offset(c.x + r, c.y), 1.dp.toPx())
+        drawLine(rule, Offset(c.x, c.y - r), Offset(c.x, c.y + r), 1.dp.toPx())
+        drawCircle(ink.copy(alpha = 0.07f), r * 0.5f, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        drawCircle(ink.copy(alpha = 0.16f), r - 0.5.dp.toPx(), c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        val at = Offset(
+            c.x + (x.coerceIn(0f, 1f) - 0.5f) * 2f * r,
+            c.y + (y.coerceIn(0f, 1f) - 0.5f) * 2f * r,
+        )
+        val dotR = (r * 0.085f).coerceAtLeast(3.dp.toPx())
+        drawCircle(dot.copy(alpha = 0.35f * (1f - pulse)), dotR * (1f + pulse * 2.2f), at)
+        drawCircle(ring, dotR + 1.5.dp.toPx(), at)
+        drawCircle(dot, dotR, at)
+    }
+}
+
+@Composable
+private fun LobbyRunStat(label: String, value: String, modifier: Modifier = Modifier, big: Boolean = false) {
+    Column(modifier) {
+        Text(
+            label.uppercase(),
+            fontFamily = Wyrm.Body,
+            fontWeight = FontWeight.Bold,
+            fontSize = 8.5.sp,
+            letterSpacing = 1.3.sp,
+            color = Wyrm.Quiet,
+            maxLines = 1,
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            value,
+            fontFamily = if (big) Wyrm.Display else Wyrm.Body,
+            fontWeight = if (big) FontWeight.Normal else FontWeight.Bold,
+            fontSize = if (big) 26.sp else 17.sp,
+            lineHeight = if (big) 28.sp else 20.sp,
+            color = Wyrm.Ink,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * The last run (OM, 2026-10-02): where it ended on the arena, the score, the
+ * kills and how long it lasted. Only after a run since the app started; with
+ * no run there is nothing at all (no empty text). `compact` is the sideways
+ * room's header chip.
+ */
+@Composable
+internal fun LobbyLastRunCard(run: LastRun, modifier: Modifier = Modifier, compact: Boolean = false) {
+    val hasMap = !run.mapX.isNaN() && !run.mapY.isNaN()
+    val score = "%,d".format(run.score)
+    if (compact) {
+        Row(
+            modifier = modifier
+                .clip(wyrmRounded(16.dp))
+                .background(Wyrm.Card)
+                .border(1.dp, Wyrm.Rule, wyrmRounded(16.dp))
+                .padding(start = 10.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (hasMap) {
+                LobbyRunMap(run.mapX, run.mapY, 48.dp)
+                Spacer(Modifier.width(12.dp))
+            }
+            Column {
+                WyrmLabel("Last run", color = Wyrm.Quiet)
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Bottom) {
+                    LobbyRunStat("Score", score)
+                    LobbyRunStat("Kills", run.kills.toString())
+                    LobbyRunStat("Time", lobbyRunTime(run.seconds))
+                }
+            }
+        }
+        return
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(wyrmRounded(18.dp))
+            .background(Wyrm.Card)
+            .border(1.dp, Wyrm.Rule, wyrmRounded(18.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (hasMap) {
+            LobbyRunMap(run.mapX, run.mapY, 92.dp)
+            Spacer(Modifier.width(16.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            WyrmLabel("Last run", color = Wyrm.Quiet)
+            Spacer(Modifier.height(8.dp))
+            LobbyRunStat("Score", score, big = true)
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                LobbyRunStat("Kills", run.kills.toString())
+                LobbyRunStat("Time", lobbyRunTime(run.seconds))
+            }
         }
     }
 }

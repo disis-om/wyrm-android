@@ -522,7 +522,13 @@ private fun DropPromptOverlay(
         }
     }
 
-    Box(Modifier.fillMaxSize().imePadding()) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
+        // Upright (OM, 2026-10-02): a bottom sheet on the bottom edge, top
+        // corners only, with a grab handle; sideways keeps the floating card.
+        val upright = maxHeight > maxWidth
+        val shape = if (upright) {
+            androidx.compose.foundation.shape.RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        } else wyrmRounded(28.dp)
         Box(
             Modifier
                 .fillMaxSize()
@@ -532,19 +538,38 @@ private fun DropPromptOverlay(
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
-                .padding(start = 12.dp, end = 12.dp, top = insetTop + 12.dp, bottom = 12.dp + insetBottom)
-                .widthIn(max = 520.dp)
+                .then(
+                    if (upright) Modifier.padding(top = insetTop + 12.dp)
+                    else Modifier
+                        .padding(start = 12.dp, end = 12.dp, top = insetTop + 12.dp, bottom = 12.dp + insetBottom)
+                        .widthIn(max = 520.dp),
+                )
                 .fillMaxWidth()
                 .graphicsLayer { translationY = with(density) { 520.dp.toPx() } * (1f - appear) }
-                .shadow(30.dp, wyrmRounded(28.dp), ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
-                .clip(wyrmRounded(28.dp))
+                .shadow(30.dp, shape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
+                .clip(shape)
                 .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(28.dp))
+                .border(1.dp, Wyrm.Rule, shape)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 // A landscape lobby is short: the card scrolls rather than clipping.
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
+                .padding(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = if (upright) 10.dp else 20.dp,
+                    bottom = if (upright) 16.dp + insetBottom else 20.dp,
+                ),
         ) {
+            if (upright) {
+                Box(
+                    Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(bottom = 12.dp)
+                        .size(width = 36.dp, height = 5.dp)
+                        .clip(CircleShape)
+                        .background(Wyrm.Rule),
+                )
+            }
             if (phase == CrashPhase.SENT) {
                 Column(
                     Modifier.fillMaxWidth().padding(vertical = 18.dp),

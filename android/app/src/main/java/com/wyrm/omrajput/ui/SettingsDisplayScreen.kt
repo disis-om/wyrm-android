@@ -35,6 +35,7 @@ fun SettingsDisplayScreen(
         (setting.group == "general" || setting.group.startsWith("general.")) &&
             setting.group != "general.bot" &&
             setting.id !in BASIC_IDS &&
+            setting.id != "general.vsync" && // Settings › Performance owns it now
             setting.label.isNotBlank()
     }
     // Opened by settings search when the row it points at is inside.
@@ -59,7 +60,7 @@ fun SettingsDisplayScreen(
                         SettingTypedRow(setting = setting, first = index == 0, onChange = onChange)
                     }
                 }
-                SettingsCaption("VSync, zoom step, cursor size and after-death delay live here — the things nobody touches twice.")
+                SettingsCaption("Zoom step, cursor size and after-death delay live here — the things nobody touches twice. Frame rate and vsync are in Settings › Performance.")
             }
         }
     }

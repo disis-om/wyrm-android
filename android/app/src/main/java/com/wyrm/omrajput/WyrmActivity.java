@@ -94,6 +94,8 @@ public final class WyrmActivity extends SDLActivity {
     private static native void nativeExitAiLayoutEditor();
     private static native void nativeToggleEditorLeaderboard();
     private static native void nativeSetEditorBare(boolean bare);
+    /** Settings › Performance: present mode (vsync) and frame cap (0 = none). */
+    private static native void nativeSetFramePolicy(boolean vsync, int cap);
     private static native void nativeSetNickname(String nickname);
     private static native void nativeSelectArena(String address);
     private static native void nativeSetArenaTheme(int[] colours, boolean dark);
@@ -161,6 +163,8 @@ public final class WyrmActivity extends SDLActivity {
             try { nativeSetArrowSkin(skin, brightness); } catch (UnsatisfiedLinkError ignored) { }
             return kotlin.Unit.INSTANCE;
         });
+        // Settings › Performance: the engine's frame policy and the display rate.
+        com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.attach(this, this::applyFramePolicy);
         // Wyrm looks (hair, ears, glasses): drawn on this phone only, never sent.
         com.wyrm.omrajput.ui.WyrmLookStore.attach(this, (hair, hairRgb, ears, glasses) -> {
             try { nativeSetWyrmLook(hair, hairRgb, ears, glasses); } catch (UnsatisfiedLinkError ignored) { }
@@ -468,6 +472,7 @@ public final class WyrmActivity extends SDLActivity {
     protected void onResume() {
         super.onResume();
         if (gameMode != null) gameMode.onResume();
+        com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.onResume(this);
         com.wyrm.omrajput.data.DropWatch.watchNetwork(this, true);
         if (overlay != null) overlay.onActivityResumed();
         if (updateManager != null) {
@@ -478,6 +483,7 @@ public final class WyrmActivity extends SDLActivity {
     @Override
     protected void onPause() {
         if (gameMode != null) gameMode.onPause();
+        com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.onPause();
         com.wyrm.omrajput.data.DropWatch.watchNetwork(this, false);
         if (overlay != null) {
             overlay.onActivityPaused();
@@ -977,6 +983,56 @@ public final class WyrmActivity extends SDLActivity {
     private static String safe(String value) {
         return value == null ? "" : value;
     }
+
+    /**
+     * Settings › Performance. The engine gets its present mode and cap; the
+     * engine's surface asks the display for the policy's rate. Android 15 keeps
+     * a game at 60 Hz until it asks (setFrameRate), and a rate going up may
+     * switch the display even when the switch is not seamless; a rate going
+     * down only when it is, since the engine's own cap already holds it.
+     */
+    private void applyFramePolicy(boolean vsync, int cap, float displayHz, boolean raising) {
+        try {
+            nativeSetFramePolicy(vsync, cap);
+        } catch (UnsatisfiedLinkError ignored) {
+            return;
+        }
+        Log.i(TAG, "Performance: vsync=" + vsync + " cap=" + cap + " display=" + displayHz + " Hz");
+        frameRateHz = displayHz;
+        frameRateRaising = raising;
+        frameRateHandler.removeCallbacks(frameRateRequest);
+        frameRateHandler.post(frameRateRequest);
+    }
+
+    private final Handler frameRateHandler = new Handler(Looper.getMainLooper());
+    private float frameRateHz;
+    private boolean frameRateRaising = true;
+    private int frameRateTries;
+    private final Runnable frameRateRequest = new Runnable() {
+        @Override
+        public void run() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || frameRateHz <= 0f) return;
+            final SurfaceView surface = mSurface;
+            android.view.Surface target = surface == null ? null : surface.getHolder().getSurface();
+            if (target == null || !target.isValid()) {
+                // The surface is still being made (start, back from the background).
+                if (frameRateTries++ < 20) frameRateHandler.postDelayed(this, 250);
+                return;
+            }
+            frameRateTries = 0;
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    target.setFrameRate(frameRateHz, android.view.Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
+                            frameRateRaising ? android.view.Surface.CHANGE_FRAME_RATE_ALWAYS
+                                    : android.view.Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS);
+                } else {
+                    target.setFrameRate(frameRateHz, android.view.Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+                }
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Performance: setFrameRate refused", e);
+            }
+        }
+    };
 
     private void restoreNativeSurfaceFocus() {
         if (mSurface == null) return;

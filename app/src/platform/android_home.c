@@ -913,6 +913,19 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeSetEditorBare(JNIEnv* env,
   ai_mode_set_editor_bare(bare == JNI_TRUE);
 }
 
+/* Settings › Performance: present mode and frame cap (main.c). */
+extern void wyrm_set_frame_policy(int vsync, int cap);
+
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetFramePolicy(JNIEnv* env,
+                                                         jclass clazz,
+                                                         jboolean vsync,
+                                                         jint cap) {
+  (void)env;
+  (void)clazz;
+  wyrm_set_frame_policy(vsync == JNI_TRUE, (int)cap);
+}
+
 JNIEXPORT void JNICALL
 Java_com_wyrm_omrajput_WyrmActivity_nativeToggleEditorLeaderboard(
     JNIEnv* env, jclass clazz) {

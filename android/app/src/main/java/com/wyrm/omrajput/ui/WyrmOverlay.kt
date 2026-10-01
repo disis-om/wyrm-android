@@ -529,7 +529,7 @@ class WyrmOverlay(private val activity: Activity) :
         SKIN_BACKGROUND, DEATH, PROFILE, EDIT_PROFILE, LEADERBOARD, ARENA,
         CROP_PHOTO, SETTINGS, SETTINGS_GENERAL, SETTINGS_ASSIST, SETTINGS_NORMAL,
         SETTINGS_CONTROLS, SETTINGS_BUTTONS, SETTINGS_BOT, SETTINGS_NOTIFICATIONS,
-        SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_BACKUP,
+        SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_PERFORMANCE, SETTINGS_BACKUP,
         SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR,
         CHAT, THREAD, PLAYER, CONNECTIONS, TEAM, VOICE, ARENA_CHAT, PRIVACY, NOTIFICATIONS,
         GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT, TRAILS, TRAIL, TRAIL_STUDIO,
@@ -1535,6 +1535,12 @@ class WyrmOverlay(private val activity: Activity) :
                             onChange = ::writeSetting,
                         )
 
+                        Route.SETTINGS_PERFORMANCE -> SettingsPerformanceScreen(
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onBack = { panelOpen = false },
+                        )
+
                         Route.SETTINGS_BACKUP, Route.SETTINGS_UPDATES -> BackupScreen(
                             update = updateState,
                             installedVersion = BuildConfig.VERSION_NAME,
@@ -2281,6 +2287,7 @@ class WyrmOverlay(private val activity: Activity) :
             appVersion = BuildConfig.VERSION_NAME,
             themeName = appTheme.displayName,
             foodValue = foodValue,
+            performanceValue = com.wyrm.omrajput.data.WyrmPerformance.summary(),
             unreadNotifications = visibleNotifications().count { !it.read },
             insetTop = insetTop,
             insetBottom = insetBottom,
@@ -2377,6 +2384,12 @@ class WyrmOverlay(private val activity: Activity) :
                     tabRoot = Route.SETTINGS
                     refreshSettings()
                     openPanel(origin) { route = Route.SETTINGS_FOOD }
+                }
+            },
+            onOpenPerformance = { origin ->
+                if (interactive) {
+                    tabRoot = Route.SETTINGS
+                    openPanel(origin) { route = Route.SETTINGS_PERFORMANCE }
                 }
             },
             onTabNotifications = {
@@ -3790,6 +3803,8 @@ class WyrmOverlay(private val activity: Activity) :
         val id = setting.id
         val group = setting.group
         if (setting.label.isBlank() || id.startsWith("tags.")) return null
+        // Settings › Performance owns the present mode now.
+        if (id == "general.vsync") return null
         val arrowSteering = settings.named("controls.joystick_mode")?.index == 2
         return when {
             id == "general.bot_circle" || id == "general.bot_radius" -> Route.SETTINGS_BOT to "Bot"
@@ -3896,6 +3911,39 @@ class WyrmOverlay(private val activity: Activity) :
                     onChange = { ArrowSkinStore.updateBrightness(it) },
                 )
             }
+        }
+        out += SettingsSearchEntry(
+            id = "app.performance",
+            title = "Performance mode",
+            detail = "Auto, Balanced or Performance: frame rate, heat and battery",
+            page = "Performance",
+            keywords = "fps frame rate vsync heat hot battery smooth lag 120 hz refresh balanced auto",
+            open = { openSettingsPage(Route.SETTINGS_PERFORMANCE) },
+        ) {
+            SettingsValueRow(
+                title = "Performance mode",
+                value = com.wyrm.omrajput.data.WyrmPerformance.summary(),
+                first = true,
+                onOpen = { openSettingsPage(Route.SETTINGS_PERFORMANCE) },
+            )
+        }
+        out += SettingsSearchEntry(
+            id = "app.fps-limit",
+            title = "Frame limit",
+            detail = "Auto, 30, 60, 90, 120 or Max, as this display allows",
+            page = "Performance",
+            keywords = "fps cap limit frame rate 30 60 90 120 max",
+            open = { openSettingsPage(Route.SETTINGS_PERFORMANCE) },
+        ) {
+            val choices = com.wyrm.omrajput.data.WyrmPerformance.limitChoices()
+            SettingsEnumBlock(
+                title = "Frame limit",
+                detail = "Auto lets the mode decide",
+                options = choices.map(com.wyrm.omrajput.data.WyrmPerformance::limitLabel),
+                selected = choices.indexOf(com.wyrm.omrajput.data.WyrmPerformance.limit).coerceAtLeast(0),
+                first = true,
+                onSelect = { com.wyrm.omrajput.data.WyrmPerformance.applyLimit(choices[it]) },
+            )
         }
         out += SettingsSearchEntry(
             id = "app.theme",
@@ -5686,6 +5734,7 @@ class WyrmOverlay(private val activity: Activity) :
         WyrmLookStore.reload(activity)
         com.wyrm.omrajput.data.DropWatch.reloadPrefs()
         com.wyrm.omrajput.data.CrashWatch.reloadPrefs()
+        com.wyrm.omrajput.data.WyrmPerformance.reload(activity)
         appTheme = WyrmThemeId.fromStored(uiPreferences.getString("theme", null))
         themeIntensity = uiPreferences.getFloat("theme_intensity", 0.5f).coerceIn(0f, 1f)
         Wyrm.applyTheme(appTheme, themeIntensity)

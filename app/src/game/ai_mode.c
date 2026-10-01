@@ -849,8 +849,21 @@ void ai_mode_start(tenv* e, const char* nick) {
   hud(g);
   SDL_Log("Wyrm AI: reference movement and bot mind active; socket=none");
 }
+/* The background-size editor (OM, 2026-10-01): no controls, no buttons, no
+   stats; assist off so the floor shows, and back as it was on close. */
+static bool editor_bare;
+static bool bare_assist_saved;
+static bool bare_assist_was;
+void ai_mode_set_editor_bare(bool bare) { editor_bare = bare; }
+bool ai_mode_editor_bare(void) { return editor_session && editor_bare; }
+
 void ai_mode_start_editor(tenv* e, const char* nick) {
   editor_session = true;
+  if (editor_bare && !bare_assist_saved) {
+    bare_assist_was = e->usr->usrs.hotkeys[HOTKEY_ASSIST].active;
+    bare_assist_saved = true;
+  }
+  if (editor_bare) e->usr->usrs.hotkeys[HOTKEY_ASSIST].active = false;
   ai_mode_start(e, nick);
 }
 bool ai_mode_is_editor(void) { return editor_session; }
@@ -867,6 +880,11 @@ void ai_mode_stop(tenv* e) {
   SDL_Log("Wyrm AI: local session cleared");
 }
 void ai_mode_finish_editor(tenv* e) {
+  if (bare_assist_saved) {
+    e->usr->usrs.hotkeys[HOTKEY_ASSIST].active = bare_assist_was;
+    bare_assist_saved = false;
+  }
+  editor_bare = false;
   editor_session = false;
   ai_mode_stop(e);
   e->usr->gdata.curr_screen = TITLE_SCREEN;
@@ -932,7 +950,7 @@ void ai_mode_tick(tenv* e) {
   hud(g);
   redraw(e);
   ui_overlay(e);
-  mobile_controls_draw_gameplay(e);
+  if (!ai_mode_editor_bare()) mobile_controls_draw_gameplay(e);
   draw_notice(e);
   if (!editor_session && ses.death && now - ses.death >= 4000) {
     ai_mode_stop(e);

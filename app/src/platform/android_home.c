@@ -903,6 +903,16 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeExitAiLayoutEditor(JNIEnv* env,
   SDL_UnlockMutex(home_mutex);
 }
 
+/* The background-size editor: only the map and the board, assist off. */
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetEditorBare(JNIEnv* env,
+                                                         jclass clazz,
+                                                         jboolean bare) {
+  (void)env;
+  (void)clazz;
+  ai_mode_set_editor_bare(bare == JNI_TRUE);
+}
+
 JNIEXPORT void JNICALL
 Java_com_wyrm_omrajput_WyrmActivity_nativeToggleEditorLeaderboard(
     JNIEnv* env, jclass clazz) {

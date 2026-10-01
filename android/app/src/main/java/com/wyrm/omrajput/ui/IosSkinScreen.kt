@@ -137,7 +137,7 @@ internal fun IosSkinScreen(
     banner: (@Composable () -> Unit)? = null,
     /** "Share this skin": the Share editor with this skin; null hides the button. */
     onShareSkin: (() -> Unit)? = null,
-    /** Arena background open: "Adjust size" sits on the rule, top right (OM, 2026-10-01). */
+    /** Arena background open: "Adjust size" in line with Share this skin, far right (OM, 2026-10-01). */
     onAdjustBackgroundSize: (() -> Unit)? = null,
 ) {
     val textures by rememberSkinTextures()
@@ -226,7 +226,7 @@ internal fun IosSkinScreen(
             onShareSkin?.let { share -> ShareSkinButton(share, Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 10.dp)) }
             if (section == SkinSection.BACKGROUND) {
                 onAdjustBackgroundSize?.let { adjust ->
-                    AdjustBackgroundButton(adjust, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp).offset(y = 17.dp))
+                    AdjustBackgroundButton(adjust, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 10.dp))
                 }
             }
         }

@@ -1,5 +1,9 @@
 package com.wyrm.omrajput.ui
 
+import com.composables.icons.lucide.R as LucideR
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.Icon
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -932,11 +936,21 @@ internal fun TrailCard(
                             fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet, maxLines = 1)
                     }
                 }
+                // The "⋯": a real icon on a 40 dp target, centred on the author row (OM, 2026-10-01).
+                val moreTouch = remember { MutableInteractionSource() }
+                val morePressed by moreTouch.collectIsPressedAsState()
                 Box(
-                    Modifier.size(34.dp).clip(CircleShape)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { menu = true },
+                    Modifier.size(40.dp).clip(CircleShape)
+                        .background(if (morePressed || menu) Wyrm.Well else Color.Transparent)
+                        .clickable(interactionSource = moreTouch, indication = null) {
+                            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                            menu = true
+                        },
                     contentAlignment = Alignment.Center,
-                ) { Text("⋯", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Wyrm.Quiet) }
+                ) {
+                    Icon(painterResource(LucideR.drawable.lucide_ic_ellipsis), contentDescription = "More", tint = Wyrm.Mute,
+                        modifier = Modifier.size(20.dp))
+                }
             }
 
             Box(
@@ -997,29 +1011,42 @@ internal fun TrailCard(
         }
     }
 
+    // The "⋯" menu in the app's theme, risen over the whole window (OM, 2026-10-01).
     if (menu) {
-        IosActionSheet(
-            title = if (trail.mine) "Your trail" else "Trail",
-            actions = if (trail.mine) {
-                listOf(IosSheetAction("Delete trail", destructive = true) { confirmDelete = true })
-            } else {
-                listOf(IosSheetAction("Report") { reporting = true })
+        WyrmMenuSheet(
+            title = if (trail.mine) "Your trail" else "Trail by ${trail.author.name}",
+            items = buildList {
+                if (trail.skin != null && onTrySkin != null) {
+                    add(WyrmMenuItem("Try this skin", LucideR.drawable.lucide_ic_sparkles, "Wear it in the Skin tab first") { onTrySkin() })
+                }
+                if (trail.mine) {
+                    add(WyrmMenuItem("Delete trail", LucideR.drawable.lucide_ic_trash_2, "Removes it for everyone", destructive = true) { confirmDelete = true })
+                } else {
+                    add(WyrmMenuItem("Report", LucideR.drawable.lucide_ic_flag, "Wyrm reviews every report") { reporting = true })
+                }
             },
             insetBottom = insetBottom,
         ) { menu = false }
     }
     if (confirmDelete) {
-        IosActionSheet(
+        WyrmMenuSheet(
             title = "Delete this trail?",
-            actions = listOf(IosSheetAction("Delete", destructive = true) { scatter() }),
+            subtitle = "Its beads and replies go with it. This cannot be undone.",
+            items = listOf(WyrmMenuItem("Delete", LucideR.drawable.lucide_ic_trash_2, destructive = true) { scatter() }),
             insetBottom = insetBottom,
         ) { confirmDelete = false }
     }
     if (reporting) {
-        IosActionSheet(
+        WyrmMenuSheet(
             title = "Report trail",
-            actions = listOf("Spam", "Harassment or abuse", "Nudity or sexual content", "Hate or violence", "Something else")
-                .map { reason -> IosSheetAction(reason) { TrailsStore.report(trail.id, reason) } },
+            subtitle = "Why are you reporting it? The poster is not told who reported.",
+            items = listOf(
+                "Spam" to LucideR.drawable.lucide_ic_ban,
+                "Harassment or abuse" to LucideR.drawable.lucide_ic_user_x,
+                "Nudity or sexual content" to LucideR.drawable.lucide_ic_eye_off,
+                "Hate or violence" to LucideR.drawable.lucide_ic_circle_alert,
+                "Something else" to LucideR.drawable.lucide_ic_message_circle_warning,
+            ).map { (reason, icon) -> WyrmMenuItem(reason, icon) { TrailsStore.report(trail.id, reason) } },
             insetBottom = insetBottom,
         ) { reporting = false }
     }
@@ -1299,7 +1326,11 @@ private fun TrailReplyRow(
         }
     }
     if (menu) {
-        IosActionSheet("Reply", listOf(IosSheetAction("Delete reply", destructive = true, onClick = onDelete)), insetBottom) { menu = false }
+        WyrmMenuSheet(
+            title = "Your reply",
+            items = listOf(WyrmMenuItem("Delete reply", LucideR.drawable.lucide_ic_trash_2, destructive = true, onClick = onDelete)),
+            insetBottom = insetBottom,
+        ) { menu = false }
     }
 }
 

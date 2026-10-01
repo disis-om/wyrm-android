@@ -146,7 +146,9 @@ fun ControlsScreen(
 ) {
     val steeringSetting = settings.named("controls.joystick_mode")
     val steering = steeringSetting?.index ?: 0
-    val arrowSteering = steering == 2
+    // Upright play steers with the arrow only (OM, 2026-10-02; engine
+    // mobile_controls_steering_mode); the sideways choice below is kept.
+    val arrowSteering = portraitPlay || steering == 2
     val opacity = settings.named("controls.opacity")
     val joystickSize = settings.named("controls.joystick_size")
     val boostSize = settings.named("controls.boost_size")
@@ -226,7 +228,7 @@ fun ControlsScreen(
 
         SettingsSectionLabel("Basic · steering")
         SettingsCard {
-            Box(Modifier.settingAnchor("controls.joystick_mode")) { SettingsEnumBlock(
+            if (!portraitPlay) Box(Modifier.settingAnchor("controls.joystick_mode")) { SettingsEnumBlock(
                 title = "Steering style",
                 detail = "",
                 options = listOf("Joystick", "Arrow"),
@@ -281,13 +283,13 @@ fun ControlsScreen(
                     detail = setting.hint,
                     options = setting.options,
                     selected = setting.index.coerceIn(0, (setting.options.size - 1).coerceAtLeast(0)),
-                    first = false,
+                    first = portraitPlay,
                     onSelect = { onChange(setting, listOf(it.toFloat())) },
                 ) }
             }
         }
 
-        if (portraitPlay) SettingsCaption("Upright there is no left or right hand: your first finger steers, a second finger boosts.")
+        if (portraitPlay) SettingsCaption("Upright you always steer with the arrow: the joystick is for sideways play, and your sideways choice is kept. No left or right hand: your first finger steers, a second finger boosts.")
 
         SettingsSectionLabel("Basic · size")
         SettingsCard {

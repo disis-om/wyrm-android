@@ -106,6 +106,8 @@ void android_home_reset_death(void) {
   run_recorded = false;
 }
 
+void wyrm_last_death_set(float x, float y); /* game/ui_overlay.c */
+
 static void record_finished_run(tenv* env) {
   user_settings* settings = &env->usr->usrs;
   JNIEnv* jni = NULL;
@@ -127,25 +129,11 @@ static void record_finished_run(tenv* env) {
     (*jni)->ExceptionClear(jni);
     SDL_Log("Wyrm home: recordRunFromNative unavailable");
   }
-  /* Where the run ended, for the lobby's last-run minimap (OM, 2026-10-02):
-     the camera's spot as a share of the arena square (centre grd, grd), the
-     same frame the in-game minimap uses. -1 when the arena size is unknown. */
-  jmethodID at = (*jni)->GetStaticMethodID(
-      jni, activity_class, "recordRunPositionFromNative", "(FF)V");
-  if (at) {
-    float grd = env->usr->gdata.data.grd;
-    float vx = env->usr->gdata.data.view_xx;
-    float vy = env->usr->gdata.data.view_yy;
-    float u = -1.0f, v = -1.0f;
-    if (grd > 0 && isfinite(vx) && isfinite(vy)) {
-      u = SDL_clamp(vx / (2.0f * grd), 0.0f, 1.0f);
-      v = SDL_clamp(vy / (2.0f * grd), 0.0f, 1.0f);
-    }
-    (*jni)->CallStaticVoidMethod(jni, activity_class, at, (jfloat)u, (jfloat)v);
-    clear_exception(jni);
-  } else {
-    (*jni)->ExceptionClear(jni);
-  }
+  /* Where this run ended: a red dot on the minimap during the next run
+     (ui_overlay.c, OM 2026-10-02). Real arenas only. */
+  if (!env->usr->gdata.ai_mode)
+    wyrm_last_death_set(env->usr->gdata.data.view_xx,
+                        env->usr->gdata.data.view_yy);
   (*jni)->DeleteLocalRef(jni, activity_class);
 }
 

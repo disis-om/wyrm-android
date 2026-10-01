@@ -264,6 +264,9 @@ static void draw_rope_backbone(tenv* env, snake* o, int point_count,
   }
 }
 
+/* mobile/mobile_controls.c: the arrow upright, the chosen steering sideways. */
+int mobile_controls_steering_mode(tenv* env);
+
 void redraw(tenv* env) {
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
@@ -1894,7 +1897,7 @@ void redraw(tenv* env) {
      Keeping this in the draw path makes it a guide only: steering, collision
      and every byte sent to the arena remain untouched. */
   if (mode->show_crosshair &&
-      usrs->mobile_controls.joystick_mode != MOBILE_STEERING_ARROW) {
+      mobile_controls_steering_mode(env) != MOBILE_STEERING_ARROW) {
     snake* own = get_snake(gdata, gdata->data.snake_id);
     if (own && own->iiv && !own->dead) {
       const float head_radius = 14.5f * own->sc;

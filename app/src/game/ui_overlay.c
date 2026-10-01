@@ -29,6 +29,49 @@ static bool leaderboard_expanded;
 static float leaderboard_expand;
 
 /** Places a measured HUD item by its normalized centre and keeps it visible. */
+/* Where the previous run ended (OM, 2026-10-02): a red dot on the arena's
+   minimap during the next run, so you can see where you went down last time.
+   Set by android_home.c's record_finished_run (real arenas only), kept in
+   memory until the next run ends. Same frame as your own white dot (mm.slang:
+   (pos - grd) / flux_grd, at 0.9 of the radius). Draw-only. */
+static bool last_death_valid = false;
+static float last_death_x = 0.0f;
+static float last_death_y = 0.0f;
+
+void wyrm_last_death_set(float x, float y) {
+  if (!isfinite(x) || !isfinite(y) || (x == 0.0f && y == 0.0f)) return;
+  last_death_x = x;
+  last_death_y = y;
+  last_death_valid = true;
+}
+
+static void draw_last_death(tenv* env, float left, float top, float diameter) {
+  if (!last_death_valid || diameter <= 0.0f) return;
+  game_data* game = &env->usr->gdata;
+  if (game->ai_mode || ai_mode_editor_bare()) return;
+  float world_radius = game->data.flux_grd;
+  if (world_radius <= 1.0f) return;
+  float nx = (last_death_x - game->data.grd) / world_radius;
+  float ny = (last_death_y - game->data.grd) / world_radius;
+  float reach = sqrtf(nx * nx + ny * ny);
+  if (reach > 1.0f) {
+    nx /= reach;
+    ny /= reach;
+  }
+  float half = diameter * 0.5f;
+  ImVec2 point = {left + half + nx * half * 0.9f, top + half + ny * half * 0.9f};
+  float radius = diameter * 0.024f;
+  if (radius < 3.5f) radius = 3.5f;
+  if (radius > 6.5f) radius = 6.5f;
+  ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
+  /* A dark ring so it survives a pale patch of map, then Wyrm's death red
+     (the app's Blood, #FF4D4D), never the white of you or a teammate's green. */
+  ImDrawList_AddCircleFilled(draw, point, radius + 2.0f,
+                             igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.70f}), 20);
+  ImDrawList_AddCircleFilled(draw, point, radius,
+                             igColorConvertFloat4ToU32((ImVec4){1.0f, 0.302f, 0.302f, 1.0f}), 20);
+}
+
 static ImVec2 hud_top_left(tenv* env, float nx, float ny, float width,
                            float height, float edge) {
   return (ImVec2){glm_clamp(nx, 0.0f, 1.0f) * env->ctx->size[0] - width * 0.5f,
@@ -228,7 +271,7 @@ void ui_overlay(tenv* env) {
          share of the screen's short side, set in Settings > Modes > Assist;
          colour and thickness are the laser's. Draw-only: no input, no packet. */
       if (usrs->hotkeys[HOTKEY_ASSIST].active &&
-          usrs->mobile_controls.joystick_mode != MOBILE_STEERING_ARROW &&
+          mobile_controls_steering_mode(env) != MOBILE_STEERING_ARROW &&
           android_home_joystick_laser_on() && a > 0.01f) {
         float lx = cosf(me->ehang);
         float ly = sinf(me->ehang);
@@ -541,6 +584,7 @@ void ui_overlay(tenv* env) {
     // minimap_circ.z is already the rendered quad width/diameter.
     android_voice_publish_hud(minimap_left, minimap_top, minimap_diameter);
     android_team_draw_minimap(env, minimap_left, minimap_top, minimap_diameter);
+    draw_last_death(env, minimap_left, minimap_top, minimap_diameter);
     android_team_set_chat_centre(usrs->hud_chat_x * ctx->size[0],
                                  usrs->hud_chat_y * ctx->size[1]);
     /* The map itself is drawn by a shader underneath; this is the paper frame

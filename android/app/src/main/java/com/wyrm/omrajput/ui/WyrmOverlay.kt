@@ -1572,7 +1572,9 @@ class WyrmOverlay(private val activity: Activity) :
                             joystick = layoutPosition("layout.joystick_x", "layout.joystick_y"),
                             boost = layoutPosition("layout.boost_x", "layout.boost_y"),
                             zoom = layoutPosition("layout.zoom_x", "layout.zoom_y"),
-                            showJoystick = value("controls.joystick_mode").toInt() != 2,
+                            // Upright steers with the arrow only (OM, 2026-10-02): no joystick to place.
+                            showJoystick = !com.wyrm.omrajput.data.PlayOrientation.portrait &&
+                                value("controls.joystick_mode").toInt() != 2,
                             showBoost = value("controls.boost_mode").toInt() == 1,
                             showZoom = flag("controls.zoom_enabled"),
                             joystickSize = value("controls.joystick_size", 1f),
@@ -2444,8 +2446,8 @@ class WyrmOverlay(private val activity: Activity) :
 
     private fun playControlsLabel(): String {
         val mode = settings.firstOrNull { it.id == "controls.joystick_mode" }
-        val steering = when (mode?.index) {
-            2 -> "Arrow"
+        val steering = when {
+            com.wyrm.omrajput.data.PlayOrientation.portrait || mode?.index == 2 -> "Arrow"
             else -> "Joystick"
         }
         val hand = settings.firstOrNull { it.id == "controls.handedness" }
@@ -5261,16 +5263,6 @@ class WyrmOverlay(private val activity: Activity) :
             }
         }
         return run
-    }
-
-    /** Where the run ended (engine `record_finished_run`, 0..1 of the arena), for the lobby's last-run map. */
-    fun setLastRunPosition(u: Float, v: Float) {
-        activity.runOnUiThread {
-            val current = lastRun ?: return@runOnUiThread
-            if (u !in 0f..1f || v !in 0f..1f) return@runOnUiThread
-            lastRun = current.copy(mapX = u, mapY = v)
-            if (shareRun?.endedAt == current.endedAt) shareRun = lastRun
-        }
     }
 
     /** The arena at death (WyrmActivity's PixelCopy). Dropped when a newer run has begun since. */

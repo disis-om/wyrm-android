@@ -27,6 +27,15 @@ static float control_scale(tenv* env) {
   return clampf(short_side / 720.0f, 1.0f, 1.55f);
 }
 
+/* Upright play steers with the arrow only (OM, 2026-10-02): both joystick
+   modes are off while the phone is held upright, whatever is chosen for
+   sideways play (that stored choice is kept). Every reader of the steering
+   mode goes through here; nothing is sent differently. */
+int mobile_controls_steering_mode(tenv* env) {
+  if (env->wnd->size[1] > env->wnd->size[0]) return MOBILE_STEERING_ARROW;
+  return env->usr->usrs.mobile_controls.joystick_mode;
+}
+
 static void normalized_position(tenv* env, float nx, float ny, float* x,
                                 float* y) {
   *x = clampf(nx, 0.0f, 1.0f) * env->wnd->size[0];
@@ -270,7 +279,7 @@ static void edit_touch_down(tenv* env, uint64_t finger, float x, float y) {
   float jx, jy, bx, by;
   normalized_position(env, cfg->joystick_x, cfg->joystick_y, &jx, &jy);
   normalized_position(env, cfg->boost_x, cfg->boost_y, &bx, &by);
-  if (cfg->joystick_mode != MOBILE_STEERING_ARROW &&
+  if (mobile_controls_steering_mode(env) != MOBILE_STEERING_ARROW &&
       inside_circle(x, y, jx, jy, 120.0f * scale * cfg->joystick_size))
     state->edit_target = MOBILE_EDIT_JOYSTICK;
   else if (inside_circle(x, y, bx, by, 105.0f * scale * cfg->boost_size))
@@ -398,7 +407,7 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
        circles above. Sideways is unchanged. Only which finger starts which
        control changes; nothing is sent differently. */
     if (env->wnd->size[1] > env->wnd->size[0])
-      in_joystick_half = cfg->joystick_mode == MOBILE_JOYSTICK_DYNAMIC &&
+      in_joystick_half = mobile_controls_steering_mode(env) == MOBILE_JOYSTICK_DYNAMIC &&
                          !state->joystick_down;
     float jx, jy, bx, by;
     normalized_position(env, cfg->joystick_x, cfg->joystick_y, &jx, &jy);
@@ -409,7 +418,7 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
         cfg->boost_mode == MOBILE_BOOST_FIXED &&
         inside_circle(x, y, bx, by, 112.0f * scale * cfg->boost_size);
     bool fixed_joystick_hit =
-        cfg->joystick_mode == MOBILE_JOYSTICK_FIXED &&
+        mobile_controls_steering_mode(env) == MOBILE_JOYSTICK_FIXED &&
         inside_circle(x, y, jx, jy, 125.0f * scale * cfg->joystick_size);
 
     // Fixed controls own their visible hit areas even if the user moved one
@@ -440,7 +449,7 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
       return true;
     }
 
-    if (cfg->joystick_mode == MOBILE_STEERING_ARROW) {
+    if (mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW) {
       // Arrow steering is relative to the touch-down point. The first finger
       // may start anywhere on the gameplay surface; moving it changes heading
       // without snapping the snake toward the absolute tap position. In
@@ -465,7 +474,7 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
         arrow_seed(env, x, y);
         return true;
       }
-    } else if (cfg->joystick_mode == MOBILE_JOYSTICK_DYNAMIC &&
+    } else if (mobile_controls_steering_mode(env) == MOBILE_JOYSTICK_DYNAMIC &&
                !state->joystick_down && in_joystick_half) {
       state->joystick_down = true;
       state->joystick_finger = finger;
@@ -494,7 +503,7 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
     }
   } else if (event->type == SDL_EVENT_FINGER_MOTION) {
     if (state->joystick_down && state->joystick_finger == finger) {
-      if (cfg->joystick_mode == MOBILE_STEERING_ARROW)
+      if (mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW)
         update_arrow(env, x, y);
       else
         update_joystick(env, x, y);
@@ -575,13 +584,12 @@ void mobile_controls_update(tenv* env) {
    * engine's own frame factor, which is what those rates are per.
    */
   {
-    mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
     mobile_arrow_settings* arrow = &env->usr->usrs.arrow_controls;
     game_data* gdata = &env->usr->gdata;
     float vfr = gdata->data.vfr;
     if (!(vfr > 0.0f) || vfr > 4.0f) vfr = 1.0f;
 
-    bool steering = cfg->joystick_mode == MOBILE_STEERING_ARROW &&
+    bool steering = mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW &&
                     state->joystick_down && state->aim_valid;
 
     /* The setting reads as how much it lags, so it is one minus the catch-up.
@@ -647,10 +655,9 @@ static ImU32 color_u32(float r, float g, float b, float a) {
 
 static bool arrow_geometry(tenv* env, float* ax, float* ay, float* dx,
                            float* dy, float* length, float* width) {
-  mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
   mobile_arrow_settings* arrow = &env->usr->usrs.arrow_controls;
   mobile_controls_state* state = &env->usr->mobile_controls;
-  if (cfg->joystick_mode != MOBILE_STEERING_ARROW || !state->aim_valid ||
+  if (mobile_controls_steering_mode(env) != MOBILE_STEERING_ARROW || !state->aim_valid ||
       state->arrow_opacity <= 0.004f)
     return false;
   float scale = control_scale(env);
@@ -924,11 +931,11 @@ void mobile_controls_draw_gameplay(tenv* env) {
   normalized_position(env, cfg->joystick_x, cfg->joystick_y, &jx, &jy);
   normalized_position(env, cfg->boost_x, cfg->boost_y, &bx, &by);
 
-  if (cfg->joystick_mode == MOBILE_STEERING_ARROW) {
+  if (mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW) {
     draw_arrow(env, dl);
-  } else if (cfg->joystick_mode == MOBILE_JOYSTICK_FIXED ||
+  } else if (mobile_controls_steering_mode(env) == MOBILE_JOYSTICK_FIXED ||
              state->joystick_down) {
-    if (cfg->joystick_mode == MOBILE_JOYSTICK_DYNAMIC) {
+    if (mobile_controls_steering_mode(env) == MOBILE_JOYSTICK_DYNAMIC) {
       jx = state->joystick_origin[0];
       jy = state->joystick_origin[1];
     }

@@ -3,15 +3,15 @@
   "source": "github",
   "productName": "Wyrm",
   "packageName": "com.wyrm.omrajput",
-  "versionCode": 625,
-  "versionName": "6.2.5",
+  "versionCode": 637,
+  "versionName": "6.3.7",
   "minimumVersionCode": 0,
   "mandatory": false,
-  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v6.2.5/Wyrm-v6.2.5.apk",
-  "apkSize": 60058484,
-  "sha256": "396922d8123eeb545d71b1e83d3aaaa68d4e476f0439353b7eb0b89d22e3190f",
-  "publishedAt": "2026-09-29T08:36:50Z",
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v6.3.7/Wyrm-v6.3.7.apk",
+  "apkSize": 62086559,
+  "sha256": "e6fe6f91216e7429df205a290664d6e51dc9fc4d15412421a63d7d53df5a902d",
+  "publishedAt": "2026-10-01T22:52:04Z",
   "headline": "A new version of Wyrm",
   "author": "OM Rajput",
-  "releaseNotes": ["Help & feedback in Settings: report a problem, suggest an idea or ask for help, and read Wyrm's replies under Your reports.", "Crash reports: if Wyrm closes unexpectedly, it asks before sending the report. Turn on Always send to skip the question.", "A new profile: your photo beside Followers and Following, your Best and Kills, Share profile, and tap your photo to enlarge, change or remove it.", "Badges with progress on every profile.", "54 Wyrm beads in Skin Studio: patterns, materials and the India flag.", "Wyrm accessories for your own snake: hair with a colour slider, ears and glasses.", "New welcome screen, clearer and heavier fonts, and search in Settings.", "Replies from Wyrm arrive as notifications. Profiles and badges open instantly from your last visit.", "Fixed: image arrows now show in the arena, and the privacy policy is included in the app.", "Team Mode is paused for now."]
+  "releaseNotes": ["Your settings live in your account: log in on any phone and they come back.", "Play upright: portrait mode with its own layout, steering with the arrow.", "8 new arena floors, including true Black.", "Performance modes (Auto, Balanced, Performance) and an FPS limit; Wyrm runs cooler.", "Your last run in the lobby, and a red dot on the minimap where you went down.", "Best for you: the arena picker puts the lowest-ping arena on top.", "The joystick knob follows your snake; assist laser in joystick mode.", "Live notifications, red badges that lead to what's new, formatted messages.", "New voice rooms, a new Foods page, background size adjusted over the arena.", "Fixed: drops right after spawning with a custom skin, a crash when switching performance modes, What's new on every start."]
 }

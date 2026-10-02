@@ -26,6 +26,9 @@ TDEF_USER_DATA({
        numbers, the body face for anything read as words. */
     ImFont* display_font[NUM_FONT_SIZES];
     ImFont* body_font[NUM_FONT_SIZES];
+    /* Near Original: slither's own faces (Nunito Bold / Black). */
+    ImFont* nunito_bold;
+    ImFont* nunito_black;
   } imgui_data;
 
   struct {

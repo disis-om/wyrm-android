@@ -640,6 +640,24 @@ float android_home_joystick_laser_length(void) {
   return milli > 0 ? milli / 1000.0f : 0.45f;
 }
 
+/* Near Original (OM, 2026-10-02): set by the app (Home), read by
+   ui_overlay.c and mobile_controls.c every frame. */
+static SDL_AtomicInt near_original_flag;
+static SDL_AtomicInt near_original_server;
+
+void android_home_set_near_original(bool on, int server) {
+  SDL_SetAtomicInt(&near_original_server, server > 0 ? server : 0);
+  SDL_SetAtomicInt(&near_original_flag, on ? 1 : 0);
+}
+
+bool android_home_near_original(void) {
+  return SDL_GetAtomicInt(&near_original_flag) != 0;
+}
+
+int android_home_near_original_server(void) {
+  return SDL_GetAtomicInt(&near_original_server);
+}
+
 float android_home_death_opacity(void) { return death_watching ? death_opacity : 1; }
 
 void android_home_advance_death(tenv* env, float vfr) {
@@ -972,6 +990,18 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeSetFramePolicy(JNIEnv* env,
   (void)env;
   (void)clazz;
   wyrm_set_frame_policy(vsync == JNI_TRUE, (int)cap);
+}
+
+/* Home: Near Original (slither's own HUD and controls) and the arena's
+   number for its minimap label. */
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetNearOriginal(JNIEnv* env,
+                                                         jclass clazz,
+                                                         jboolean on,
+                                                         jint server) {
+  (void)env;
+  (void)clazz;
+  android_home_set_near_original(on == JNI_TRUE, (int)server);
 }
 
 /* Settings > Modes > Assist: the assist laser in joystick mode. */

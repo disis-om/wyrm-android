@@ -96,6 +96,7 @@ public final class WyrmActivity extends SDLActivity {
     private static native void nativeSetEditorBare(boolean bare);
     /** Settings › Modes › Assist: the assist laser in joystick mode (length: share of the short side). */
     private static native void nativeSetJoystickLaser(boolean on, float length);
+    private static native void nativeSetNearOriginal(boolean on, int server);
     /** Settings › Performance: present mode (vsync) and frame cap (0 = none). */
     private static native void nativeSetFramePolicy(boolean vsync, int cap);
     private static native void nativeSetPerformanceChip(String text);
@@ -178,6 +179,11 @@ public final class WyrmActivity extends SDLActivity {
         // The assist laser in joystick mode: the saved choice reaches the engine first.
         com.wyrm.omrajput.ui.JoystickLaserStore.attach(this, (on, length) -> {
             try { nativeSetJoystickLaser(on, length); } catch (UnsatisfiedLinkError ignored) { }
+            return kotlin.Unit.INSTANCE;
+        });
+        // Home › Near Original: slither's own HUD and controls (and the arena's number).
+        com.wyrm.omrajput.ui.NearOriginalStore.attach(this, (on, server) -> {
+            try { nativeSetNearOriginal(on, server); } catch (UnsatisfiedLinkError ignored) { }
             return kotlin.Unit.INSTANCE;
         });
         // Wyrm looks (hair, ears, glasses): drawn on this phone only, never sent.

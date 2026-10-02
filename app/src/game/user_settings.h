@@ -89,7 +89,9 @@ typedef enum mobile_arrow_style {
   MOBILE_ARROW_CLASSIC_WIDE = 1,
   MOBILE_ARROW_NEEDLE = 2,
   MOBILE_ARROW_BLADE = 3,
-  MOBILE_ARROW_TRIANGLE = 4
+  MOBILE_ARROW_TRIANGLE = 4,
+  /* slither's own arrow (Near Original, 2026-10-02). Older builds clamp it. */
+  MOBILE_ARROW_ORIGINAL = 5
 } mobile_arrow_style;
 
 typedef struct mobile_hotkey_settings {

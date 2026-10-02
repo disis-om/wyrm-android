@@ -623,7 +623,7 @@ JNIEXPORT jstring JNICALL Java_com_wyrm_omrajput_WyrmActivity_nativeApplyBackup(
 
   bool source_arrow_style_valid =
       !has_arrow_style || (source.arrow_style >= MOBILE_ARROW_CURRENT &&
-                           source.arrow_style <= MOBILE_ARROW_TRIANGLE);
+                           source.arrow_style <= MOBILE_ARROW_ORIGINAL);
   if (has_arrow_controls && arrow_valid(&source.arrow_controls) &&
       source_arrow_style_valid) {
     merged.arrow_controls = source.arrow_controls;

@@ -121,6 +121,9 @@ fun HomeScreen(
     arenaLive: Boolean = false,
     voiceRoomsLive: Int = 0,
     voiceRoomName: String = "",
+    /** Home › Near Original (OM, 2026-10-02): slither's own HUD and controls. */
+    nearOriginal: Boolean = false,
+    onNearOriginal: (Boolean) -> Unit = {},
     insetTop: Dp,
     insetBottom: Dp,
     showRootTabs: Boolean = true,
@@ -210,6 +213,7 @@ fun HomeScreen(
                 IosLoadoutRow("Food", foodLabel, first = true, leading = { IosFoodWell() }) { onOpenFood(Rect.Zero) }
                 IosLoadoutRow("Controls", controlsLabel, leading = { IosLoadoutIcon(IosGlyph.GAMECONTROLLER) }) { onOpenControls(Rect.Zero) }
                 IosLoadoutRow("Mode", "", leading = { IosLoadoutIcon(IosGlyph.SCOPE) }) { onOpenMode(Rect.Zero) }
+                NearOriginalRow(on = nearOriginal, onToggle = onNearOriginal)
             }
             IosSectionLabel("Rooms & team")
             IosPaperCard {
@@ -241,6 +245,30 @@ fun HomeScreen(
                 onSkin = onTabSkin,
                 onSettings = onTabSettings,
             )
+        }
+    }
+}
+
+/** Home › Near Original: a loadout row with a switch instead of a chevron. */
+@Composable
+private fun NearOriginalRow(on: Boolean, onToggle: (Boolean) -> Unit) {
+    Column {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IosLoadoutIcon(IosGlyph.ARROW_CLOCKWISE)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Near Original", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink, maxLines = 1)
+                Text(
+                    "Slither's own HUD, joystick and arrow. Only on-screen buttons stay movable.",
+                    fontFamily = Wyrm.Body, fontSize = 12.sp, lineHeight = 15.sp, color = Wyrm.Quiet,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            PaperSwitch(on = on, onToggle = onToggle)
         }
     }
 }

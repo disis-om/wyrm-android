@@ -198,8 +198,8 @@ static const setting_desc GLOBAL_FIELDS[] = {
 
     {"arrow.size", "controls.arrow", "Arrow size", "", SETTING_FLOAT, 0.30f,
      2.40f, NULL, OWNER_ARROW, ARROW_FIELD(size)},
-    {"arrow.style", "controls.arrow", "Arrow style", "", SETTING_ENUM, 0, 4,
-     "Classic|Classic wide|Needle|Blade|Triangle", OWNER_SETTINGS,
+    {"arrow.style", "controls.arrow", "Arrow style", "", SETTING_ENUM, 0, 5,
+     "Classic|Classic wide|Needle|Blade|Triangle|Original", OWNER_SETTINGS,
      SETTINGS_FIELD(arrow_style)},
     /* Both of these changed meaning when the arrow became relative steering.
        The drag is cumulative and has no maximum, so there is no "distance at

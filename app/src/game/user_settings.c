@@ -638,7 +638,7 @@ void read_user_settings(user_settings* usr_settings) {
     save_user_settings(usr_settings);
   }
   if (usr_settings->arrow_style < MOBILE_ARROW_CURRENT ||
-      usr_settings->arrow_style > MOBILE_ARROW_TRIANGLE) {
+      usr_settings->arrow_style > MOBILE_ARROW_ORIGINAL) {
     usr_settings->arrow_style = MOBILE_ARROW_CURRENT;
     save_user_settings(usr_settings);
   }

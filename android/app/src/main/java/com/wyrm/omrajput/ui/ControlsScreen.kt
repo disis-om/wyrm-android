@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
@@ -115,7 +116,27 @@ internal val ArrowOptions = listOf(
         "TRIANGLE",
         listOf(Offset(0.82f, 0f), Offset(-0.64f, -0.26f), Offset(-0.64f, 0.26f)),
     ),
+    // slither's own arrow (Near Original, 2026-10-02), from the original's 64 px shape.
+    ArrowOption(
+        "ORIGINAL",
+        listOf(
+            Offset(-0.56f, -0.3155f), Offset(-0.56f, 0.3155f), Offset(0f, 0.2227f),
+            Offset(0f, 0.7423f), Offset(0.56f, 0f), Offset(0f, -0.7423f),
+            Offset(0f, -0.2227f),
+        ),
+    ),
 )
+
+/** Near Original: shown faded and not touchable (the original's own values apply). */
+private fun Modifier.nearOriginalLocked(locked: Boolean): Modifier =
+    if (!locked) this else this.alpha(0.38f).pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    .changes.forEach { it.consume() }
+            }
+        }
+    }
 
 internal fun arrowOptionLabel(index: Int): String =
     ArrowOptions.getOrNull(index)?.label?.replace('\n', ' ')?.lowercase()
@@ -149,6 +170,9 @@ fun ControlsScreen(
     // Upright play steers with the arrow only (OM, 2026-10-02; engine
     // mobile_controls_steering_mode); the sideways choice below is kept.
     val arrowSteering = portraitPlay || steering == 2
+    // Home › Near Original (OM, 2026-10-02): slither's own joystick, boost and
+    // arrow; only the arrow's size stays the player's. Nothing stored changes.
+    val nearOriginal = NearOriginalStore.on
     val opacity = settings.named("controls.opacity")
     val joystickSize = settings.named("controls.joystick_size")
     val boostSize = settings.named("controls.boost_size")
@@ -245,7 +269,7 @@ fun ControlsScreen(
                     }
                 },
             ) }
-            if (!arrowSteering && steeringSetting != null) {
+            if (!arrowSteering && steeringSetting != null && !nearOriginal) {
                 val behaviour = steeringSetting.options.take(2)
                 if (behaviour.size >= 2) {
                     SettingsValueRow(
@@ -278,7 +302,7 @@ fun ControlsScreen(
                 ) }
             }
             boostMode?.let { setting ->
-                Box(Modifier.settingAnchor(setting.id)) { SettingsEnumBlock(
+                Box(Modifier.settingAnchor(setting.id).nearOriginalLocked(nearOriginal)) { SettingsEnumBlock(
                     title = "Boost",
                     detail = setting.hint,
                     options = setting.options,
@@ -291,8 +315,10 @@ fun ControlsScreen(
 
         if (portraitPlay) SettingsCaption("Upright you always steer with the arrow: the joystick is for sideways play, and your sideways choice is kept. No left or right hand: your first finger steers, a second finger boosts.")
 
+        if (nearOriginal) SettingsCaption("Near Original is on: slither's own joystick, boost button and arrow, at their original places. Only the arrow's size is yours. Turn it off on Home to bring your own back.")
+
         SettingsSectionLabel("Basic · size")
-        SettingsCard {
+        Box(Modifier.nearOriginalLocked(nearOriginal)) { SettingsCard {
             var first = true
             if (!arrowSteering) {
                 joystickSize?.let {
@@ -307,19 +333,21 @@ fun ControlsScreen(
                 }
             }
             opacity?.let { SettingTypedRow(it, first = first, onChange = onChange) }
-        }
+        } }
 
         if (arrowSteering) {
             SettingsSectionLabel("Basic · arrow")
             SettingsCard {
                 // The picker replaces the style row; colour only tints the drawn arrows.
-                Box(Modifier.settingAnchor("arrow.style")) {
+                if (!nearOriginal) Box(Modifier.settingAnchor("arrow.style")) {
                     ArrowStyleRow(arrowStyleSetting, arrowColor, first = true) { arrowPickerOpen = true }
                 }
-                arrowRows.filter { it.id != "arrow.style" && it.id != "arrow.color" }.forEach { setting ->
-                    SettingTypedRow(setting = setting, first = false, onChange = onChange)
-                }
-                androidx.compose.runtime.CompositionLocalProvider(LocalAdjustSubject provides AdjustSubject.ARROW) {
+                arrowRows.filter { it.id != "arrow.style" && it.id != "arrow.color" }
+                    .filter { !nearOriginal || it.id == "arrow.size" }
+                    .forEach { setting ->
+                        SettingTypedRow(setting = setting, first = nearOriginal, onChange = onChange)
+                    }
+                if (!nearOriginal) androidx.compose.runtime.CompositionLocalProvider(LocalAdjustSubject provides AdjustSubject.ARROW) {
                     Box(Modifier.settingAnchor("app.arrow-brightness")) { SettingsSliderRow(
                         title = "Brightness",
                         valueText = "${(ArrowSkinStore.brightness * 100).roundToInt()}%",
@@ -331,7 +359,7 @@ fun ControlsScreen(
                         onChange = { ArrowSkinStore.updateBrightness(it) },
                     ) }
                 }
-                if (ArrowSkinStore.skin < 0) {
+                if (ArrowSkinStore.skin < 0 && !nearOriginal) {
                     arrowRows.firstOrNull { it.id == "arrow.color" }?.let { setting ->
                         SettingTypedRow(setting = setting, first = false, onChange = onChange)
                     }

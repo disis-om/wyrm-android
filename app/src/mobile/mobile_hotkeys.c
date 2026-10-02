@@ -175,6 +175,20 @@ void mobile_hotkeys_draw_gameplay(tenv* env) {
     ImVec2 min = {cx - width * 0.5f, cy - height * 0.5f};
     ImVec2 max = {cx + width * 0.5f, cy + height * 0.5f};
     float corner = height * 0.30f;
+    /* Wyrm's ink halo (OM, 2026-10-02): the key's edge holds on a white floor
+       too; a pressed or lit key also gets a green ring. */
+    for (int i = 0; i < 4; ++i) {
+      float grow = 2.0f + i * 2.5f;
+      ImDrawList_AddRect(draw, (ImVec2){min.x - grow, min.y - grow},
+                         (ImVec2){max.x + grow, max.y + grow},
+                         color(0.035f, 0.040f, 0.055f, alpha * (0.16f - i * 0.035f)),
+                         corner + grow, 0, 2.5f);
+    }
+    if (active || pressed)
+      ImDrawList_AddRect(draw, (ImVec2){min.x - 3.5f, min.y - 3.5f},
+                         (ImVec2){max.x + 3.5f, max.y + 3.5f},
+                         color(0.247f, 0.933f, 0.588f, alpha * 0.55f),
+                         corner + 3.5f, 0, 3.0f);
     /* Paper paint inside the exact same rectangle used by hit_action(). Input,
        mode and placement are deliberately not part of this draw function. */
     ImDrawList_AddRectFilled(draw, (ImVec2){min.x, min.y + height * 0.07f},

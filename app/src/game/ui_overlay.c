@@ -7,6 +7,7 @@
 #include "../platform/android_voice.h"
 #include "../platform/android_home.h"
 #include "../ui/ui_theme.h"
+#include "backgrounds.h"
 #include "../user.h"
 
 /*
@@ -237,23 +238,127 @@ static ImVec2 original_text_size(ImFont* font, float size, const char* text) {
   return out;
 }
 
-/* The original's leaderboard glyphs carry a thick black outline (the font
-   sheet was built with DropShadowFilter(0, 90, black, 1, 7, 7, 24)). */
+/*
+ * One leaderboard string as the original draws it (Main.as drawText and the
+ * glyph sheets, 26865-27030). The glyphs were cut at 52 px with
+ * DropShadowFilter(0, 90, black, 1, 7, 7, strength 24) = a solid black outline
+ * about 6 px wide, then DropShadowFilter(3, 90, black, 0.75, 8, 8) = a soft
+ * shadow 3 px below. The board draws that outlined glyph, tinted with the
+ * snake's colour, at `alpha`, and the bare face again ADDITIVELY at the same
+ * alpha (highscore_add_batch). Over the face the sum is bg(1 - a) + 2ca, so the
+ * face is drawn here in twice its colour; that is why it reads on any floor.
+ */
 static void original_text(ImDrawList* draw, ImFont* font, float size,
-                          ImVec2 pos, ImU32 colour, float outline_alpha,
+                          ImVec2 pos, vec3s colour, float alpha,
                           const char* text) {
-  if (outline_alpha > 0.004f) {
-    float o = size * 0.09f;
-    ImU32 black = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, outline_alpha});
-    static const float dirs[8][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1},
-                                     {0.7071f, 0.7071f}, {-0.7071f, 0.7071f},
-                                     {0.7071f, -0.7071f}, {-0.7071f, -0.7071f}};
-    for (int i = 0; i < 8; ++i)
-      ImDrawList_AddText_FontPtr(draw, font, size,
-                                 (ImVec2){pos.x + dirs[i][0] * o, pos.y + dirs[i][1] * o},
-                                 black, text, NULL, 0, NULL);
+  if (alpha <= 0.004f) return;
+  float f = size / 52.0f;
+  float outline = 6.0f * f;
+  float drop = 3.0f * f;
+  /* Stamps overlap about three deep: each is weaker so the pile reads as alpha. */
+  float stamp = 1.0f - powf(1.0f - (alpha > 0.999f ? 0.999f : alpha), 1.0f / 3.0f);
+  ImU32 shadow = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, stamp * 0.75f * 0.45f});
+  ImU32 black = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, stamp});
+  for (int i = 0; i < 8; ++i) {
+    float a = 6.2831853f * (i + 0.5f) / 8.0f;
+    float spread = outline + 4.0f * f;
+    ImDrawList_AddText_FontPtr(
+        draw, font, size,
+        (ImVec2){pos.x + cosf(a) * spread, pos.y + drop + sinf(a) * spread},
+        shadow, text, NULL, 0, NULL);
   }
-  ImDrawList_AddText_FontPtr(draw, font, size, pos, colour, text, NULL, 0, NULL);
+  for (int i = 0; i < 12; ++i) {
+    float a = 6.2831853f * i / 12.0f;
+    ImDrawList_AddText_FontPtr(
+        draw, font, size,
+        (ImVec2){pos.x + cosf(a) * outline, pos.y + sinf(a) * outline},
+        black, text, NULL, 0, NULL);
+  }
+  for (int i = 0; i < 6; ++i) {
+    float a = 6.2831853f * (i + 0.5f) / 6.0f;
+    ImDrawList_AddText_FontPtr(
+        draw, font, size,
+        (ImVec2){pos.x + cosf(a) * outline * 0.5f, pos.y + sinf(a) * outline * 0.5f},
+        black, text, NULL, 0, NULL);
+  }
+  float r = colour.x * 2.0f, g = colour.y * 2.0f, b = colour.z * 2.0f;
+  ImU32 face = igColorConvertFloat4ToU32((ImVec4){r > 1.0f ? 1.0f : r,
+                                                  g > 1.0f ? 1.0f : g,
+                                                  b > 1.0f ? 1.0f : b, alpha});
+  ImDrawList_AddText_FontPtr(draw, font, size, pos, face, text, NULL, 0, NULL);
+}
+
+/*
+ * The minimap disc's colour per floor. The original fills the disc with its
+ * floor image, scaled by max(1, 512 / short side) x 0.5 and blurred 64
+ * (Main.as setMinimapSize 18568-18740); the classic floor first x0.6 + 4, then
+ * light floors x0.75 and the rest x1.35 + 12. Measured offline from the same
+ * images (mean over the disc after that blur); Wyrm's own floors as dark ones,
+ * None as black. Unknown ids fall back to the original's dark default.
+ */
+static const struct {
+  const char* id;
+  unsigned char r, g, b;
+} ORIGINAL_MINIMAP_FLOOR[] = {
+    {"wyrm", 40, 48, 62},          {"none", 12, 12, 12},
+    {"classic", 39, 46, 55},       {"bgee2", 27, 44, 62},
+    {"asanoha", 82, 33, 39},       {"seigaiha", 74, 113, 146},
+    {"graygrid", 126, 126, 126},   {"rizz", 159, 124, 175},
+    {"usastar", 39, 63, 128},      {"circuits", 33, 29, 60},
+    {"circuits2", 37, 33, 81},     {"hexice", 61, 96, 124},
+    {"hexb", 27, 37, 72},          {"hearts", 176, 95, 114},
+    {"leaves", 131, 78, 51},       {"paint", 144, 110, 100},
+    {"snakey", 95, 108, 71},       {"stainedglass", 108, 72, 76},
+    {"kitties", 155, 95, 159},     {"bluecube", 67, 81, 177},
+    {"purplecube", 120, 40, 161},  {"redcube", 167, 60, 54},
+    {"black", 12, 12, 12},         {"wyrm_midnight", 28, 42, 65},
+    {"wyrm_carbon", 46, 50, 57},   {"wyrm_abyss", 23, 50, 57},
+    {"wyrm_nebula", 23, 22, 35},   {"wyrm_dotgrid", 34, 36, 40},
+    {"wyrm_contours", 32, 44, 51}, {"wyrm_scales", 35, 51, 43},
+};
+
+static vec3s original_minimap_floor(int floor) {
+  const char* id = BACKGROUNDS[background_clamp(floor)].id;
+  int count = (int)(sizeof(ORIGINAL_MINIMAP_FLOOR) / sizeof(ORIGINAL_MINIMAP_FLOOR[0]));
+  for (int i = 0; i < count; ++i)
+    if (strcmp(ORIGINAL_MINIMAP_FLOOR[i].id, id) == 0)
+      return (vec3s){{ORIGINAL_MINIMAP_FLOOR[i].r / 255.0f,
+                      ORIGINAL_MINIMAP_FLOOR[i].g / 255.0f,
+                      ORIGINAL_MINIMAP_FLOOR[i].b / 255.0f}};
+  return (vec3s){{27 / 255.0f, 44 / 255.0f, 62 / 255.0f}};
+}
+
+/*
+ * The minimap's DropShadowFilter(3, 90, black, 0.5, 12, 12, 1, 3): the disc's
+ * silhouette moved down `drop` and blurred (three box passes of 12 = sigma ~6),
+ * seen only where the disc itself is not (the bitmap is opaque inside the disc).
+ * Thin rings, each at that distance's shadow strength, cut away over the disc.
+ */
+static void original_disc_shadow(ImDrawList* draw, ImVec2 c, float R,
+                                 float drop, float sigma, float alpha) {
+  const int segments = 64;
+  float step = sigma * 0.35f;
+  if (step < 1.0f) step = 1.0f;
+  ImVec2 s = {c.x, c.y + drop};
+  float keep = (R + step * 0.5f) * (R + step * 0.5f);
+  for (float d = -drop; d < sigma * 3.0f; d += step) {
+    float mid = d + step * 0.5f;
+    float rho = R + mid;
+    if (rho <= 0.0f) continue;
+    float a = alpha * 0.5f * erfcf(mid / (sigma * 1.41421356f));
+    if (a < 0.003f) continue;
+    ImU32 col = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, a});
+    for (int i = 0; i < segments; ++i) {
+      float a0 = 6.2831853f * i / segments;
+      float a1 = 6.2831853f * (i + 1) / segments;
+      ImVec2 p0 = {s.x + cosf(a0) * rho, s.y + sinf(a0) * rho};
+      ImVec2 p1 = {s.x + cosf(a1) * rho, s.y + sinf(a1) * rho};
+      float mx = (p0.x + p1.x) * 0.5f - c.x;
+      float my = (p0.y + p1.y) * 0.5f - c.y;
+      if (mx * mx + my * my <= keep) continue;
+      ImDrawList_AddLine(draw, p0, p1, col, step + 0.5f);
+    }
+  }
 }
 
 /* A pie slice of the minimap disc, from angle a0 to a1 (radians, y down). */
@@ -288,6 +393,14 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
   if (portrait) {
     ui_safe_area safe = ui_theme_safe_area(env);
     notch = safe.y;
+    /* SDL gives the safe area in window coordinates: points on iOS (a third
+       of the pixels on a 3x phone), pixels on Android. The HUD is in pixels. */
+    if (env->wnd && env->wnd->handle) {
+      int points_w = 0, points_h = 0;
+      SDL_GetWindowSize(env->wnd->handle, &points_w, &points_h);
+      if (points_h > 0 && env->wnd->size[1] > points_h)
+        notch *= (float)env->wnd->size[1] / (float)points_h;
+    }
     if (notch > 90.0f * u) notch = 90.0f * u;
     if (notch < 0.0f) notch = 0.0f;
   }
@@ -307,14 +420,17 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
   ImVec2 c = {ox + side * 0.5f * k, oy + (side * 0.5f + 23.0f) * k};
   float R = r * k;
 
-  for (int i = 1; i <= 5; ++i) {
-    float t = i / 6.0f;
-    ImDrawList_AddCircle(draw, (ImVec2){c.x, c.y + 3.0f * k}, R + i * 2.0f * k,
-                         igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.35f * 0.5f * (1 - t) * (1 - t)}),
-                         48, 2.0f * k + 0.5f);
-  }
-  ImU32 dark = igColorConvertFloat4ToU32((ImVec4){0x20 / 255.0f, 0x26 / 255.0f, 0x30 / 255.0f, 0.7f});
-  ImU32 light = igColorConvertFloat4ToU32((ImVec4){0x40 / 255.0f, 0x46 / 255.0f, 0x50 / 255.0f, 0.7f});
+  /* The bitmap's shadow (0.5) under the bitmap's own alpha (0.7). */
+  original_disc_shadow(draw, c, R, 3.0f * k, 6.0f * k, 0.5f * 0.7f);
+  /* The disc: the floor, blurred (see ORIGINAL_MINIMAP_FLOOR), with the top-left
+     and bottom-right quarters lifted by #202020 (ADD); the bitmap at 0.7. */
+  vec3s floor_rgb = original_minimap_floor(usrs->arena_background);
+  float lift = 32.0f / 255.0f;
+  ImU32 dark = igColorConvertFloat4ToU32((ImVec4){floor_rgb.x, floor_rgb.y, floor_rgb.z, 0.7f});
+  ImU32 light = igColorConvertFloat4ToU32((ImVec4){
+      floor_rgb.x + lift > 1.0f ? 1.0f : floor_rgb.x + lift,
+      floor_rgb.y + lift > 1.0f ? 1.0f : floor_rgb.y + lift,
+      floor_rgb.z + lift > 1.0f ? 1.0f : floor_rgb.z + lift, 0.7f});
   const float pi = 3.14159265f;
   original_wedge(draw, c, R, pi, 1.5f * pi, light);
   original_wedge(draw, c, R, 1.5f * pi, 2.0f * pi, dark);
@@ -327,8 +443,17 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
     snprintf(label, sizeof(label), "server %d", server);
     float size = 18.0f * k;
     ImVec2 ts = original_text_size(bold, size, label);
+    ImVec2 at = {ox + (side * k - ts.x) * 0.5f, oy + 6.0f * k};
+    ImU32 hush = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.5f * 0.7f * 0.75f * 0.22f});
+    for (int i = 0; i < 6; ++i) {
+      float a = 6.2831853f * i / 6.0f;
+      ImDrawList_AddText_FontPtr(
+          draw, bold, size,
+          (ImVec2){at.x + cosf(a) * 3.0f * k, at.y + 3.0f * k + sinf(a) * 3.0f * k},
+          hush, label, NULL, 0, NULL);
+    }
     ImDrawList_AddText_FontPtr(
-        draw, bold, size, (ImVec2){ox + (side * k - ts.x) * 0.5f, oy + 6.0f * k},
+        draw, bold, size, at,
         igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.75f * 0.7f}), label, NULL, 0, NULL);
   }
 
@@ -407,11 +532,10 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
     int cv = gdata->data.lb.entries[row].cv;
     if (cv < 0 || cv >= NUM_COLOR_GROUPS) cv = 0;
     vec3s colour = gdata->cg_colors[cv];
-    ImU32 ink = igColorConvertFloat4ToU32((ImVec4){colour.x, colour.y, colour.z, alpha});
     float y = ly + (5.0f + 14.0f * row_y) * u;
     char rank[8];
     snprintf(rank, sizeof(rank), "#%d", row + 1);
-    original_text(draw, bold, size, (ImVec2){lx, y}, ink, alpha * 0.85f, rank);
+    original_text(draw, bold, size, (ImVec2){lx, y}, colour, alpha, rank);
     const char* name = gdata->data.lb.entries[row].nickname;
     if (name[0]) {
       char fitted[MAX_NICKNAME_LEN + 8];
@@ -419,13 +543,232 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
       int length = (int)strlen(fitted);
       while (length > 1 && original_text_size(bold, size, fitted).x > 165.0f * u)
         fitted[--length] = 0;
-      original_text(draw, bold, size, (ImVec2){lx + 28.0f * u, y}, ink, alpha * 0.85f, fitted);
+      original_text(draw, bold, size, (ImVec2){lx + 28.0f * u, y}, colour, alpha, fitted);
     }
     char points[16];
     snprintf(points, sizeof(points), "%d", score);
     float pw = original_text_size(bold, size, points).x;
-    original_text(draw, bold, size, (ImVec2){lx + 241.0f * u - pw, y}, ink, alpha * 0.85f, points);
+    original_text(draw, bold, size, (ImVec2){lx + 241.0f * u - pw, y}, colour, alpha, points);
     ++row_y;
+  }
+}
+
+/* ---- Wyrm's own HUD, readable on any floor (OM, 2026-10-02) ----
+ * The original reads on every floor through contrast, not colour: an outline
+ * and a shadow around every glyph. Wyrm does the same in its own hand: a soft
+ * ink halo (a tight outline and a wide, low shadow in deep ink, never pure
+ * black), each snake's own colour lifted until it reads, a slate plate under
+ * the board only on light floors, and a minimap tinted by the floor at one
+ * fixed darkness. Draw-only: nothing here touches input or the arena.
+ */
+
+/* Each floor's mean colour (the same images, measured offline). */
+static const struct {
+  const char* id;
+  unsigned char r, g, b;
+} WYRM_FLOOR_MEAN[] = {
+    {"wyrm", 21, 27, 37},          {"classic", 26, 35, 47},
+    {"bgee2", 11, 24, 37},         {"asanoha", 109, 44, 52},
+    {"seigaiha", 99, 151, 194},    {"graygrid", 168, 168, 168},
+    {"rizz", 109, 83, 121},        {"usastar", 20, 38, 86},
+    {"circuits", 44, 39, 80},      {"circuits2", 49, 44, 108},
+    {"hexice", 81, 128, 165},      {"hexb", 36, 49, 96},
+    {"hearts", 234, 126, 151},     {"leaves", 175, 104, 68},
+    {"paint", 192, 146, 133},      {"snakey", 127, 144, 94},
+    {"stainedglass", 145, 96, 101}, {"kitties", 207, 127, 212},
+    {"bluecube", 89, 108, 235},    {"purplecube", 160, 53, 214},
+    {"redcube", 223, 80, 72},      {"wyrm_midnight", 12, 22, 39},
+    {"wyrm_carbon", 25, 28, 33},   {"wyrm_abyss", 8, 28, 34},
+    {"wyrm_nebula", 8, 7, 17},     {"wyrm_dotgrid", 16, 18, 21},
+    {"wyrm_contours", 15, 24, 29}, {"wyrm_scales", 17, 29, 23},
+};
+
+/* Deep ink for every halo: Wyrm's black with a little blue, never #000. */
+static const ImVec4 WYRM_HALO = {0.035f, 0.040f, 0.055f, 1.0f};
+
+static float wyrm_luma(vec3s c) {
+  return 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z;
+}
+
+/* The floor really under the HUD (its mean colour), or false when none shows
+   (None, Black, or a mode that hides the floor). */
+static bool wyrm_floor_mean(tenv* env, vec3s* out) {
+  tuser_data* usr = env->usr;
+  if (usr->r->global.bg_opacity <= 0.0f || usr->r->global.bg_color[0] < 0.5f)
+    return false;
+  const char* id = BACKGROUNDS[background_clamp(usr->usrs.arena_background)].id;
+  int count = (int)(sizeof(WYRM_FLOOR_MEAN) / sizeof(WYRM_FLOOR_MEAN[0]));
+  for (int i = 0; i < count; ++i)
+    if (strcmp(WYRM_FLOOR_MEAN[i].id, id) == 0) {
+      *out = (vec3s){{WYRM_FLOOR_MEAN[i].r / 255.0f, WYRM_FLOOR_MEAN[i].g / 255.0f,
+                      WYRM_FLOOR_MEAN[i].b / 255.0f}};
+      return true;
+    }
+  return false;
+}
+
+/* A light floor (mean luma 0.30 or more) gets the slate plate. */
+static bool wyrm_floor_light(tenv* env) {
+  vec3s mean;
+  return wyrm_floor_mean(env, &mean) && wyrm_luma(mean) >= 0.30f;
+}
+
+/* A snake's colour, lifted toward white until it reads over the halo. */
+static ImU32 wyrm_snake_ink(vec3s c, float alpha) {
+  float l = wyrm_luma(c);
+  const float target = 0.62f;
+  if (l < target) {
+    float t = (target - l) / (1.0f - l + 0.0001f);
+    c.x += (1.0f - c.x) * t;
+    c.y += (1.0f - c.y) * t;
+    c.z += (1.0f - c.z) * t;
+  }
+  return igColorConvertFloat4ToU32((ImVec4){c.x, c.y, c.z, alpha});
+}
+
+/* Text in Wyrm's ink halo: a wide, low shadow and a tight outline. */
+static void wyrm_halo_text(ImDrawList* draw, ImFont* font, float size,
+                           ImVec2 pos, ImU32 colour, float alpha,
+                           const char* text) {
+  if (alpha <= 0.004f || !text || !text[0]) return;
+  float soft = size * 0.16f;
+  if (soft < 2.0f) soft = 2.0f;
+  float tight = size * 0.07f;
+  if (tight < 1.0f) tight = 1.0f;
+  ImU32 shadow = igColorConvertFloat4ToU32(
+      (ImVec4){WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, alpha * 0.10f});
+  for (int i = 0; i < 8; ++i) {
+    float a = 6.2831853f * (i + 0.5f) / 8.0f;
+    ImDrawList_AddText_FontPtr(
+        draw, font, size,
+        (ImVec2){pos.x + cosf(a) * soft, pos.y + sinf(a) * soft + soft * 0.35f},
+        shadow, text, NULL, 0, NULL);
+  }
+  /* The outline stamps overlap about two deep. */
+  float stamp = 1.0f - sqrtf(1.0f - 0.72f * alpha);
+  ImU32 ink = igColorConvertFloat4ToU32(
+      (ImVec4){WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, stamp});
+  for (int i = 0; i < 8; ++i) {
+    float a = 6.2831853f * i / 8.0f;
+    ImDrawList_AddText_FontPtr(
+        draw, font, size,
+        (ImVec2){pos.x + cosf(a) * tight, pos.y + sinf(a) * tight}, ink, text,
+        NULL, 0, NULL);
+  }
+  ImDrawList_AddText_FontPtr(draw, font, size, pos, colour, text, NULL, 0, NULL);
+}
+
+/* A name in the halo, shortened with "..." until it fits. */
+static void wyrm_halo_fitted(ImDrawList* draw, ImFont* font, ImVec2 pos,
+                             ImU32 colour, float alpha, const char* text,
+                             float max_width) {
+  if (measure(font, text) <= max_width) {
+    wyrm_halo_text(draw, font, font->LegacySize, pos, colour, alpha, text);
+    return;
+  }
+  char shortened[MAX_NICKNAME_LEN + 8];
+  int length = (int)strlen(text);
+  if (length > (int)sizeof(shortened) - 5) length = (int)sizeof(shortened) - 5;
+  while (length > 1) {
+    snprintf(shortened, sizeof(shortened), "%.*s...", --length, text);
+    if (measure(font, shortened) <= max_width) break;
+  }
+  wyrm_halo_text(draw, font, font->LegacySize, pos, colour, alpha, shortened);
+}
+
+/*
+ * Wyrm's minimap, drawn here instead of the old glass shader (which was nearly
+ * clear and lost on light floors). A disc tinted by the floor at one fixed
+ * darkness, a faint compass cross and middle ring, the arena's cells in paper
+ * white (eased, as before), a soft shadow, and you as a Wyrm-green chevron
+ * pointing where your snake goes. The world circle maps to 0.9 of the radius,
+ * as before (the death dot and the voice/team marks use the same frame).
+ */
+static void wyrm_draw_minimap(tenv* env, ImDrawList* draw, float left,
+                              float top, float diameter) {
+  game_data* gdata = &env->usr->gdata;
+  float R = diameter * 0.5f;
+  ImVec2 c = {left + R, top + R};
+  original_disc_shadow(draw, c, R + 1.5f, 2.0f, 5.0f, 0.30f);
+
+  vec3s slate = {{0.085f, 0.095f, 0.120f}};
+  vec3s base = slate;
+  vec3s mean;
+  if (wyrm_floor_mean(env, &mean)) {
+    float l = wyrm_luma(mean);
+    float s = l > 0.001f ? 0.15f / l : 1.0f;
+    vec3s tint = {{mean.x * s > 1.0f ? 1.0f : mean.x * s,
+                   mean.y * s > 1.0f ? 1.0f : mean.y * s,
+                   mean.z * s > 1.0f ? 1.0f : mean.z * s}};
+    base.x = slate.x + (tint.x - slate.x) * 0.6f;
+    base.y = slate.y + (tint.y - slate.y) * 0.6f;
+    base.z = slate.z + (tint.z - slate.z) * 0.6f;
+  }
+  ImDrawList_AddCircleFilled(draw, c, R,
+                             igColorConvertFloat4ToU32((ImVec4){base.x, base.y, base.z, 0.86f}),
+                             64);
+  ImU32 faint = igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.07f});
+  ImDrawList_AddLine(draw, (ImVec2){c.x - R * 0.92f, c.y}, (ImVec2){c.x + R * 0.92f, c.y}, faint, 1.0f);
+  ImDrawList_AddLine(draw, (ImVec2){c.x, c.y - R * 0.92f}, (ImVec2){c.x, c.y + R * 0.92f}, faint, 1.0f);
+  ImDrawList_AddCircle(draw, c, R * 0.45f, faint, 48, 1.0f);
+
+  /* The cells: eased values in six steps, one rect per run of a step. */
+  int mmsz = gdata->data.mmsz;
+  if (mmsz > MAX_MINIMAP_SIZE) mmsz = MAX_MINIMAP_SIZE;
+  if (mmsz > 0) {
+    float span = R * 0.9f * 2.0f;
+    float cell = span / mmsz;
+    float ox = c.x - R * 0.9f;
+    float oy = c.y - R * 0.9f;
+    for (int y = 0; y < mmsz; ++y) {
+      const float* row = gdata->data.mm_data_follow + y * MAX_MINIMAP_SIZE;
+      int x = 0;
+      while (x < mmsz) {
+        int level = (int)(row[x] * 6.0f + 0.5f);
+        if (level <= 0) { ++x; continue; }
+        if (level > 6) level = 6;
+        int start = x;
+        while (x < mmsz) {
+          int next = (int)(row[x] * 6.0f + 0.5f);
+          if (next > 6) next = 6;
+          if (next != level) break;
+          ++x;
+        }
+        ImDrawList_AddRectFilled(
+            draw, (ImVec2){ox + start * cell, oy + y * cell},
+            (ImVec2){ox + x * cell, oy + (y + 1) * cell},
+            igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.62f * level / 6.0f}), 0, 0);
+      }
+    }
+  }
+
+  /* You: a chevron along the drawn head's angle, in the green of the mark. */
+  float world = gdata->data.flux_grd;
+  int count = tdarray_length(gdata->data.snakes);
+  if (world > 1.0f && count) {
+    snake* me = gdata->data.snakes + (count - 1);
+    if (me->local_player && gdata->data.snake_id == me->id) {
+      float nx = (me->xx + me->fx - gdata->data.grd) / world;
+      float ny = (me->yy + me->fy - gdata->data.grd) / world;
+      float reach = sqrtf(nx * nx + ny * ny);
+      if (reach > 1.0f) { nx /= reach; ny /= reach; }
+      ImVec2 p = {c.x + nx * R * 0.9f, c.y + ny * R * 0.9f};
+      float dx = cosf(me->ehang), dy = sinf(me->ehang);
+      float s = R * 0.085f;
+      if (s < 4.0f) s = 4.0f;
+      for (int pass = 0; pass < 2; ++pass) {
+        float k = pass == 0 ? s * 1.45f : s;
+        ImVec2 tip = {p.x + dx * k * 1.25f, p.y + dy * k * 1.25f};
+        ImVec2 l = {p.x - dx * k * 0.8f - dy * k * 0.75f, p.y - dy * k * 0.8f + dx * k * 0.75f};
+        ImVec2 r = {p.x - dx * k * 0.8f + dy * k * 0.75f, p.y - dy * k * 0.8f - dx * k * 0.75f};
+        ImVec2 notch = {p.x - dx * k * 0.35f, p.y - dy * k * 0.35f};
+        ImU32 col = pass == 0
+                        ? igColorConvertFloat4ToU32((ImVec4){WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, 0.78f})
+                        : igColorConvertFloat4ToU32((ImVec4){0.247f, 0.933f, 0.588f, 1.0f});
+        ImDrawList_AddTriangleFilled(draw, tip, l, notch, col);
+        ImDrawList_AddTriangleFilled(draw, tip, notch, r, col);
+      }
+    }
   }
 }
 
@@ -592,11 +935,10 @@ void ui_overlay(tenv* env) {
       igPopFont();
 
       float row_height = score_size.y + 7.0f;
-      float dot = 5.0f;
       float board_width = GLM_MAX(
           position_size.x, GLM_MAX(hint_size.x,
-                                   rank_size.x + 10.0f + dot * 2 + 8.0f +
-                                       name_size.x + 12.0f + score_size.x));
+                                   rank_size.x + 10.0f + name_size.x + 12.0f +
+                                       score_size.x));
       float board_height = title_size.y + 8.0f +
                            row_height * (5.0f + 5.0f * reveal) + 8.0f +
                            GLM_MAX(position_size.y, score_size.y) + 4.0f +
@@ -608,10 +950,23 @@ void ui_overlay(tenv* env) {
                                      edge);
       ImVec2 board_max = {board_min.x + board_width, board_min.y};
 
-      ImDrawList_AddText_FontPtr(draw, label_font, label_font->LegacySize,
-                                 board_min,
-                                 arena_theme_overlay_text(0.92f), "Leaderboard",
-                                 NULL, 0, NULL);
+      /* A slate plate only where the floor is light (OM, 2026-10-02). */
+      if (wyrm_floor_light(env)) {
+        ImVec2 plate_min = {board_min.x - 12.0f, board_min.y - 10.0f};
+        ImVec2 plate_max = {board_max.x + 12.0f, board_min.y + board_height + 10.0f};
+        ImDrawList_AddRectFilled(draw, (ImVec2){plate_min.x, plate_min.y + 3.0f},
+                                 (ImVec2){plate_max.x, plate_max.y + 3.0f},
+                                 hud_colour(0, 0, 0, 0.14f), HUD_PANEL_ROUNDING, 0);
+        ImDrawList_AddRectFilled(draw, plate_min, plate_max,
+                                 hud_colour(WYRM_HALO.x + 0.02f, WYRM_HALO.y + 0.025f,
+                                            WYRM_HALO.z + 0.03f, 0.50f),
+                                 HUD_PANEL_ROUNDING, 0);
+        ImDrawList_AddRect(draw, plate_min, plate_max, hud_colour(1, 1, 1, 0.10f),
+                           HUD_PANEL_ROUNDING, 0, 1.0f);
+      }
+
+      wyrm_halo_text(draw, label_font, label_font->LegacySize, board_min,
+                     arena_theme_overlay_text(0.92f), 0.92f, "Leaderboard");
       float row_y = board_min.y + title_size.y + 8.0f;
       float rows_bottom = row_y + row_height * (5.0f + 5.0f * reveal);
       ImDrawList_PushClipRect(draw, (ImVec2){0, row_y},
@@ -620,28 +975,30 @@ void ui_overlay(tenv* env) {
         bool mine = gdata->data.lb_pos == (row + 1);
         float alpha = mine ? 1.0f : 0.86f;
 
+        /* Your own row sits on a soft ink pill. */
+        if (mine)
+          ImDrawList_AddRectFilled(
+              draw, (ImVec2){board_min.x - 6.0f, row_y - 1.0f},
+              (ImVec2){board_max.x + 6.0f, row_y + row_height - 1.0f},
+              hud_colour(WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, 0.34f),
+              row_height * 0.5f, 0);
+
         char rank_text[8];
         snprintf(rank_text, sizeof(rank_text), "%d", row + 1);
         ImVec2 measured;
         igPushFont(rank_font, rank_font->LegacySize);
         igCalcTextSize(&measured, rank_text, NULL, false, -1);
         igPopFont();
-        ImDrawList_AddText_FontPtr(
-            draw, rank_font, rank_font->LegacySize,
-            (ImVec2){board_min.x + rank_size.x - measured.x, row_y + 2.0f},
-            arena_theme_overlay_text(mine ? 1.0f : 0.78f), rank_text, NULL, 0,
-            NULL);
+        wyrm_halo_text(draw, rank_font, rank_font->LegacySize,
+                       (ImVec2){board_min.x + rank_size.x - measured.x, row_y + 2.0f},
+                       arena_theme_overlay_text(mine ? 1.0f : 0.78f),
+                       mine ? 1.0f : 0.78f, rank_text);
 
-        /* The one place colour is still worth spending: whose snake this is. */
-        vec3s* snake_colour = gdata->cg_colors + gdata->data.lb.entries[row].cv;
-        ImDrawList_AddCircleFilled(
-            draw,
-            (ImVec2){board_min.x + rank_size.x + 10.0f + dot,
-                     row_y + row_height * 0.42f},
-            dot,
-            igColorConvertFloat4ToU32((ImVec4){snake_colour->x, snake_colour->y,
-                                               snake_colour->z, alpha}),
-            16);
+        /* Whose snake this is: the name and the score in its own colour
+           (OM, 2026-10-02: no dot), lifted until it reads. */
+        int lb_cv = gdata->data.lb.entries[row].cv;
+        if (lb_cv < 0 || lb_cv >= NUM_COLOR_GROUPS) lb_cv = 0;
+        ImU32 snake_ink = wyrm_snake_ink(gdata->cg_colors[lb_cv], alpha);
 
         char score_text_row[16];
         snprintf(score_text_row, sizeof(score_text_row), "%d",
@@ -650,39 +1007,34 @@ void ui_overlay(tenv* env) {
 
         /* The name gets whatever is left after the score has taken its width,
            and is shortened to fit rather than allowed to run over it. */
-        float name_x = board_min.x + rank_size.x + 10.0f + dot * 2 + 8.0f;
-        draw_fitted_text(draw, name_font, (ImVec2){name_x, row_y + 3.0f},
-                         leaderboard_name_colour(row, alpha),
-                         gdata->data.lb.entries[row].nickname,
+        float name_x = board_min.x + rank_size.x + 10.0f;
+        wyrm_halo_fitted(draw, name_font, (ImVec2){name_x, row_y + 3.0f},
+                         snake_ink, alpha, gdata->data.lb.entries[row].nickname,
                          board_max.x - score_width - 10.0f - name_x);
 
         measured.x = score_width;
-        ImDrawList_AddText_FontPtr(draw, score_font, score_font->LegacySize,
-                                   (ImVec2){board_max.x - measured.x, row_y},
-                                   arena_theme_overlay_text(alpha), score_text_row,
-                                   NULL, 0, NULL);
+        wyrm_halo_text(draw, score_font, score_font->LegacySize,
+                       (ImVec2){board_max.x - measured.x, row_y}, snake_ink,
+                       alpha, score_text_row);
         row_y += row_height;
       }
       ImDrawList_PopClipRect(draw);
 
       float footer_y = rows_bottom + 8.0f;
-      ImDrawList_AddText_FontPtr(draw, label_font, label_font->LegacySize,
-                                 (ImVec2){board_min.x, footer_y},
-                                 arena_theme_overlay_text(0.92f), "Your position",
-                                 NULL, 0, NULL);
+      wyrm_halo_text(draw, label_font, label_font->LegacySize,
+                     (ImVec2){board_min.x, footer_y},
+                     arena_theme_overlay_text(0.92f), 0.92f, "Your position");
       float rank_width = measure(score_font, rank_text);
-      ImDrawList_AddText_FontPtr(draw, score_font, score_font->LegacySize,
-                                 (ImVec2){board_max.x - rank_width, footer_y},
-                                 arena_theme_overlay_text(1.0f), rank_text, NULL, 0,
-                                 NULL);
+      wyrm_halo_text(draw, score_font, score_font->LegacySize,
+                     (ImVec2){board_max.x - rank_width, footer_y},
+                     arena_theme_overlay_text(1.0f), 1.0f, rank_text);
       footer_y += GLM_MAX(position_size.y, score_size.y) + 4.0f;
       const char* hint = leaderboard_expanded
                              ? "Tap on leaderboard to show 5"
                              : "Tap on leaderboard to expand";
-      ImDrawList_AddText_FontPtr(draw, label_font, label_font->LegacySize,
-                                 (ImVec2){board_min.x, footer_y},
-                                 arena_theme_overlay_text(0.66f), hint, NULL, 0,
-                                 NULL);
+      wyrm_halo_text(draw, label_font, label_font->LegacySize,
+                     (ImVec2){board_min.x, footer_y},
+                     arena_theme_overlay_text(0.66f), 0.66f, hint);
       board_max.y = footer_y + hint_size.y;
       leaderboard_hit[0] = board_min.x - 10.0f;
       leaderboard_hit[1] = board_min.y - 8.0f;
@@ -790,7 +1142,8 @@ void ui_overlay(tenv* env) {
     float minimap_top = minimap_min.y;
     usr->r->global.minimap_circ[0] = minimap_left;
     usr->r->global.minimap_circ[1] = minimap_top;
-    usr->r->global.minimap_opacity = 1;
+    /* Wyrm's own disc (wyrm_draw_minimap); the glass shader stays off. */
+    wyrm_draw_minimap(env, draw, minimap_left, minimap_top, minimap_diameter);
 
     // minimap_circ.z is already the rendered quad width/diameter.
     android_voice_publish_hud(minimap_left, minimap_top, minimap_diameter);
@@ -798,16 +1151,10 @@ void ui_overlay(tenv* env) {
     draw_last_death(env, minimap_left, minimap_top, minimap_diameter);
     android_team_set_chat_centre(usrs->hud_chat_x * ctx->size[0],
                                  usrs->hud_chat_y * ctx->size[1]);
-    /* The map itself is drawn by a shader underneath; this is the paper frame
-       it sits in. Only the rim and the shadow are drawn here — a filled disc
-       would be painted straight over the map, since the interface layer is
-       composited last. */
+    /* The paper rim around Wyrm's disc (the shadow is the disc's own). */
     ImVec2 map_centre = {minimap_left + minimap_diameter * 0.5f,
                          minimap_top + minimap_diameter * 0.5f};
     float map_radius = minimap_diameter * 0.5f;
-    ImDrawList_AddCircle(draw, (ImVec2){map_centre.x, map_centre.y + 2.0f},
-                         map_radius + 3.0f, hud_colour(0, 0, 0, 0.16f), 64,
-                         6.0f);
     ImDrawList_AddCircle(draw, map_centre, map_radius + 1.5f,
                          arena_theme_overlay_text(0.96f), 64, 5.0f);
     ImDrawList_AddCircle(draw, map_centre, map_radius - 1.0f,

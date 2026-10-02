@@ -853,6 +853,14 @@ bool mobile_controls_get_arrow_position(tenv* env, float* x, float* y) {
  */
 static void draw_paper_disc(ImDrawList* dl, float cx, float cy, float radius,
                             float alpha, bool active) {
+  /* Wyrm's ink halo (OM, 2026-10-02): the edge holds on a white floor too. */
+  for (int i = 0; i < 4; ++i)
+    ImDrawList_AddCircle(dl, (ImVec2){cx, cy}, radius + 2.0f + i * 2.5f,
+                         color_u32(0.035f, 0.040f, 0.055f, alpha * (0.16f - i * 0.035f)),
+                         48, 2.5f);
+  if (active)
+    ImDrawList_AddCircle(dl, (ImVec2){cx, cy}, radius + 3.5f,
+                         color_u32(0.247f, 0.933f, 0.588f, alpha * 0.55f), 48, 3.0f);
   ImDrawList_AddCircleFilled(dl, (ImVec2){cx, cy + radius * 0.045f},
                              radius * 1.025f,
                              color_u32(0, 0, 0, alpha * 0.18f), 48);
@@ -1095,9 +1103,24 @@ static void draw_original_arrow(tenv* env, ImDrawList* dl) {
   for (int i = 0; i < 7; ++i)
     p[i] = (ImVec2){ax + dx * shape_x[i] * s + px * shape_y[i] * s,
                     ay + dy * shape_x[i] * s + py * shape_y[i] * s};
-  for (int i = 3; i >= 1; --i)
-    ImDrawList_AddPolyline(dl, p, 7, color_u32(0, 0, 0, alpha * 0.10f),
-                           ImDrawFlags_Closed, (9.0f + 5.0f * i) * s);
+  /* The texture's DropShadowFilter(0, 90, black, 1, 12, 12, 1, 3): a soft
+     black halo (sigma ~6 texture px) around the outlined arrow. Nested strokes,
+     widest first, each set so the pile at a distance x outside the 9 px outline
+     reads 0.5 erfc(x / (sigma sqrt 2)) of the arrow's alpha. */
+  {
+    const int bands = 8;
+    const float sigma = 6.0f;
+    float before = 0.0f;
+    for (int j = bands; j >= 1; --j) {
+      float x = (j - 0.5f) * (3.0f * sigma / bands);
+      float want = alpha * 0.5f * erfcf(x / (sigma * 1.41421356f));
+      float a = before >= 0.999f ? 0.0f : 1.0f - (1.0f - want) / (1.0f - before);
+      if (a > 0.003f)
+        ImDrawList_AddPolyline(dl, p, 7, color_u32(0, 0, 0, a), ImDrawFlags_Closed,
+                               (9.0f + 2.0f * j * (3.0f * sigma / bands)) * s);
+      if (want > before) before = want;
+    }
+  }
   ImDrawList_AddPolyline(dl, p, 7, color_u32(0, 0, 0, alpha),
                          ImDrawFlags_Closed, 9.0f * s);
   ImU32 fill = original_arrow_colour(env, alpha);
@@ -1108,7 +1131,13 @@ static void draw_original_arrow(tenv* env, ImDrawList* dl) {
   float glow = alpha * original_accel_a *
                (0.5f + 0.5f * cosf(original_accel_fr));
   if (glow > 0.004f) {
-    ImU32 bright = color_u32(1, 1, 1, glow * 0.5f);
+    /* The ADD copy (arrow_add_ii): over the fill, the arrow's colour added at
+       `glow`, drawn as the colour doubled at that alpha. */
+    ImVec4 base;
+    igColorConvertU32ToFloat4(&base, fill);
+    ImU32 bright = color_u32(base.x * 2.0f > 1.0f ? 1.0f : base.x * 2.0f,
+                             base.y * 2.0f > 1.0f ? 1.0f : base.y * 2.0f,
+                             base.z * 2.0f > 1.0f ? 1.0f : base.z * 2.0f, glow);
     ImDrawList_AddConvexPolyFilled(dl, shaft, 4, bright);
     ImDrawList_AddConvexPolyFilled(dl, head, 3, bright);
   }
@@ -1198,6 +1227,14 @@ static void draw_zoom(tenv* env, ImDrawList* dl, bool editor) {
     knob = (ImVec2){cx, track_max.y - length * t};
   }
 
+  /* Wyrm's ink halo around the bar (OM, 2026-10-02). */
+  for (int i = 0; i < 4; ++i) {
+    float grow = 2.0f + i * 2.5f;
+    ImDrawList_AddRect(dl, (ImVec2){track_min.x - grow, track_min.y - grow},
+                       (ImVec2){track_max.x + grow, track_max.y + grow},
+                       color_u32(0.035f, 0.040f, 0.055f, alpha * (0.16f - i * 0.035f)),
+                       half + grow, 0, 2.5f);
+  }
   ImDrawList_AddRectFilled(dl, (ImVec2){track_min.x, track_min.y + half * 0.18f},
                            (ImVec2){track_max.x, track_max.y + half * 0.18f},
                            color_u32(0, 0, 0, alpha * 0.16f), half, 0);

@@ -6,6 +6,7 @@
 #include "../platform/android_team.h"
 #include "../platform/android_voice.h"
 #include "../platform/android_home.h"
+#include "../ui/ui_theme.h"
 #include "../user.h"
 
 /*
@@ -224,6 +225,210 @@ static void draw_stat_row(tenv* env, ImDrawList* draw, float right, float y,
       NULL);
 }
 
+/* ---- Near Original (OM, 2026-10-02): slither's own HUD, Main.as ---- */
+
+static float original_lb_fade = 0.0f;
+
+static ImVec2 original_text_size(ImFont* font, float size, const char* text) {
+  ImVec2 out;
+  igPushFont(font, size);
+  igCalcTextSize(&out, text, NULL, false, -1);
+  igPopFont();
+  return out;
+}
+
+/* The original's leaderboard glyphs carry a thick black outline (the font
+   sheet was built with DropShadowFilter(0, 90, black, 1, 7, 7, 24)). */
+static void original_text(ImDrawList* draw, ImFont* font, float size,
+                          ImVec2 pos, ImU32 colour, float outline_alpha,
+                          const char* text) {
+  if (outline_alpha > 0.004f) {
+    float o = size * 0.09f;
+    ImU32 black = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, outline_alpha});
+    static const float dirs[8][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1},
+                                     {0.7071f, 0.7071f}, {-0.7071f, 0.7071f},
+                                     {0.7071f, -0.7071f}, {-0.7071f, -0.7071f}};
+    for (int i = 0; i < 8; ++i)
+      ImDrawList_AddText_FontPtr(draw, font, size,
+                                 (ImVec2){pos.x + dirs[i][0] * o, pos.y + dirs[i][1] * o},
+                                 black, text, NULL, 0, NULL);
+  }
+  ImDrawList_AddText_FontPtr(draw, font, size, pos, colour, text, NULL, 0, NULL);
+}
+
+/* A pie slice of the minimap disc, from angle a0 to a1 (radians, y down). */
+static void original_wedge(ImDrawList* draw, ImVec2 c, float r, float a0,
+                           float a1, ImU32 colour) {
+  ImVec2 points[18];
+  points[0] = c;
+  for (int i = 0; i <= 16; ++i) {
+    float a = a0 + (a1 - a0) * i / 16.0f;
+    points[i + 1] = (ImVec2){c.x + cosf(a) * r, c.y + sinf(a) * r};
+  }
+  ImDrawList_AddConvexPolyFilled(draw, points, 18, colour);
+}
+
+/*
+ * The original HUD (Main.as): the minimap top-left (x 24 px, y 8 px, plus the
+ * notch upright; scale 0.75u; a #202630 disc with two lighter quarters, alpha
+ * 0.7, a soft shadow, "server N" in Nunito Bold 18 above it; white cells at
+ * 0.475 and your position as a white dot) and the leaderboard top-right
+ * (rows of 14u, text 11u in Nunito Bold, each in that snake's colour with a
+ * black outline; no title). Wyrm's stats and bearing are not drawn.
+ */
+static void draw_original_hud(tenv* env, ImDrawList* draw) {
+  tuser_data* usr = env->usr;
+  game_data* gdata = &usr->gdata;
+  user_settings* usrs = &usr->usrs;
+  float W = env->ctx->size[0];
+  float H = env->ctx->size[1];
+  float u = (W < H ? W : H) / 480.0f;
+  bool portrait = H > W;
+  float notch = 0.0f;
+  if (portrait) {
+    ui_safe_area safe = ui_theme_safe_area(env);
+    notch = safe.y;
+    if (notch > 90.0f * u) notch = 90.0f * u;
+    if (notch < 0.0f) notch = 0.0f;
+  }
+  ImFont* bold = usr->imgui_data.nunito_bold
+                     ? usr->imgui_data.nunito_bold
+                     : usr->imgui_data.regular_font_bold[1];
+
+  /* ---- minimap ---- */
+  int mmsz = gdata->data.mmsz > 0 ? gdata->data.mmsz : 80;
+  if (mmsz > MAX_MINIMAP_SIZE) mmsz = MAX_MINIMAP_SIZE;
+  float k = 0.75f * u;
+  const float pad = 12.0f;
+  float side = mmsz + pad * 2.0f;
+  float ox = 24.0f;
+  float oy = 8.0f + notch;
+  float r = mmsz * 0.5f;
+  ImVec2 c = {ox + side * 0.5f * k, oy + (side * 0.5f + 23.0f) * k};
+  float R = r * k;
+
+  for (int i = 1; i <= 5; ++i) {
+    float t = i / 6.0f;
+    ImDrawList_AddCircle(draw, (ImVec2){c.x, c.y + 3.0f * k}, R + i * 2.0f * k,
+                         igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.35f * 0.5f * (1 - t) * (1 - t)}),
+                         48, 2.0f * k + 0.5f);
+  }
+  ImU32 dark = igColorConvertFloat4ToU32((ImVec4){0x20 / 255.0f, 0x26 / 255.0f, 0x30 / 255.0f, 0.7f});
+  ImU32 light = igColorConvertFloat4ToU32((ImVec4){0x40 / 255.0f, 0x46 / 255.0f, 0x50 / 255.0f, 0.7f});
+  const float pi = 3.14159265f;
+  original_wedge(draw, c, R, pi, 1.5f * pi, light);
+  original_wedge(draw, c, R, 1.5f * pi, 2.0f * pi, dark);
+  original_wedge(draw, c, R, 0.0f, 0.5f * pi, light);
+  original_wedge(draw, c, R, 0.5f * pi, pi, dark);
+
+  int server = android_home_near_original_server();
+  if (server > 0) {
+    char label[32];
+    snprintf(label, sizeof(label), "server %d", server);
+    float size = 18.0f * k;
+    ImVec2 ts = original_text_size(bold, size, label);
+    ImDrawList_AddText_FontPtr(
+        draw, bold, size, (ImVec2){ox + (side * k - ts.x) * 0.5f, oy + 6.0f * k},
+        igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.75f * 0.7f}), label, NULL, 0, NULL);
+  }
+
+  /* The map: one rect per run of set cells in a row. */
+  if (gdata->data.mmsz > 0) {
+    ImU32 cell = igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.475f});
+    float left = ox + pad * k;
+    float top = oy + (pad + 23.0f) * k;
+    for (int y = 0; y < mmsz; ++y) {
+      const uint8_t* row = gdata->data.mm_data + y * MAX_MINIMAP_SIZE;
+      int x = 0;
+      while (x < mmsz) {
+        if (!row[x]) { ++x; continue; }
+        int start = x;
+        while (x < mmsz && row[x]) ++x;
+        ImDrawList_AddRectFilled(draw, (ImVec2){left + start * k, top + y * k},
+                                 (ImVec2){left + x * k, top + (y + 1) * k}, cell, 0, 0);
+      }
+    }
+  }
+
+  float world = gdata->data.flux_grd;
+  if (world > 1.0f) {
+    int count = tdarray_length(gdata->data.snakes);
+    if (count) {
+      snake* me = gdata->data.snakes + (count - 1);
+      if (me->local_player && gdata->data.snake_id == me->id) {
+        float nx = (me->xx + me->fx - gdata->data.grd) / world;
+        float ny = (me->yy + me->fy - gdata->data.grd) / world;
+        ImVec2 dot = {c.x + nx * R, c.y + ny * R};
+        ImDrawList_AddCircleFilled(draw, dot, 3.0f * k + 1.0f * k,
+                                   igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.66f}), 16);
+        ImDrawList_AddCircleFilled(draw, dot, 3.0f * k,
+                                   igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 1}), 16);
+      }
+    }
+    /* The previous run's death dot, on this map's geometry. */
+    if (last_death_valid && !gdata->ai_mode && !ai_mode_editor_bare()) {
+      float nx = (last_death_x - gdata->data.grd) / world;
+      float ny = (last_death_y - gdata->data.grd) / world;
+      float reach = sqrtf(nx * nx + ny * ny);
+      if (reach > 1.0f) { nx /= reach; ny /= reach; }
+      ImVec2 dot = {c.x + nx * R, c.y + ny * R};
+      ImDrawList* front = igGetForegroundDrawList_ViewportPtr(NULL);
+      ImDrawList_AddCircleFilled(front, dot, 3.0f * k + 2.0f,
+                                 igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.70f}), 20);
+      ImDrawList_AddCircleFilled(front, dot, 3.0f * k,
+                                 igColorConvertFloat4ToU32((ImVec4){1.0f, 0.302f, 0.302f, 1.0f}), 20);
+    }
+  }
+
+  android_voice_publish_hud(c.x - R, c.y - R, R * 2.0f);
+  android_team_draw_minimap(env, c.x - R, c.y - R, R * 2.0f);
+  android_team_set_chat_centre(usrs->hud_chat_x * W, usrs->hud_chat_y * H);
+
+  /* ---- leaderboard ---- */
+  if (!gdata->data.gotlb) {
+    original_lb_fade = 0.0f;
+    return;
+  }
+  float vfr = gdata->data.vfr;
+  if (!(vfr > 0.0f) || vfr > 4.0f) vfr = 1.0f;
+  original_lb_fade += 0.01f * vfr;
+  if (original_lb_fade > 1.0f) original_lb_fade = 1.0f;
+  float wdxo = roundf(0.057f * (W < H ? W : H) / u);
+  float lx = portrait ? W - (16.0f + 241.0f) * u : W - (16.0f + 241.0f + wdxo) * u;
+  float ly = notch;
+  float size = 11.0f * u;
+  int row_y = 0;
+  for (int row = 0; row < NUM_LEADERBOARD_ENTRIES; ++row) {
+    int score = gdata->data.lb.entries[row].score;
+    if (score <= 0 && !gdata->data.lb.entries[row].nickname[0]) continue;
+    bool mine = gdata->data.lb_pos == row + 1;
+    float k2 = mine ? 1.0f : 0.9f * (0.2f + 0.8f * powf(1.0f - (row + 1) / 10.0f, 0.66f));
+    float alpha = k2 * original_lb_fade;
+    int cv = gdata->data.lb.entries[row].cv;
+    if (cv < 0 || cv >= NUM_COLOR_GROUPS) cv = 0;
+    vec3s colour = gdata->cg_colors[cv];
+    ImU32 ink = igColorConvertFloat4ToU32((ImVec4){colour.x, colour.y, colour.z, alpha});
+    float y = ly + (5.0f + 14.0f * row_y) * u;
+    char rank[8];
+    snprintf(rank, sizeof(rank), "#%d", row + 1);
+    original_text(draw, bold, size, (ImVec2){lx, y}, ink, alpha * 0.85f, rank);
+    const char* name = gdata->data.lb.entries[row].nickname;
+    if (name[0]) {
+      char fitted[MAX_NICKNAME_LEN + 8];
+      snprintf(fitted, sizeof(fitted), "%s", name);
+      int length = (int)strlen(fitted);
+      while (length > 1 && original_text_size(bold, size, fitted).x > 165.0f * u)
+        fitted[--length] = 0;
+      original_text(draw, bold, size, (ImVec2){lx + 28.0f * u, y}, ink, alpha * 0.85f, fitted);
+    }
+    char points[16];
+    snprintf(points, sizeof(points), "%d", score);
+    float pw = original_text_size(bold, size, points).x;
+    original_text(draw, bold, size, (ImVec2){lx + 241.0f * u - pw, y}, ink, alpha * 0.85f, points);
+    ++row_y;
+  }
+}
+
 void ui_overlay(tenv* env) {
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
@@ -351,7 +556,9 @@ void ui_overlay(tenv* env) {
     ImFont* score_font = usr->imgui_data.regular_font_bold[usrs->lb_font_size];
 
     leaderboard_hit[2] = leaderboard_hit[3] = 0.0f;
-    if (gdata->data.gotlb) {
+    /* Near Original: slither's own map and board instead (draw_original_hud). */
+    bool original_hud = android_home_near_original();
+    if (gdata->data.gotlb && !original_hud) {
       /* Five rows are the quiet default. The remaining five live behind a
          clipped, eased reveal; protocol storage remains the same ten rows. */
       float target = leaderboard_expanded ? 1.0f : 0.0f;
@@ -484,8 +691,9 @@ void ui_overlay(tenv* env) {
     }
 
     /* ---- what you are doing, directly under the leaderboard ---- */
-    /* Not in the background-size editor: only the map and the board there. */
-    if (!ai_mode_editor_bare()) {
+    /* Not in the background-size editor: only the map and the board there.
+       Not in Near Original either: the original has no stats. */
+    if (!ai_mode_editor_bare() && !original_hud) {
       const char* labels[] = {"SCORE", "KILLS", "RANK", "TIME", "PING", "FPS"};
       const char* values[] = {score_text, kills_text, rank_text,
                               time_text,  ping_text,  fps_text};
@@ -562,6 +770,9 @@ void ui_overlay(tenv* env) {
       }
     }
 
+    if (original_hud) {
+      draw_original_hud(env, draw);
+    } else {
     // The fullscreen gameplay window can inherit a large layout padding from
     // the menu theme. Use an explicit arena edge inset so the minimap is
     // anchored to the real top-left corner instead of drifting inward.
@@ -624,6 +835,7 @@ void ui_overlay(tenv* env) {
                                arena_theme_colour(ARENA_THEME_INK, 0.86f),
                                bearing_text, NULL,
                                0, NULL);
+    }
 
     /* The team, under the map it is drawn on. Nothing at all when there is no
        team, which is the common case. */

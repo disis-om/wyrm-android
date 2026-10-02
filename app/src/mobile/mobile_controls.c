@@ -10,6 +10,7 @@
 #include "../platform/android_team.h"
 #include "../platform/android_arrows.h"
 #include "mobile_hotkeys.h"
+#include "../platform/android_home.h"
 #include "../user.h"
 
 #ifdef VLITHER_ANDROID
@@ -35,6 +36,43 @@ int mobile_controls_steering_mode(tenv* env) {
   if (env->wnd->size[1] > env->wnd->size[0]) return MOBILE_STEERING_ARROW;
   return env->usr->usrs.mobile_controls.joystick_mode;
 }
+
+/*
+ * Near Original (OM, 2026-10-02): slither's own controls, from the original
+ * game's Main.as. Its unit is the short side / 480 (`force_game_scale`).
+ * Fixed joystick at (150u, H - 130u), boost at (W - 140u, H - 140u), both
+ * mirrored when the joystick is on the right (Wyrm's Handedness = the
+ * original's flip). Display and touch only.
+ */
+static float original_unit(tenv* env) {
+  int short_side = env->wnd->size[0] < env->wnd->size[1] ? env->wnd->size[0]
+                                                         : env->wnd->size[1];
+  return short_side / 480.0f;
+}
+
+static bool original_joystick_right(tenv* env) {
+  return env->usr->usrs.mobile_controls.handedness != MOBILE_LEFT_HANDED;
+}
+
+static void original_joystick_centre(tenv* env, float* x, float* y) {
+  float u = original_unit(env);
+  *x = original_joystick_right(env) ? env->wnd->size[0] - 150.0f * u
+                                    : 150.0f * u;
+  *y = env->wnd->size[1] - 130.0f * u;
+}
+
+static void original_boost_centre(tenv* env, float* x, float* y) {
+  float u = original_unit(env);
+  *x = original_joystick_right(env) ? 140.0f * u
+                                    : env->wnd->size[0] - 140.0f * u;
+  *y = env->wnd->size[1] - 140.0f * u;
+}
+
+/* The boost button's alpha (0.2 idle, 0.4 boosting) and the arrow's boost
+   glow (`accel_a`, `accel_fr`), stepped once a frame. */
+static float original_boost_alpha = 0.3f;
+static float original_accel_a = 0.0f;
+static float original_accel_fr = 0.0f;
 
 static void normalized_position(tenv* env, float nx, float ny, float* x,
                                 float* y) {
@@ -220,7 +258,9 @@ static float arrow_seed_distance(tenv* env) {
   mobile_arrow_settings* arrow = &env->usr->usrs.arrow_controls;
   int count = tdarray_length(gdata->data.snakes);
   float sc = count > 0 ? gdata->data.snakes[count - 1].sc : 1.0f;
-  float d = 58.0f * sc * gdata->data.gsc * arrow->separation;
+  /* Near Original: the original start distance (separation 1). */
+  float separation = android_home_near_original() ? 1.0f : arrow->separation;
+  float d = 58.0f * sc * gdata->data.gsc * separation;
   float least = 40.0f * control_scale(env);
   return d < least ? least : d;
 }
@@ -309,6 +349,97 @@ static void edit_touch_move(tenv* env, float x, float y) {
   }
 }
 
+/* The original's steering: the angle from the fixed joystick centre to the
+   finger, wherever it is on the joystick's half. */
+static void original_aim(tenv* env, float x, float y) {
+  mobile_controls_state* state = &env->usr->mobile_controls;
+  float cx, cy;
+  original_joystick_centre(env, &cx, &cy);
+  float dx = x - cx;
+  float dy = y - cy;
+  float length = sqrtf(dx * dx + dy * dy);
+  if (length < 0.5f) return;
+  state->joystick_axis[0] = dx / length;
+  state->joystick_axis[1] = dy / length;
+  state->aim_valid = true;
+}
+
+/* Near Original touch (Main.as touch begin): sideways the boost button takes
+   a finger within 160u of its centre; the arrow takes the first finger
+   anywhere; the joystick takes a finger on its half; upright a second finger
+   boosts (the original hides the button there). Releases go through the
+   normal path. */
+static bool original_touch(tenv* env, const SDL_Event* event, uint64_t finger,
+                           float x, float y) {
+  mobile_controls_state* state = &env->usr->mobile_controls;
+  bool upright = env->wnd->size[1] > env->wnd->size[0];
+  bool arrow = mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW;
+  if (event->type == SDL_EVENT_FINGER_DOWN) {
+    if (!state->zoom_down && inside_zoom(env, x, y)) {
+      state->zoom_down = true;
+      state->zoom_finger = finger;
+      set_zoom_from_touch(env, x, y);
+      return true;
+    }
+    if (!upright && !state->boost_down) {
+      float bx, by;
+      original_boost_centre(env, &bx, &by);
+      if (inside_circle(x, y, bx, by, 160.0f * original_unit(env))) {
+        state->boost_down = true;
+        state->boost_finger = finger;
+        state->boost_origin[0] = bx;
+        state->boost_origin[1] = by;
+        return true;
+      }
+    }
+    if (arrow) {
+      if (!state->joystick_down) {
+        state->joystick_down = true;
+        state->joystick_finger = finger;
+        state->joystick_origin[0] = x;
+        state->joystick_origin[1] = y;
+        state->arrow_drag_distance = 0.0f;
+        arrow_seed(env, x, y);
+        return true;
+      }
+      if (upright && !state->boost_down && state->joystick_finger != finger) {
+        state->boost_down = true;
+        state->boost_finger = finger;
+        state->boost_origin[0] = x;
+        state->boost_origin[1] = y;
+      }
+      return true;
+    }
+    bool on_side = original_joystick_right(env)
+                       ? x >= env->wnd->size[0] * 0.5f
+                       : x < env->wnd->size[0] * 0.5f;
+    if (on_side && !state->joystick_down) {
+      float cx, cy;
+      original_joystick_centre(env, &cx, &cy);
+      state->joystick_down = true;
+      state->joystick_finger = finger;
+      state->joystick_origin[0] = cx;
+      state->joystick_origin[1] = cy;
+      original_aim(env, x, y);
+    }
+    return true;
+  }
+  if (event->type == SDL_EVENT_FINGER_MOTION) {
+    if (state->joystick_down && state->joystick_finger == finger) {
+      if (arrow)
+        update_arrow(env, x, y);
+      else
+        original_aim(env, x, y);
+      return true;
+    }
+    if (state->zoom_down && state->zoom_finger == finger) {
+      set_zoom_from_touch(env, x, y);
+      return true;
+    }
+  }
+  return false;
+}
+
 bool mobile_controls_process_event(tenv* env, const void* raw_event) {
   const SDL_Event* event = raw_event;
   mobile_controls_state* state = &env->usr->mobile_controls;
@@ -395,6 +526,11 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
   // Visible on-screen buttons own their finger before joystick, boost or zoom.
   // This preserves the direct-touch isolation contract for every button.
   if (mobile_hotkeys_process_event(env, raw_event)) return true;
+
+  /* Near Original: slither's own fixed controls (releases fall through). */
+  if (android_home_near_original() && event->type != SDL_EVENT_FINGER_UP &&
+      event->type != SDL_EVENT_FINGER_CANCELED)
+    return original_touch(env, event, finger, x, y);
 
   if (event->type == SDL_EVENT_FINGER_DOWN) {
     float mid = env->wnd->size[0] * 0.5f;
@@ -594,7 +730,9 @@ void mobile_controls_update(tenv* env) {
 
     /* The setting reads as how much it lags, so it is one minus the catch-up.
        slither eases at 0.6, which is a smoothness of 0.4. */
-    float ease = clampf(1.0f - arrow->smoothness, 0.05f, 0.95f);
+    /* Near Original: slither's own 0.6 catch-up (smoothness 0.4). */
+    float smoothness = android_home_near_original() ? 0.4f : arrow->smoothness;
+    float ease = clampf(1.0f - smoothness, 0.05f, 0.95f);
     ease = 1.0f - powf(1.0f - ease, vfr);
     state->arrow_draw[0] += (state->arrow_vec[0] - state->arrow_draw[0]) * ease;
     state->arrow_draw[1] += (state->arrow_vec[1] - state->arrow_draw[1]) * ease;
@@ -608,6 +746,22 @@ void mobile_controls_update(tenv* env) {
       if (state->arrow_opacity < 0.0f) state->arrow_opacity = 0.0f;
       state->arrow_dead += vfr * 0.01f;
       if (state->arrow_dead > 1.0f) state->arrow_dead = 1.0f;
+    }
+
+    /* Near Original: the boost button's alpha (Main.as: 0.2 idle, up to 0.4
+       while boosting, 0.01 a frame) and the arrow's boost glow (accel_a
+       +0.02 / -0.03 a frame, accel_fr +0.15 while boosting). */
+    if (state->boost_down) {
+      original_boost_alpha += 0.01f * vfr;
+      if (original_boost_alpha > 0.4f) original_boost_alpha = 0.4f;
+      original_accel_a += 0.02f * vfr;
+      if (original_accel_a > 1.0f) original_accel_a = 1.0f;
+      original_accel_fr += 0.15f * vfr;
+    } else {
+      original_boost_alpha -= 0.01f * vfr;
+      if (original_boost_alpha < 0.2f) original_boost_alpha = 0.2f;
+      original_accel_a -= 0.03f * vfr;
+      if (original_accel_a < 0.0f) original_accel_a = 0.0f;
     }
   }
 
@@ -668,7 +822,9 @@ static bool arrow_geometry(tenv* env, float* ax, float* ay, float* dx,
      along the heading: the arrow is the steering vector made visible, so a
      longer drag genuinely puts it further out. Once the finger is gone it
      carries on forward as it fades — 260 pixels by the time it is invisible. */
-  float drift = 260.0f * scale * powf(state->arrow_dead, 2.5f);
+  /* Near Original: the release drift is in the original's unit. */
+  float drift = 260.0f * (android_home_near_original() ? original_unit(env) : scale) *
+                powf(state->arrow_dead, 2.5f);
   *ax = env->wnd->size[0] * 0.5f + state->arrow_draw[0] + *dx * drift;
   *ay = env->wnd->size[1] * 0.5f + state->arrow_draw[1] + *dy * drift;
   *length = 70.0f * scale * arrow->size;
@@ -807,6 +963,11 @@ static mobile_arrow_shape arrow_shape(int style) {
                                   0.00f, 0.16f, 0.22f, 0.42f};
   static const float triangle_x[] = {0.82f, -0.64f, -0.64f};
   static const float triangle_y[] = {0.00f, -0.26f, 0.26f};
+  /* slither's own arrow (Main.as, 64 px shape): shaft, then the head. */
+  static const float original_x[] = {-0.56f, -0.56f, 0.00f, 0.00f,
+                                     0.56f, 0.00f, 0.00f};
+  static const float original_y[] = {-0.3155f, 0.3155f, 0.2227f, 0.7423f,
+                                     0.00f, -0.7423f, -0.2227f};
 
   switch (style) {
     case MOBILE_ARROW_CLASSIC_WIDE:
@@ -817,6 +978,8 @@ static mobile_arrow_shape arrow_shape(int style) {
       return (mobile_arrow_shape){8, blade_x, blade_y};
     case MOBILE_ARROW_TRIANGLE:
       return (mobile_arrow_shape){3, triangle_x, triangle_y};
+    case MOBILE_ARROW_ORIGINAL:
+      return (mobile_arrow_shape){7, original_x, original_y};
     case MOBILE_ARROW_CURRENT:
     default:
       return (mobile_arrow_shape){7, current_x, current_y};
@@ -863,6 +1026,153 @@ static void draw_arrow(tenv* env, ImDrawList* dl) {
   ImDrawList_AddPolyline(dl, points, shape.count,
                          color_u32(0.015f, 0.022f, 0.028f, alpha),
                          ImDrawFlags_Closed, 4.0f);
+}
+
+/* ---- Near Original drawing (Main.as textures, drawn here) ---- */
+
+/* A soft dark halo outside a disc: DropShadowFilter(0, 90, black, 1, 14, 14). */
+static void original_halo(ImDrawList* dl, float cx, float cy, float radius,
+                          float spread, float alpha) {
+  for (int i = 0; i < 6; ++i) {
+    float t = (i + 0.5f) / 6.0f;
+    float fade = (1.0f - t) * (1.0f - t);
+    ImDrawList_AddCircle(dl, (ImVec2){cx, cy}, radius + spread * t,
+                         color_u32(0, 0, 0, alpha * 0.55f * fade), 48,
+                         spread / 6.0f + 0.5f);
+  }
+}
+
+/* The snake's arrow colour (Main.as 20085-20120): a quarter of white, three
+   quarters of the snake's colour, with the original's fixed overrides. */
+static ImU32 original_arrow_colour(tenv* env, float alpha) {
+  game_data* gdata = &env->usr->gdata;
+  snake* own = get_snake(gdata, gdata->data.snake_id);
+  int cv = own ? own->cv : 0;
+  if (cv < 0 || cv >= NUM_COLOR_GROUPS) cv = 0;
+  float r, g, b;
+  switch (cv) {
+    case 29: r = 0xCC; g = 0xCC; b = 0xCC; break;
+    case 30: r = 0x40; g = 0x40; b = 0xFF; break;
+    case 31: r = 0xFF; g = 0x40; b = 0x40; break;
+    case 32: r = 0xFF; g = 0xFF; b = 0x40; break;
+    case 33: r = 0xFF; g = 0x90; b = 0x40; break;
+    case 34: r = 0xFF; g = 0x40; b = 0xFF; break;
+    case 35: r = 0x50; g = 0xFF; b = 0x50; break;
+    case 36: r = 0xFF; g = 0x40; b = 0x40; break;
+    case 41: r = 0x80; g = 0x80; b = 0xFF; break;
+    default: {
+      vec3s c = gdata->cg_colors[cv];
+      float cr = roundf(c.x * 256.0f), cg = roundf(c.y * 256.0f),
+            cb = roundf(c.z * 256.0f);
+      r = roundf(64.0f + 0.75f * (cr > 255.0f ? 255.0f : cr));
+      g = roundf(64.0f + 0.75f * (cg > 255.0f ? 255.0f : cg));
+      b = roundf(64.0f + 0.75f * (cb > 255.0f ? 255.0f : cb));
+    }
+  }
+  if (r > 255.0f) r = 255.0f;
+  if (g > 255.0f) g = 255.0f;
+  if (b > 255.0f) b = 255.0f;
+  return color_u32(r / 255.0f, g / 255.0f, b / 255.0f, alpha);
+}
+
+/* slither's arrow: the 64 px polygon from its left-middle pivot, a 9 px black
+   mitred outline under a fill in the snake's colour, a soft shadow, scale
+   0.5 + 0.25 accel_a (in units, times the player's arrow size), and an extra
+   pulsing copy while boosting. */
+static void draw_original_arrow(tenv* env, ImDrawList* dl) {
+  float ax, ay, dx, dy, length, width;
+  if (!arrow_geometry(env, &ax, &ay, &dx, &dy, &length, &width)) return;
+  float alpha = env->usr->mobile_controls.arrow_opacity;
+  if (alpha > 1.0f) alpha = 1.0f;
+  float size = env->usr->usrs.arrow_controls.size;
+  if (!(size > 0.0f)) size = 1.0f;
+  float s = (0.5f + 0.25f * original_accel_a) * original_unit(env) * size;
+  float px = -dy;
+  float py = dx;
+  static const float shape_x[] = {15.0f, 15.0f, 41.0f, 41.0f, 67.0f, 41.0f, 41.0f};
+  static const float shape_y[] = {-10.88f, 10.88f, 7.68f, 25.6f, 0.0f, -25.6f, -7.68f};
+  ImVec2 p[7];
+  for (int i = 0; i < 7; ++i)
+    p[i] = (ImVec2){ax + dx * shape_x[i] * s + px * shape_y[i] * s,
+                    ay + dy * shape_x[i] * s + py * shape_y[i] * s};
+  for (int i = 3; i >= 1; --i)
+    ImDrawList_AddPolyline(dl, p, 7, color_u32(0, 0, 0, alpha * 0.10f),
+                           ImDrawFlags_Closed, (9.0f + 5.0f * i) * s);
+  ImDrawList_AddPolyline(dl, p, 7, color_u32(0, 0, 0, alpha),
+                         ImDrawFlags_Closed, 9.0f * s);
+  ImU32 fill = original_arrow_colour(env, alpha);
+  ImVec2 shaft[4] = {p[0], p[1], p[2], p[6]};
+  ImVec2 head[3] = {p[5], p[4], p[3]};
+  ImDrawList_AddConvexPolyFilled(dl, shaft, 4, fill);
+  ImDrawList_AddConvexPolyFilled(dl, head, 3, fill);
+  float glow = alpha * original_accel_a *
+               (0.5f + 0.5f * cosf(original_accel_fr));
+  if (glow > 0.004f) {
+    ImU32 bright = color_u32(1, 1, 1, glow * 0.5f);
+    ImDrawList_AddConvexPolyFilled(dl, shaft, 4, bright);
+    ImDrawList_AddConvexPolyFilled(dl, head, 3, bright);
+  }
+}
+
+/* The joystick (Main.as 26514-26539, 28315-28326): a #808080 disc r 64 at
+   scale 0.7 and a white knob r 48 at scale 0.375, both with a black halo and
+   alpha 0.35; the knob sits 24u from the centre toward the steering angle. */
+static void draw_original_joystick(tenv* env, ImDrawList* dl) {
+  mobile_controls_state* state = &env->usr->mobile_controls;
+  float u = original_unit(env);
+  float cx, cy;
+  original_joystick_centre(env, &cx, &cy);
+  float base = 64.0f * 0.7f * u;
+  original_halo(dl, cx, cy, base, 7.0f * 0.7f * u, 0.35f);
+  ImDrawList_AddCircleFilled(dl, (ImVec2){cx, cy}, base,
+                             color_u32(0.502f, 0.502f, 0.502f, 0.35f), 48);
+  float kx = cx, ky = cy;
+  if (state->aim_valid) {
+    kx += state->joystick_axis[0] * 24.0f * u;
+    ky += state->joystick_axis[1] * 24.0f * u;
+  }
+  float knob = 48.0f * 0.375f * u;
+  original_halo(dl, kx, ky, knob, 7.0f * 0.375f * u, 0.35f);
+  ImDrawList_AddCircleFilled(dl, (ImVec2){kx, ky}, knob,
+                             color_u32(1, 1, 1, 0.35f), 32);
+}
+
+/* The boost button, "boostie" (sheet0 of the original, 294 px, scale 0.35):
+   a #A0A0A0 disc r 110 with a soft black halo and a white triangle with a
+   shadow under it. Measured from the original image. */
+static void draw_original_boost(tenv* env, ImDrawList* dl) {
+  float cx, cy;
+  original_boost_centre(env, &cx, &cy);
+  float k = 0.35f * original_unit(env);
+  float a = original_boost_alpha;
+  static const float halo[] = {0.42f, 0.33f, 0.25f, 0.18f, 0.13f, 0.08f,
+                               0.05f, 0.02f, 0.01f};
+  for (int i = 0; i < 9; ++i)
+    ImDrawList_AddCircle(dl, (ImVec2){cx, cy}, (110.0f + 2.0f + 4.0f * i) * k,
+                         color_u32(0, 0, 0, a * halo[i]), 48, 4.0f * k + 0.5f);
+  ImDrawList_AddCircleFilled(dl, (ImVec2){cx, cy}, 110.0f * k,
+                             color_u32(0.627f, 0.627f, 0.627f, a), 48);
+  for (int i = 1; i <= 4; ++i) {
+    float drop = (2.0f + 4.0f * i) * k;
+    ImDrawList_AddTriangleFilled(
+        dl, (ImVec2){cx, cy - 41.5f * k + drop},
+        (ImVec2){cx + 56.0f * k, cy + 25.5f * k + drop},
+        (ImVec2){cx - 56.0f * k, cy + 25.5f * k + drop},
+        color_u32(0, 0, 0, a * 0.07f));
+  }
+  ImDrawList_AddTriangleFilled(dl, (ImVec2){cx, cy - 41.5f * k},
+                               (ImVec2){cx + 56.0f * k, cy + 25.5f * k},
+                               (ImVec2){cx - 56.0f * k, cy + 25.5f * k},
+                               color_u32(1, 1, 1, a));
+}
+
+static void draw_original_controls(tenv* env, ImDrawList* dl) {
+  if (mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW)
+    draw_original_arrow(env, dl);
+  else
+    draw_original_joystick(env, dl);
+  /* Upright the original has no button: a second finger boosts. */
+  if (env->wnd->size[0] >= env->wnd->size[1]) draw_original_boost(env, dl);
 }
 
 static void draw_zoom(tenv* env, ImDrawList* dl, bool editor) {
@@ -927,6 +1237,14 @@ void mobile_controls_draw_gameplay(tenv* env) {
   mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
   mobile_controls_state* state = &env->usr->mobile_controls;
   ImDrawList* dl = igGetForegroundDrawList_ViewportPtr(igGetMainViewport());
+  /* Near Original: slither's own controls; the zoom bar and the on-screen
+     buttons stay the player's. */
+  if (android_home_near_original()) {
+    draw_original_controls(env, dl);
+    draw_zoom(env, dl, false);
+    mobile_hotkeys_draw_gameplay(env);
+    return;
+  }
   float jx, jy, bx, by;
   normalized_position(env, cfg->joystick_x, cfg->joystick_y, &jx, &jy);
   normalized_position(env, cfg->boost_x, cfg->boost_y, &bx, &by);

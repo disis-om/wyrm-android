@@ -190,6 +190,13 @@ void imgui_init(tenv* env) {
         io->Fonts, "app/res/fonts/wyrm_body.ttf", 18 + i * 4, NULL, NULL);
   }
   
+  /* Near Original (OM, 2026-10-02): the original game's own faces, from the
+     slither.io app itself (OFL). Sized per draw call. */
+  usr->imgui_data.nunito_bold = ImFontAtlas_AddFontFromFileTTF(
+      io->Fonts, "app/res/fonts/nunito_bold.ttf", 22, NULL, NULL);
+  usr->imgui_data.nunito_black = ImFontAtlas_AddFontFromFileTTF(
+      io->Fonts, "app/res/fonts/nunito_black.ttf", 22, NULL, NULL);
+
   io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io->IniFilename = NULL;
 

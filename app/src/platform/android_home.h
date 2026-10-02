@@ -117,6 +117,13 @@ const char* android_home_performance_chip(void);
 void android_home_set_joystick_laser(bool on, float length);
 bool android_home_joystick_laser_on(void);
 float android_home_joystick_laser_length(void);
+/* Near Original (OM, 2026-10-02): slither's own HUD, joystick, boost and
+   arrow. Set by the app (Home); `server` is the arena's number for the
+   minimap label, 0 when unknown. Display and touch only, nothing is sent
+   differently. */
+void android_home_set_near_original(bool on, int server);
+bool android_home_near_original(void);
+int android_home_near_original_server(void);
 float android_home_death_opacity(void);
 void android_home_advance_death(tenv* env, float vfr);
 

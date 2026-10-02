@@ -330,6 +330,8 @@ fun UnifiedArenaLayoutEditor(
     /** Play orientation (OM, 2026-10-01): the editor turns with it, and so does its layout. */
     portrait: Boolean = false,
     onToggleOrientation: (() -> Unit)? = null,
+    /** Near Original: the original's map, board and stats are fixed, so not shown. */
+    hudEditable: Boolean = true,
 ) {
     var canvas by remember { mutableStateOf(Offset.Zero) }
     var options by remember { mutableStateOf<LayoutOptions?>(null) }
@@ -405,6 +407,7 @@ fun UnifiedArenaLayoutEditor(
                     )
                 }) { PaperKey(label = hotkey.name, opacity = keysOpacity, scale = keyScale) }
             }
+            if (hudEditable) {
             fun hudPosition(target: ArenaHudTarget) = hudPositions[target] ?: target.fallback
             Draggable(hudPosition(ArenaHudTarget.MINIMAP), area, { onMoveHud(ArenaHudTarget.MINIMAP, it) }, onLongPress = {
                 openOptions(
@@ -455,6 +458,7 @@ fun UnifiedArenaLayoutEditor(
                         .border(1.5.dp, Wyrm.Ink.copy(alpha = 0.45f), wyrmRounded(28.dp)),
                     contentAlignment = Alignment.Center,
                 ) { Text("CHAT", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = Wyrm.Ink) }
+            }
             }
         }
         EditorFooter(onReset, onSave, onCancel, Modifier.align(Alignment.BottomCenter), portrait, onToggleOrientation)

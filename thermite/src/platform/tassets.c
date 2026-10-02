@@ -21,6 +21,8 @@ static const char* packaged_assets[] = {
     "fonts/mono_bold.ttf",
     "fonts/mono_italic.ttf",
     "fonts/mono_regular.ttf",
+    "fonts/nunito_black.ttf",
+    "fonts/nunito_bold.ttf",
     "fonts/regular_bold.ttf",
     "fonts/regular_italic.ttf",
     "fonts/regular_regular.ttf",

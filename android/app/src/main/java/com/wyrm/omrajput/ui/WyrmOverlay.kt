@@ -505,7 +505,14 @@ class WyrmOverlay(private val activity: Activity) :
     private var arenaGateWatchdog: Job? = null
     private var lobbyQuickSettings by mutableStateOf(false)
     private var lobbyPing by mutableStateOf(0)
-    private var lobbyArena by mutableStateOf<Arena?>(null)
+    private val lobbyArenaState = mutableStateOf<Arena?>(null)
+    /** The lobby's arena; its number also labels the Near Original minimap. */
+    private var lobbyArena: Arena?
+        get() = lobbyArenaState.value
+        set(value) {
+            lobbyArenaState.value = value
+            NearOriginalStore.applyServer(value?.id ?: 0)
+        }
     private var lobbyJob: Job? = null
     /** Index into the background table; the engine holds the same order. */
     private var arenaBackground by mutableStateOf(0)
@@ -1573,9 +1580,13 @@ class WyrmOverlay(private val activity: Activity) :
                             boost = layoutPosition("layout.boost_x", "layout.boost_y"),
                             zoom = layoutPosition("layout.zoom_x", "layout.zoom_y"),
                             // Upright steers with the arrow only (OM, 2026-10-02): no joystick to place.
-                            showJoystick = !com.wyrm.omrajput.data.PlayOrientation.portrait &&
+                            // Near Original (OM, 2026-10-02): the original's joystick, boost and
+                            // HUD are fixed; only the on-screen buttons (and the zoom bar) move.
+                            showJoystick = !NearOriginalStore.on &&
+                                !com.wyrm.omrajput.data.PlayOrientation.portrait &&
                                 value("controls.joystick_mode").toInt() != 2,
-                            showBoost = value("controls.boost_mode").toInt() == 1,
+                            showBoost = !NearOriginalStore.on && value("controls.boost_mode").toInt() == 1,
+                            hudEditable = !NearOriginalStore.on,
                             showZoom = flag("controls.zoom_enabled"),
                             joystickSize = value("controls.joystick_size", 1f),
                             boostSize = value("controls.boost_size", 1f),
@@ -1983,6 +1994,8 @@ class WyrmOverlay(private val activity: Activity) :
             arenaLive = arena != null || ArenaDirectory.isValidEndpoint(arenaLabel),
             voiceRoomsLive = voiceState.rooms.count { it.active },
             voiceRoomName = voiceState.rooms.firstOrNull { it.active }?.name.orEmpty(),
+            nearOriginal = NearOriginalStore.on,
+            onNearOriginal = { if (interactive) NearOriginalStore.applyOn(it) },
             unreadNotifications = visibleNotifications().count { !it.read },
             insetTop = insetTop,
             insetBottom = insetBottom,
@@ -5904,6 +5917,8 @@ class WyrmOverlay(private val activity: Activity) :
             .put("length", JoystickLaserStore.length.toDouble()))
         .put("playPortrait", com.wyrm.omrajput.data.PlayOrientation.portrait)
         .put("performanceMode", com.wyrm.omrajput.data.WyrmPerformance.mode.key)
+        // Home › Near Original (OM, 2026-10-02): the same switch on every platform.
+        .put("nearOriginal", NearOriginalStore.on)
 
     private fun applySharedSettings(doc: org.json.JSONObject) {
         com.wyrm.omrajput.data.TrailSkin.from(doc.optJSONObject("skin"))?.let { skin ->
@@ -5936,6 +5951,10 @@ class WyrmOverlay(private val activity: Activity) :
                 if (length.isFinite()) putFloat("length", length.toFloat().coerceIn(JoystickLaserStore.RANGE))
             }.commit()
         }
+        if (doc.has("nearOriginal")) {
+            activity.getSharedPreferences("wyrm_near_original", android.content.Context.MODE_PRIVATE).edit()
+                .putBoolean("on", doc.optBoolean("nearOriginal", false)).commit()
+        }
         doc.optString("performanceMode").takeIf { key ->
             com.wyrm.omrajput.data.WyrmPerformance.Mode.entries.any { it.key == key }
         }?.let { key ->
@@ -5959,6 +5978,7 @@ class WyrmOverlay(private val activity: Activity) :
         com.wyrm.omrajput.data.WyrmPerformance.reload(activity)
         com.wyrm.omrajput.data.PlayOrientation.reload(activity)
         JoystickLaserStore.reload(activity)
+        NearOriginalStore.reload(activity)
         appTheme = WyrmThemeId.fromStored(uiPreferences.getString("theme", null))
         themeIntensity = uiPreferences.getFloat("theme_intensity", 0.5f).coerceIn(0f, 1f)
         Wyrm.applyTheme(appTheme, themeIntensity)

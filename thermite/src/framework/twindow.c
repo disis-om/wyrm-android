@@ -170,9 +170,19 @@ twindow* twindow_create(tenv* env, trender_func render_func,
   }
 
   SDL_SetAppMetadata(env->config.title, APP_VERSION, "com.wyrm.omrajput");
+#ifdef WYRM_DESKTOP
+  /* WYRM_DESKTOP: a hidden window the size of Compose's game area; its frames
+     are read back and drawn by Compose (desktop_bridge.c). */
+  int desktop_w = 1280, desktop_h = 720;
+  wyrm_desktop_initial_size(&desktop_w, &desktop_h);
+  window->handle = SDL_CreateWindow(
+      env->config.title, desktop_w, desktop_h,
+      SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
+#else
   window->handle = SDL_CreateWindow(
       env->config.title, 1280, 720,
       SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+#endif
   if (!window->handle) {
     SDL_Log("Vlither: SDL_CreateWindow failed: %s", SDL_GetError());
     free(window);
@@ -181,7 +191,12 @@ twindow* twindow_create(tenv* env, trender_func render_func,
   SDL_GetWindowSizeInPixels(window->handle, &window->size[0], &window->size[1]);
   glm_ivec2_copy(window->size, window->lsize);
   glm_ivec2_zero(window->lpos);
+#ifdef WYRM_DESKTOP
+  wyrm_desktop_window_created(window->handle);
+  env->config.fullscreen = false;
+#else
   env->config.fullscreen = true;
+#endif
   return window;
 #else
   if (glfwInit() == GLFW_FALSE) {
@@ -320,6 +335,9 @@ static void apply_pending_window_change(twindow* window) {
 }
 
 void twindow_poll_input(twindow* window) {
+#ifdef WYRM_DESKTOP
+  wyrm_desktop_apply_size(window->handle);
+#endif
 #ifdef VLITHER_ANDROID
   SDL_Event event;
   while (SDL_PollEvent(&event))
@@ -343,7 +361,10 @@ void twindow_wait_input(twindow* window) {
 }
 
 void twindow_toggle_fullscreen(twindow* window) {
-#ifdef VLITHER_ANDROID
+#if defined(WYRM_DESKTOP)
+  /* WYRM_DESKTOP: Compose owns full screen; the hidden window never goes. */
+  (void)window;
+#elif defined(VLITHER_ANDROID)
   SDL_SetWindowFullscreen(window->handle, true);
   window->env->config.fullscreen = true;
 #else

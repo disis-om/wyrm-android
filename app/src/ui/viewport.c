@@ -29,6 +29,11 @@ void ui_viewport(tenv* env) {
 void ui_viewport_resize(tenv* env) {
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
+  /* A 0 x 0 surface (window mid-resize, keyboard hiding, app going away) makes
+     VMA refuse the image, and the view built on that null image crashed inside
+     the Adreno driver (crash report 2026-10-02, 6.3.7). Keep the old images;
+     the next real resize rebuilds them. */
+  if (ctx->size[0] <= 0 || ctx->size[1] <= 0) return;
   renderer_resize(usr->r, ctx, ctx->size);
   for (int i = 0; i < ctx->fif; i++)
     igImplVulkan_RemoveTexture(usr->viewport_widget.scene[i]);

@@ -1,6 +1,7 @@
 #include "tassets.h"
 
-#ifdef VLITHER_ANDROID
+/* Wyrm Desktop reads app/res straight from disk. */
+#if defined(VLITHER_ANDROID) && !defined(WYRM_DESKTOP)
 
 #include <SDL3/SDL.h>
 #include <stdio.h>

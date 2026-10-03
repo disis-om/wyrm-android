@@ -47,10 +47,6 @@ import androidx.compose.ui.window.PopupProperties
 import com.wyrm.omrajput.data.Hotkey
 import java.util.Locale
 
-/** Settings snapshots are machine-readable and must never inherit decimal commas. */
-internal fun formatSettingNumber(value: Float): String =
-    String.format(Locale.US, "%.4f", value)
-
 /**
  * Where the controls sit, arranged sideways.
  *
@@ -580,18 +576,6 @@ private fun EditorFooterAction(label: String, color: Color, onClick: () -> Unit,
     )
 }
 
-/** The engine's default background scale (599/4096, `user_settings.c`). */
-internal const val DEFAULT_BG_SCALE = 599f / 4096f
-private const val BG_MIN = 0.05f
-private const val BG_MAX = 4f
-
-/** Slider position (0..1) ⇄ background scale, on a log scale so small sizes get room. */
-internal fun bgScaleAt(t: Float): Float = BG_MIN * Math.pow((BG_MAX / BG_MIN).toDouble(), t.coerceIn(0f, 1f).toDouble()).toFloat()
-internal fun bgSliderOf(scale: Float): Float =
-    (Math.log((scale.coerceIn(BG_MIN, BG_MAX) / BG_MIN).toDouble()) / Math.log((BG_MAX / BG_MIN).toDouble())).toFloat()
-
-/** "100%" is the arena's own size; the label a player reads everywhere. */
-internal fun bgScaleLabel(scale: Float): String = "${Math.round(scale / DEFAULT_BG_SCALE * 100f)}%"
 
 /**
  * Adjust arena background size (OM, 2026-10-01). The AI arena in landscape

@@ -144,7 +144,7 @@ class SettingsSearchEntry(
 
 /** The search field at the top of the hub. */
 @Composable
-internal fun SettingsSearchField(query: String, onQuery: (String) -> Unit) {
+internal fun SettingsSearchField(query: String, onQuery: (String) -> Unit, placeholder: String = "Search settings") {
     var focused by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val shape = wyrmRounded(13.dp)
@@ -163,7 +163,7 @@ internal fun SettingsSearchField(query: String, onQuery: (String) -> Unit) {
     ) {
         IosIcon(IosGlyph.MAGNIFIER, Wyrm.Quiet, size = 16.dp, semibold = true)
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            if (query.isEmpty()) Text("Search settings", style = style.copy(color = Wyrm.Quiet))
+            if (query.isEmpty()) Text(placeholder, style = style.copy(color = Wyrm.Quiet), maxLines = 1)
             BasicTextField(
                 value = query,
                 onValueChange = onQuery,

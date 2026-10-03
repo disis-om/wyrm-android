@@ -381,6 +381,14 @@ void android_team_set_chat_centre(float centre_x, float centre_y) {
 }
 
 void android_team_draw_chat_button(tenv* env) {
+#ifdef WYRM_DESKTOP
+  /* WYRM_DESKTOP: no team chat button (team and chat come later). */
+  (void)env;
+  chat_anchored = false;
+  chat_button[2] = 0.0f;
+  chat_button[3] = 0.0f;
+  return;
+#endif
   bool anchored = chat_anchored;
   chat_anchored = false;
   if (!env || chat_open) {

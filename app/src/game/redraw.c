@@ -40,10 +40,17 @@ void minimap_float_to_u8(const float* src, uint8_t* dst, int mmsz) {
  * are applied to the local snake only — another player's body is drawn from
  * what the arena actually said about it and nothing else.
  */
+/* Colour wheel and Wyrm beads off (OM, 2026-10-04, drop test): our own snake
+ * is drawn from the slither colours the join carried, exactly as everyone
+ * else sees it. 1 brings back the wheel colours and Wyrm beads on our snake
+ * (with WyrmBeads.BUILT_BEADS_OFF = false in the app). */
+#define WYRM_BUILT_BEADS_IN_ARENA 0
+
 static uint32_t built_skin_rgba(tenv* env, snake* o, int index) {
   tuser_data* usr = env->usr;
   if (!o->cusk || index < 0 || index >= MAX_SKIN_CODE_LEN) return 0;
-  if (o->id == usr->gdata.data.snake_id) return usr->usrs.skin_rgba[index];
+  if (o->id == usr->gdata.data.snake_id)
+    return WYRM_BUILT_BEADS_IN_ARENA ? usr->usrs.skin_rgba[index] : 0;
 
   /* Someone else's, if Wyrm's own backend has told us about them. Snake ids are
    * recycled between lives, so the name has to still match: otherwise whoever

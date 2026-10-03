@@ -49,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -305,7 +306,7 @@ internal fun IosSkinScreen(
                                 modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                                     savePattern(emptyList(), emptyList())
                                 })
-                            AirWheelToggle(showingWheel) { showingWheel = !showingWheel }
+                            AirWheelToggle(showingWheel, enabled = !WyrmBeads.BUILT_BEADS_OFF) { showingWheel = !showingWheel }
                         }
                         val codeStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 15.sp, color = Wyrm.Ink)
                         BasicTextField(
@@ -336,14 +337,14 @@ internal fun IosSkinScreen(
                         // The wheel opens above the beads; the beads stay below it
                         // (OM, 2026-10-03: one group, every bead the same size).
                         AnimatedVisibility(
-                            visible = showingWheel,
+                            visible = showingWheel && !WyrmBeads.BUILT_BEADS_OFF,
                             enter = fadeIn(iosSpring(0.38f, 0.84f)) + scaleIn(iosSpring(0.38f, 0.84f), initialScale = 0.96f),
                             exit = fadeOut(iosSpring(0.38f, 0.84f)),
                             label = "wheel",
                         ) {
                             Column {
                                 AirWheelPanel(textures, prefs, onColour = { wheelRgb = it }) { kind, rgb ->
-                                    if (customGroups.size < 256) {
+                                    if (!WyrmBeads.BUILT_BEADS_OFF && customGroups.size < 256) {
                                         savePattern(customGroups + AirSkin.nearestGroup(rgb), customColors + (AirSkin.marker(kind) or rgb))
                                     }
                                 }
@@ -355,11 +356,12 @@ internal fun IosSkinScreen(
                         AllBeadGrid(
                             textures,
                             wheelRgb,
+                            wyrmEnabled = !WyrmBeads.BUILT_BEADS_OFF,
                             onPickGroup = { group ->
                                 if (customGroups.size < 256) savePattern(customGroups + group, customColors + 0)
                             },
                             onPickWyrm = { kind ->
-                                if (customGroups.size < 256) {
+                                if (!WyrmBeads.BUILT_BEADS_OFF && customGroups.size < 256) {
                                     val argb = WyrmBeads.argb(kind, wheelRgb)
                                     savePattern(customGroups + AirSkin.nearestGroup(argb and 0xFFFFFF), customColors + argb)
                                 }
@@ -761,6 +763,7 @@ internal fun BeadGrid(textures: SkinTextures?, onPick: (Int) -> Unit) {
 internal fun AllBeadGrid(
     textures: SkinTextures?,
     tint: Int,
+    wyrmEnabled: Boolean = true,
     onPickGroup: (Int) -> Unit,
     onPickWyrm: (Int) -> Unit,
 ) {
@@ -775,12 +778,16 @@ internal fun AllBeadGrid(
                         if (index >= total) return@Box
                         val group = groups.getOrNull(index)
                         val kind = index - groups.size
+                        // Wyrm's beads, when switched off, stay in view but faded
+                        // and cannot be picked.
+                        val usable = group != null || wyrmEnabled
                         Box(
                             Modifier
                                 .fillMaxSize()
+                                .alpha(if (usable) 1f else 0.28f)
                                 .clip(CircleShape)
                                 .background(Wyrm.Card.copy(alpha = 0.72f))
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                .clickable(enabled = usable, interactionSource = remember { MutableInteractionSource() }, indication = null) {
                                     if (group != null) onPickGroup(group) else onPickWyrm(kind)
                                 }
                                 .padding(5.dp),
@@ -1324,12 +1331,13 @@ private fun SwingTag(
 
 /** The pattern toggle: a colour-wheel glyph while the beads show, a bead grid while the wheel does. */
 @Composable
-internal fun AirWheelToggle(showingWheel: Boolean, onClick: () -> Unit) {
+internal fun AirWheelToggle(showingWheel: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         Modifier
             .size(38.dp)
+            .alpha(if (enabled) 1f else 0.28f)
             .glassDisc()
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+            .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (showingWheel) {

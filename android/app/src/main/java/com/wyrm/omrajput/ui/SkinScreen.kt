@@ -720,11 +720,6 @@ internal fun SwitchRow(
 }
 
 @Composable
-internal fun PaperSwitch(on: Boolean, onToggle: (Boolean) -> Unit) {
-    LiquidSwitch(on = on, onToggle = onToggle)
-}
-
-@Composable
 internal fun WearButton(onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()

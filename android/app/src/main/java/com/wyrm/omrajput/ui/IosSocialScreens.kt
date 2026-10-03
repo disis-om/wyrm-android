@@ -173,30 +173,6 @@ fun IosPageChrome(
     }
 }
 
-/** SwiftUI `.refreshable`: pull, a spinner at the top, release to refresh. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun IosRefreshable(refreshing: Boolean, onRefresh: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    val state = rememberPullToRefreshState()
-    PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = onRefresh,
-        state = state,
-        modifier = modifier,
-        indicator = {
-            val fraction = if (refreshing) 1f else state.distanceFraction.coerceIn(0f, 1f)
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .graphicsLayer {
-                        alpha = fraction
-                        translationY = 14.dp.toPx() * fraction
-                    },
-            ) { if (fraction > 0.02f) IosSpinner(size = 22.dp) }
-        },
-    ) { content() }
-}
-
 /* ----------------------------------------------------------- leaderboard */
 
 @Composable
@@ -213,6 +189,11 @@ fun IosLeaderboardScreen(
     onOpenPlayer: (String) -> Unit,
 ) {
     val rows = if (sort == 0) score else kills
+    var query by remember { mutableStateOf("") }
+    // Keep the real rank: searching narrows the list, it does not re-rank it.
+    val shown = remember(rows, query) {
+        rows.withIndex().filter { (_, player) -> leaderboardMatches(player, query) }
+    }
     IosPageChrome("Leaderboard", insetTop, onBack) {
         IosRefreshable(refreshing, onRefresh, Modifier.weight(1f)) {
             // Lazy: only the rows on screen are built, so switching boards is instant.
@@ -220,17 +201,43 @@ fun IosLeaderboardScreen(
                 item(key = "sort") {
                     LiquidSegmented(listOf("Score", "Kills"), sort, onSort, Modifier.padding(16.dp).fillMaxWidth())
                 }
+                if (rows.isNotEmpty()) {
+                    item(key = "search") {
+                        SettingsSearchField(query, { query = it }, placeholder = "Name, @username, score or kills")
+                    }
+                }
                 if (rows.isEmpty()) {
                     item(key = "empty") { IosPaperCard { IosEmptyPanel("No ranked players yet", "Finished runs will appear here.") } }
+                } else if (shown.isEmpty()) {
+                    item(key = "no-match") { IosPaperCard { IosEmptyPanel("No one found", "Nobody on this board matches “${query.trim()}”.") } }
                 }
-                itemsIndexed(rows, key = { _, player -> "$sort-${player.id}" }) { index, player ->
-                    Box(Modifier.padding(horizontal = 16.dp).cardSegment(first = index == 0, last = index == rows.lastIndex)) {
-                        PlayerRankRow(index + 1, player, if (sort == 0) player.highestScore else player.kills) { onOpenPlayer(player.id) }
+                itemsIndexed(shown, key = { _, row -> "$sort-${row.value.id}" }) { index, row ->
+                    val player = row.value
+                    Box(Modifier.padding(horizontal = 16.dp).cardSegment(first = index == 0, last = index == shown.lastIndex)) {
+                        PlayerRankRow(row.index + 1, player, if (sort == 0) player.highestScore else player.kills) { onOpenPlayer(player.id) }
                     }
                 }
                 item(key = "end") { Spacer(Modifier.height(24.dp + insetBottom)) }
             }
         }
+    }
+}
+
+/**
+ * Leaderboard search (same rules as iOS `wyrmLeaderboardMatches`): every word
+ * must hit one of name, @username, in-game name, score or kills. A number is
+ * matched against the digits of score and kills, so "1,500" finds 1500.
+ */
+internal fun leaderboardMatches(player: ApiPlayer, query: String): Boolean {
+    val words = query.lowercase().split(' ').map { it.trim() }.filter { it.isNotEmpty() }
+    if (words.isEmpty()) return true
+    val names = listOf(player.displayName, player.username.orEmpty(), player.ingameName.orEmpty()).map { it.lowercase() }
+    val numbers = listOf(player.highestScore.toString(), player.kills.toString())
+    return words.all { word ->
+        val bare = word.removePrefix("@")
+        val digits = word.filter { it.isDigit() }
+        val numeric = digits.isNotEmpty() && word.all { it.isDigit() || it == ',' || it == '.' }
+        (bare.isNotEmpty() && names.any { bare in it }) || (numeric && numbers.any { digits in it })
     }
 }
 

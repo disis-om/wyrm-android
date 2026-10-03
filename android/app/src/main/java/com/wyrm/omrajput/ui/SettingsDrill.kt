@@ -73,6 +73,16 @@ import kotlin.math.roundToInt
 
 private val nums = TextStyle(fontFeatureSettings = "tnum")
 
+/**
+ * True where a settings page is shown inside another layout that has its own
+ * title (Wyrm Desktop's two-pane Settings): the page drops its "‹ Settings"
+ * bar and keeps its section tabs and content. Android never sets it.
+ */
+val LocalSettingsEmbedded = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/** False where there is no touch screen (Wyrm Desktop): joystick-only sections are left out. */
+val LocalTouchControls = androidx.compose.runtime.staticCompositionLocalOf { true }
+
 @Composable
 internal fun SettingsDrillScaffold(
     title: String,
@@ -91,6 +101,16 @@ internal fun SettingsDrillScaffold(
 ) {
     if (contentOnly) {
         Column(modifier = Modifier.fillMaxWidth()) { content() }
+        return
+    }
+    if (LocalSettingsEmbedded.current) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            sectionTabs?.invoke()
+            Column(modifier = Modifier.weight(1f).adjustViewport().verticalScroll(rememberScrollState())) {
+                content()
+                Spacer(Modifier.height(32.dp))
+            }
+        }
         return
     }
     Column(

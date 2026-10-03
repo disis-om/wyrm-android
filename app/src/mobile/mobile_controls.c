@@ -445,6 +445,41 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
   mobile_controls_state* state = &env->usr->mobile_controls;
   mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
 
+#ifdef WYRM_DESKTOP
+  /* WYRM_DESKTOP: the snake follows the mouse from the middle of the game
+     area; left click, Space, W or Up boosts. ImGui still sees every event. */
+  if (event->type == SDL_EVENT_MOUSE_MOTION) {
+    float dx = event->motion.x - env->wnd->size[0] * 0.5f;
+    float dy = event->motion.y - env->wnd->size[1] * 0.5f;
+    float length = sqrtf(dx * dx + dy * dy);
+    if (length > 1.0f) {
+      state->joystick_axis[0] = dx / length;
+      state->joystick_axis[1] = dy / length;
+      state->aim_valid = true;
+    }
+    return false;
+  }
+  if ((event->type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+       event->type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+      event->button.button == SDL_BUTTON_LEFT) {
+    state->boost_down = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+    return false;
+  }
+  if ((event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) &&
+      (event->key.scancode == SDL_SCANCODE_SPACE ||
+       event->key.scancode == SDL_SCANCODE_W ||
+       event->key.scancode == SDL_SCANCODE_UP)) {
+    state->boost_down = event->type == SDL_EVENT_KEY_DOWN;
+    return true;
+  }
+  if (event->type == SDL_EVENT_KEY_DOWN &&
+      event->key.scancode == SDL_SCANCODE_AC_BACK) {
+    state->back_requested = true; /* Esc in the shell: leave the match */
+    return true;
+  }
+  return false;
+#endif
+
   if (event->type == SDL_EVENT_KEY_DOWN &&
       event->key.scancode == SDL_SCANCODE_AC_BACK) {
     state->back_requested = true;
@@ -1266,6 +1301,11 @@ static void draw_zoom(tenv* env, ImDrawList* dl, bool editor) {
 }
 
 void mobile_controls_draw_gameplay(tenv* env) {
+#ifdef WYRM_DESKTOP
+  /* WYRM_DESKTOP: mouse and keyboard; no touch controls are drawn. */
+  (void)env;
+  return;
+#endif
 #ifdef VLITHER_ANDROID
   if (env->usr->gdata.curr_screen != PLAYING ||
       (env->usr->gdata.conn != CONNECTED &&

@@ -1,6 +1,5 @@
 package com.wyrm.omrajput.ui
 
-import android.graphics.BlurMaskFilter
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -118,11 +117,11 @@ enum class AuthStage { LANDING, CREATE_USERNAME, CREATE_PASSWORD, CREATE_CONFIRM
 
 enum class UsernameAvailability { IDLE, CHECKING, AVAILABLE, TAKEN, UNAVAILABLE }
 
-private enum class ConfirmationState { IDLE, CHECKING, MATCHED, MISMATCHED }
+internal enum class ConfirmationState { IDLE, CHECKING, MATCHED, MISMATCHED }
 
-private enum class AuthField { USERNAME, PASSWORD, CONFIRMATION }
+internal enum class AuthField { USERNAME, PASSWORD, CONFIRMATION }
 
-private val usernamePattern = Regex("^[A-Za-z0-9_]{3,20}$")
+internal val usernamePattern = Regex("^[A-Za-z0-9_]{3,20}$")
 
 @Composable
 fun CinematicAuthScreen(
@@ -426,7 +425,7 @@ fun CinematicAuthScreen(
 
 /** SwiftUI's `wyrmBlurFade`: content materialises out of a 15 pt blur. */
 @Composable
-private fun AnimatedVisibilityScope.blurFade(): Modifier {
+internal fun AnimatedVisibilityScope.blurFade(): Modifier {
     val blur by transition.animateFloat(
         transitionSpec = { iosSpring<Float>(0.58f, 0.86f) },
         label = "blur-fade",
@@ -438,7 +437,7 @@ private fun AnimatedVisibilityScope.blurFade(): Modifier {
 }
 
 @Composable
-private fun Landing(
+internal fun Landing(
     dotFieldHeight: Dp,
     safeBottom: Dp,
     onCreate: () -> Unit,
@@ -505,7 +504,7 @@ private fun Landing(
 }
 
 @Composable
-private fun CredentialStage(
+internal fun CredentialStage(
     stage: AuthStage,
     keyboardHeight: Dp,
     username: String,
@@ -692,7 +691,7 @@ private fun CredentialStage(
 
 /** The white composer every credential sits in: 60 tall, 17 continuous corners. */
 @Composable
-private fun ComposerShell(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+internal fun ComposerShell(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
     val shape = wyrmRounded(17.dp)
     Row(
         modifier = Modifier
@@ -709,7 +708,7 @@ private fun ComposerShell(content: @Composable androidx.compose.foundation.layou
 }
 
 @Composable
-private fun AuthField(
+internal fun AuthField(
     value: String,
     onValue: (String) -> Unit,
     placeholder: String,
@@ -747,7 +746,7 @@ private fun AuthField(
 }
 
 @Composable
-private fun AvailabilityIndicator(state: UsernameAvailability) {
+internal fun AvailabilityIndicator(state: UsernameAvailability) {
     when (state) {
         UsernameAvailability.CHECKING -> IosSpinner(size = 17.dp)
         UsernameAvailability.AVAILABLE -> Box(
@@ -764,7 +763,7 @@ private fun AvailabilityIndicator(state: UsernameAvailability) {
 }
 
 @Composable
-private fun MatchLabel(text: String, glyph: IosGlyph, colour: Color) {
+internal fun MatchLabel(text: String, glyph: IosGlyph, colour: Color) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.size(18.dp).clip(CircleShape).background(colour), contentAlignment = Alignment.Center) {
             IosIcon(glyph, Color.White, size = 11.dp, weight = 3.6f)
@@ -779,7 +778,7 @@ private fun MatchLabel(text: String, glyph: IosGlyph, colour: Color) {
  * already is. Ink when it can go, a quiet well while it cannot.
  */
 @Composable
-private fun KeyboardAction(title: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun KeyboardAction(title: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
@@ -802,7 +801,7 @@ private fun KeyboardAction(title: String, enabled: Boolean, modifier: Modifier =
 
 /** The welcome screen's buttons: a solid ink capsule, or a ghost one with a hairline. */
 @Composable
-private fun WelcomeCapsule(title: String, filled: Boolean, onClick: () -> Unit) {
+internal fun WelcomeCapsule(title: String, filled: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -892,7 +891,11 @@ fun WyrmBrandMark(size: Dp, modifier: Modifier = Modifier, layer: androidx.compo
         val path = Path().apply {
             moveTo(left + w * 0.06f, top + h * 0.10f)
             cubicTo(left + w * 0.13f, top + h * 0.92f, left + w * 0.30f, top + h * 0.96f, left + w * 0.36f, top + h * 0.38f)
+            // Each curve its own subpath: the round caps draw the inner peaks
+            // (Skia on the desktop squared them off at the round joins).
+            moveTo(left + w * 0.36f, top + h * 0.38f)
             cubicTo(left + w * 0.42f, top + h * 0.94f, left + w * 0.58f, top + h * 0.94f, left + w * 0.64f, top + h * 0.38f)
+            moveTo(left + w * 0.64f, top + h * 0.38f)
             cubicTo(left + w * 0.70f, top + h * 0.96f, left + w * 0.87f, top + h * 0.92f, left + w * 0.94f, top + h * 0.10f)
         }
         drawPath(
@@ -909,7 +912,7 @@ fun WyrmBrandMark(size: Dp, modifier: Modifier = Modifier, layer: androidx.compo
 }
 
 @Composable
-private fun WyrmDotField(modifier: Modifier) {
+internal fun WyrmDotField(modifier: Modifier) {
     Canvas(modifier) {
         val spacing = 19.dp.toPx()
         val r = 1.2.dp.toPx()
@@ -923,50 +926,6 @@ private fun WyrmDotField(modifier: Modifier) {
             }
             y += spacing
         }
-    }
-}
-
-/** UIActivityIndicatorView: eight spokes, the lit one stepping round. */
-@Composable
-fun IosSpinner(size: Dp = 20.dp, colour: Color = Wyrm.Quiet) {
-    val transition = rememberInfiniteTransition(label = "spinner")
-    val turn by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 8f,
-        animationSpec = infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Restart),
-        label = "spinner-step",
-    )
-    Canvas(Modifier.size(size)) {
-        val head = turn.toInt() % 8
-        val radius = this.size.minDimension / 2f
-        val stroke = radius * 0.2f
-        for (i in 0 until 8) {
-            val age = (head - i + 8) % 8
-            val alpha = 1f - age / 8f * 0.78f
-            rotate(i * 45f) {
-                drawLine(
-                    color = colour.copy(alpha = colour.alpha * alpha),
-                    start = Offset(center.x, center.y - radius * 0.46f),
-                    end = Offset(center.x, center.y - radius + stroke / 2f),
-                    strokeWidth = stroke,
-                    cap = StrokeCap.Round,
-                )
-            }
-        }
-    }
-}
-
-/** SwiftUI `.shadow(color:radius:y:)` behind a rounded rectangle. */
-fun Modifier.iosShadow(color: Color, radius: Dp, y: Dp, corner: Dp): Modifier = drawBehind {
-    if (color.alpha <= 0f) return@drawBehind
-    drawIntoCanvas { canvas ->
-        val paint = android.graphics.Paint().apply {
-            isAntiAlias = true
-            this.color = color.toArgb()
-            maskFilter = BlurMaskFilter(radius.toPx().coerceAtLeast(0.5f), BlurMaskFilter.Blur.NORMAL)
-        }
-        val r = corner.toPx()
-        canvas.nativeCanvas.drawRoundRect(0f, y.toPx(), size.width, size.height + y.toPx(), r, r, paint)
     }
 }
 

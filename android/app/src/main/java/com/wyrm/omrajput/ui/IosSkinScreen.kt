@@ -333,33 +333,38 @@ internal fun IosSkinScreen(
                             },
                         )
                         IosSectionLabel("Build a Wyrm")
-                        AnimatedContent(
-                            targetState = showingWheel,
-                            transitionSpec = {
-                                (fadeIn(iosSpring(0.38f, 0.84f)) + scaleIn(iosSpring(0.38f, 0.84f), initialScale = 0.96f)) togetherWith fadeOut(iosSpring(0.38f, 0.84f))
-                            },
-                            label = "wheel-or-beads",
-                        ) { wheel ->
-                            if (wheel) {
+                        // The wheel opens above the beads; the beads stay below it
+                        // (OM, 2026-10-03: one group, every bead the same size).
+                        AnimatedVisibility(
+                            visible = showingWheel,
+                            enter = fadeIn(iosSpring(0.38f, 0.84f)) + scaleIn(iosSpring(0.38f, 0.84f), initialScale = 0.96f),
+                            exit = fadeOut(iosSpring(0.38f, 0.84f)),
+                            label = "wheel",
+                        ) {
+                            Column {
                                 AirWheelPanel(textures, prefs, onColour = { wheelRgb = it }) { kind, rgb ->
                                     if (customGroups.size < 256) {
                                         savePattern(customGroups + AirSkin.nearestGroup(rgb), customColors + (AirSkin.marker(kind) or rgb))
                                     }
                                 }
-                            } else {
-                                BeadGrid(textures) { group ->
-                                    if (customGroups.size < 256) savePattern(customGroups + group, customColors + 0)
+                                Spacer(Modifier.height(16.dp))
+                            }
+                        }
+                        // Slither's beads first, then Wyrm's own; the arena gets
+                        // each Wyrm bead's nearest slither colour.
+                        AllBeadGrid(
+                            textures,
+                            wheelRgb,
+                            onPickGroup = { group ->
+                                if (customGroups.size < 256) savePattern(customGroups + group, customColors + 0)
+                            },
+                            onPickWyrm = { kind ->
+                                if (customGroups.size < 256) {
+                                    val argb = WyrmBeads.argb(kind, wheelRgb)
+                                    savePattern(customGroups + AirSkin.nearestGroup(argb and 0xFFFFFF), customColors + argb)
                                 }
-                            }
-                        }
-                        // Wyrm's own beads; the arena gets each one's nearest slither colour.
-                        IosSectionLabel("Wyrm beads")
-                        WyrmBeadGrid(textures, wheelRgb) { kind ->
-                            if (customGroups.size < 256) {
-                                val argb = WyrmBeads.argb(kind, wheelRgb)
-                                savePattern(customGroups + AirSkin.nearestGroup(argb and 0xFFFFFF), customColors + argb)
-                            }
-                        }
+                            },
+                        )
                     }
                     SkinSection.ACCESSORIES -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
@@ -468,7 +473,7 @@ internal fun IosSkinScreen(
  * exactly as the preview draws it.
  */
 @Composable
-private fun ShareSkinButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun ShareSkinButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
@@ -494,7 +499,7 @@ private fun ShareSkinButton(onClick: () -> Unit, modifier: Modifier = Modifier) 
 }
 
 @Composable
-private fun AdjustBackgroundButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun AdjustBackgroundButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
@@ -556,7 +561,7 @@ internal fun SkinTrialBanner(author: String, onWear: () -> Unit, onBack: () -> U
 }
 
 @Composable
-private fun InlineHeader(title: String, onBack: () -> Unit) {
+internal fun InlineHeader(title: String, onBack: () -> Unit) {
     Row(
         Modifier.padding(start = 20.dp, end = 20.dp, top = 15.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -577,7 +582,7 @@ private fun InlineHeader(title: String, onBack: () -> Unit) {
 
 /** SwiftUI `LazyVGrid(.adaptive(minimum:), spacing: 10)` inside 16 dp margins. */
 @Composable
-private fun TileGrid(
+internal fun TileGrid(
     minimum: Dp,
     count: Int,
     aspect: Float? = 1f,
@@ -604,14 +609,14 @@ private fun TileGrid(
 }
 
 @Composable
-private fun SelectionCheck(modifier: Modifier) {
+internal fun SelectionCheck(modifier: Modifier) {
     Box(modifier.padding(6.dp).size(18.dp).clip(CircleShape).background(Wyrm.Ink), contentAlignment = Alignment.Center) {
         IosIcon(IosGlyph.CHECKMARK, Wyrm.Paper, size = 11.dp, weight = 3.4f)
     }
 }
 
 @Composable
-private fun SelectionTile(selected: Boolean, label: String, onClick: () -> Unit) {
+internal fun SelectionTile(selected: Boolean, label: String, onClick: () -> Unit) {
     val shape = wyrmRounded(15.dp)
     Box(
         Modifier
@@ -628,7 +633,7 @@ private fun SelectionTile(selected: Boolean, label: String, onClick: () -> Unit)
 }
 
 @Composable
-private fun ImageTile(
+internal fun ImageTile(
     selected: Boolean,
     image: ImageBitmap?,
     inset: Dp,
@@ -657,7 +662,7 @@ private fun ImageTile(
 }
 
 @Composable
-private fun BackgroundTile(item: SkinBackgroundAsset, image: ImageBitmap?, selected: Boolean, onClick: () -> Unit) {
+internal fun BackgroundTile(item: SkinBackgroundAsset, image: ImageBitmap?, selected: Boolean, onClick: () -> Unit) {
     val shape = wyrmRounded(16.dp)
     Column(
         Modifier
@@ -705,7 +710,7 @@ private fun BackgroundTile(item: SkinBackgroundAsset, image: ImageBitmap?, selec
 }
 
 @Composable
-private fun SkinSlider(title: String, setting: Setting, range: ClosedFloatingPointRange<Float>, onChange: (Setting, List<Float>) -> Unit) {
+internal fun SkinSlider(title: String, setting: Setting, range: ClosedFloatingPointRange<Float>, onChange: (Setting, List<Float>) -> Unit) {
     var value by remember(setting.id) { mutableStateOf(setting.number) }
     LaunchedEffect(setting.number) { value = setting.number }
     Column(
@@ -721,7 +726,7 @@ private fun SkinSlider(title: String, setting: Setting, range: ClosedFloatingPoi
 }
 
 @Composable
-private fun BeadGrid(textures: SkinTextures?, onPick: (Int) -> Unit) {
+internal fun BeadGrid(textures: SkinTextures?, onPick: (Int) -> Unit) {
     val groups = SkinCatalog.validGroups
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         for (row in 0 until (groups.size + 6) / 7) {
@@ -747,9 +752,59 @@ private fun BeadGrid(textures: SkinTextures?, onPick: (Int) -> Unit) {
     }
 }
 
+/**
+ * Every bead in one grid, all one size (`WyrmAllBeadsGrid` on iOS): slither's
+ * beads first, then Wyrm's own (`WyrmBeads`); patterned Wyrm beads take the
+ * colour wheel's colour.
+ */
+@Composable
+internal fun AllBeadGrid(
+    textures: SkinTextures?,
+    tint: Int,
+    onPickGroup: (Int) -> Unit,
+    onPickWyrm: (Int) -> Unit,
+) {
+    val groups = SkinCatalog.validGroups
+    val total = groups.size + WyrmBeads.COUNT
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (row in 0 until (total + 6) / 7) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (column in 0 until 7) {
+                    val index = row * 7 + column
+                    Box(Modifier.weight(1f).aspectRatio(1f)) {
+                        if (index >= total) return@Box
+                        val group = groups.getOrNull(index)
+                        val kind = index - groups.size
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                                .background(Wyrm.Card.copy(alpha = 0.72f))
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                    if (group != null) onPickGroup(group) else onPickWyrm(kind)
+                                }
+                                .padding(5.dp),
+                        ) {
+                            if (group != null) {
+                                textures?.beads?.get(group)?.let { image -> Canvas(Modifier.fillMaxSize()) { drawFitted(image) } }
+                            } else {
+                                textures?.wyrmBeads?.get(kind)?.let { image ->
+                                    Canvas(Modifier.fillMaxSize()) {
+                                        drawFitted(image, if (WyrmBeads.tinted[kind]) tint.rgbColor() else null)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** Wyrm's own beads (`WyrmBeads`). Patterned ones take the colour wheel's colour. */
 @Composable
-private fun WyrmBeadGrid(textures: SkinTextures?, tint: Int, onPick: (Int) -> Unit) {
+internal fun WyrmBeadGrid(textures: SkinTextures?, tint: Int, onPick: (Int) -> Unit) {
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         for (row in 0 until (WyrmBeads.COUNT + 5) / 6) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -780,7 +835,7 @@ private fun WyrmBeadGrid(textures: SkinTextures?, tint: Int, onPick: (Int) -> Un
 
 /** `WyrmMiniSnake`: a preset's beads in a line, 8/48 of a bead apart. */
 @Composable
-private fun MiniSnake(textures: SkinTextures?, groups: List<Int>, modifier: Modifier) {
+internal fun MiniSnake(textures: SkinTextures?, groups: List<Int>, modifier: Modifier) {
     Canvas(modifier) {
         val beads = textures?.beads ?: return@Canvas
         val bead = min(size.height * 0.87f, 38.dp.toPx())
@@ -830,7 +885,7 @@ private fun DrawScope.drawFilled(image: ImageBitmap, alpha: Float = 1f) {
  * with their `ksmc_t` shadows in AIR's order, the eyes, accessory and tag.
  */
 @Composable
-private fun SkinPreview(
+internal fun SkinPreview(
     textures: SkinTextures?,
     groups: List<Int>,
     colors: List<Int>,
@@ -1045,6 +1100,90 @@ private fun DrawScope.drawSkinRows(
     drawSkinHead(t, head, scale, px, preset, custom, accessoryId, look) { img, l, tp, w, h, tint -> draw(img, l, tp, w, h, tint, 1f) }
 }
 
+/** Bead widths a one-line snake of [total] beads spans, head room included. */
+internal fun skinStripSpan(total: Int = SKIN_ROW * 2): Float = 1f + (total - 1) * (8f / 48f) + 0.7f
+
+/**
+ * The same snake as [drawSkinRows] in one line (Wyrm Desktop's wide preview,
+ * OM 2026-10-02): all 256 beads from the tail on the left to the head on the
+ * right at [y], with the same beads, AIR shadows, eyes, accessory and look.
+ * [total] shortens the line (the desktop's preset pictures draw 160).
+ */
+internal fun DrawScope.drawSkinStrip(
+    t: SkinTextures,
+    groups: List<Int>,
+    colors: List<Int>,
+    preset: Int,
+    custom: Boolean,
+    accessoryId: Int,
+    look: WyrmLookSpec,
+    x: Float,
+    y: Float,
+    scale: Float,
+    px: Float,
+    total: Int = SKIN_ROW * 2,
+    draw: DrawScope.(ImageBitmap, Float, Float, Float, Float, Color?, Float) -> Unit,
+) {
+    val step = 8f * (scale / 48f)
+    drawSkinAlong(t, groups, colors, preset, custom, accessoryId, look, scale, px, total,
+        place = { segment -> Offset(x + scale * 0.5f + segment * step, y) },
+        heading = { 0f },
+        draw = draw)
+}
+
+/**
+ * The snake laid along any line (Wyrm Desktop's slithering stage): [place]
+ * gives each segment's centre (0 = tail end, [total] - 1 = head) and
+ * [heading] the direction it travels in degrees (0 = +x). Same beads, AIR
+ * shadows, eyes, accessory and Wyrm look as [drawSkinRows].
+ */
+internal fun DrawScope.drawSkinAlong(
+    t: SkinTextures,
+    groups: List<Int>,
+    colors: List<Int>,
+    preset: Int,
+    custom: Boolean,
+    accessoryId: Int,
+    look: WyrmLookSpec,
+    scale: Float,
+    px: Float,
+    total: Int,
+    place: (Int) -> Offset,
+    heading: (Int) -> Float,
+    draw: DrawScope.(ImageBitmap, Float, Float, Float, Float, Color?, Float) -> Unit,
+) {
+    fun groupAt(codeIndex: Int) = if (groups.isEmpty()) 7 else groups[codeIndex % groups.size]
+    fun airKind(codeIndex: Int): Int? {
+        if (codeIndex !in 0 until total || codeIndex >= colors.size) return null
+        return if (groupAt(codeIndex) < 0) null else AirSkin.kind(colors[codeIndex])
+    }
+    val shadowSize = scale * 102f / 64f
+    fun airShadow(codeIndex: Int, alpha: Float) {
+        if (!AirSkin.BEAD_SHADOW) return
+        val shadow = t.airShadow ?: return
+        if (airKind(codeIndex) == null) return
+        val p = place(total - 1 - codeIndex)
+        draw(shadow, p.x - shadowSize / 2, p.y - shadowSize / 2, shadowSize, shadowSize, null, alpha.coerceIn(0f, 1f))
+    }
+    fun shadowAlpha(codeIndex: Int) = if (codeIndex < 9) codeIndex / 9f else 1f
+    for (codeIndex in 8 downTo 0) airShadow(codeIndex, 1f - codeIndex / 9f)
+    for (n in 1..4) airShadow(total - n, shadowAlpha(total - n))
+    for (segment in 0 until total) {
+        val codeIndex = total - 1 - segment
+        if (codeIndex >= 4) airShadow(codeIndex - 4, shadowAlpha(codeIndex - 4))
+        val group = groupAt(codeIndex)
+        if (group < 0) continue
+        val (bead, tint) = skinBead(t, group, colors.getOrElse(codeIndex) { 0 }) ?: continue
+        val p = place(segment)
+        // Heading right is the head row of the two-row preview (turned 180).
+        rotate(180f + heading(segment), pivot = p) { draw(bead, p.x - scale / 2, p.y - scale / 2, scale, scale, tint, 1f) }
+    }
+    val head = place(total - 1)
+    rotate(heading(total - 1), pivot = head) {
+        drawSkinHead(t, head, scale, px, preset, custom, accessoryId, look) { img, l, tp, w, h, tint -> draw(img, l, tp, w, h, tint, 1f) }
+    }
+}
+
 /* The "Share" skin sticker (OM, 2026-09-30): the Skin preview itself, both
    rows, in bead widths. Its box leaves room around the head for the
    accessory and the Wyrm look. */
@@ -1185,7 +1324,7 @@ private fun SwingTag(
 
 /** The pattern toggle: a colour-wheel glyph while the beads show, a bead grid while the wheel does. */
 @Composable
-private fun AirWheelToggle(showingWheel: Boolean, onClick: () -> Unit) {
+internal fun AirWheelToggle(showingWheel: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .size(38.dp)
@@ -1223,7 +1362,7 @@ private fun Modifier.glassDisc(): Modifier = this
  * values stay in this panel; they are saved when the finger lifts.
  */
 @Composable
-private fun AirWheelPanel(
+internal fun AirWheelPanel(
     textures: SkinTextures?,
     prefs: android.content.SharedPreferences,
     onColour: (Int) -> Unit = {},

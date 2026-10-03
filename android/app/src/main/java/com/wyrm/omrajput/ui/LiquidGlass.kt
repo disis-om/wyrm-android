@@ -111,6 +111,15 @@ import kotlin.math.roundToInt
 /** What the page behind floating glass looks like; root screens record into it. */
 val LocalPageBackdrop = staticCompositionLocalOf<Backdrop> { emptyBackdrop() }
 
+/**
+ * How much paper the tab bar lays over what it refracts, and how far it
+ * blurs it. The phones keep 0.4 and 8 dp; Wyrm Desktop's bar floats over
+ * any page (the Skin stage, a dark floor) and asks for more so its labels
+ * always read.
+ */
+val LocalTabBarFrost = staticCompositionLocalOf { 0.4f }
+val LocalTabBarBlur = staticCompositionLocalOf { 8.dp }
+
 /** Height the floating tab bar takes out of a root page's scroll content. */
 val LocalRootTabClearance = staticCompositionLocalOf { 0.dp }
 
@@ -721,7 +730,8 @@ private fun FoldingTabGlass(
     onExpand: () -> Unit,
 ) {
     val pageBackdrop = LocalPageBackdrop.current
-    val container = Wyrm.Paper.copy(alpha = 0.4f)
+    val container = Wyrm.Paper.copy(alpha = LocalTabBarFrost.current)
+    val frostBlur = LocalTabBarBlur.current
     // A light, see-through pill over the chosen tab; its ink shows through (OM).
     val restingThumb = Wyrm.TabThumb
     val width = androidx.compose.ui.unit.lerp(fullWidth, 56.dp, fold)
@@ -738,7 +748,7 @@ private fun FoldingTabGlass(
                 shape = { WyrmCapsule },
                 effects = {
                     vibrancy()
-                    blur(8.dp.toPx())
+                    blur(frostBlur.toPx())
                     val lens = minOf(24.dp.toPx(), height.toPx() / 2f - 2.dp.toPx())
                     lens(lens, lens)
                 },
@@ -814,7 +824,8 @@ private fun ExpandedLiquidTabBar(
     // comparing against the value the bar was first composed with is how a
     // tap on Settings could move the pill without ever opening Settings.
     val chosen by rememberUpdatedState(selected)
-    val container = Wyrm.Paper.copy(alpha = 0.4f)
+    val container = Wyrm.Paper.copy(alpha = LocalTabBarFrost.current)
+    val frostBlur = LocalTabBarBlur.current
     // A light, see-through pill over the chosen tab; its ink shows through (OM).
     val restingThumb = Wyrm.TabThumb
 
@@ -913,7 +924,7 @@ private fun ExpandedLiquidTabBar(
                     shape = { WyrmCapsule },
                     effects = {
                         vibrancy()
-                        blur(8.dp.toPx())
+                        blur(frostBlur.toPx())
                         lens(24.dp.toPx(), 24.dp.toPx())
                     },
                     layerBlock = {
@@ -949,7 +960,7 @@ private fun ExpandedLiquidTabBar(
                     effects = {
                         val p = drag.pressProgress
                         vibrancy()
-                        blur(8.dp.toPx())
+                        blur(frostBlur.toPx())
                         lens(24.dp.toPx() * p, 24.dp.toPx() * p)
                     },
                     highlight = { Highlight.Default.copy(alpha = drag.pressProgress) },

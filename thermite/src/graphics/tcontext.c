@@ -430,7 +430,13 @@ void _tcontext_create_swapchain(tcontext* context, bool vsync) {
           .imageColorSpace = context->surface_format.colorSpace,
           .imageExtent = capabilities.currentExtent,
           .imageArrayLayers = 1,
+#ifdef WYRM_DESKTOP
+          /* WYRM_DESKTOP: read back every frame for Compose. */
+          .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                        VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+#else
           .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+#endif
           .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
           .queueFamilyIndexCount = 0,
           .pQueueFamilyIndices = NULL,
@@ -787,10 +793,20 @@ void tcontext_resize(tcontext* context, const ivec2 size, bool vsync) {
                        NULL);
   }
   free(context->swapchain_frames);
+  /* Nothing is left to destroy until the views are built again. A failed
+     rebuild used to keep the freed array and the old count, so the recovery
+     resize destroyed those views a second time (iOS crash reports
+     2026-10-03, vkDestroyImageView from tcontext_resize at launch). */
+  context->swapchain_frames = NULL;
+  context->image_count = 0;
 
   _tcontext_create_swapchain(context, vsync);
   if (context->swapchain == VK_NULL_HANDLE) {
     context->swapchain_ok = false;
+    /* The failed call retired the old swapchain; free it so the next attempt
+       starts on a clear surface. */
+    if (context->old_swapchain != VK_NULL_HANDLE)
+      vkDestroySwapchainKHR(context->device, context->old_swapchain, NULL);
     context->old_swapchain = VK_NULL_HANDLE;
     return;
   }
@@ -964,10 +980,114 @@ void tcontext_clear(tcontext* context, const vec4 clear_color) {
       VK_SUBPASS_CONTENTS_INLINE);
 }
 
+#ifdef WYRM_DESKTOP
+/*
+ * Wyrm Desktop: the finished swapchain image is copied into one host-visible
+ * buffer inside the frame's own command buffer, and published to Compose once
+ * that frame's fence says the GPU is done (desktop_bridge.c). The buffer is
+ * rebuilt when the size changes; the previous frame has always finished by then
+ * because each frame is waited for right after it is submitted.
+ */
+static VkBuffer desktop_capture_buffer;
+static VmaAllocation desktop_capture_memory;
+static void* desktop_capture_mapped;
+static VkDeviceSize desktop_capture_size;
+
+static void desktop_capture_record(tcontext* context, VkCommandBuffer cmd) {
+  VkDeviceSize needed = (VkDeviceSize)context->size[0] * context->size[1] * 4;
+  if (needed == 0) return;
+  if (needed != desktop_capture_size) {
+    if (desktop_capture_buffer)
+      vmaDestroyBuffer(context->allocator, desktop_capture_buffer,
+                       desktop_capture_memory);
+    VmaAllocationInfo info;
+    VkResult made = vmaCreateBuffer(
+        context->allocator,
+        &(VkBufferCreateInfo){.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                              .size = needed,
+                              .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                              .sharingMode = VK_SHARING_MODE_EXCLUSIVE},
+        &(VmaAllocationCreateInfo){
+            .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+                     VMA_ALLOCATION_CREATE_MAPPED_BIT,
+            .usage = VMA_MEMORY_USAGE_AUTO},
+        &desktop_capture_buffer, &desktop_capture_memory, &info);
+    if (made != VK_SUCCESS) {
+      desktop_capture_buffer = VK_NULL_HANDLE;
+      desktop_capture_size = 0;
+      return;
+    }
+    desktop_capture_mapped = info.pMappedData;
+    desktop_capture_size = needed;
+  }
+  VkImage image = context->swapchain_frames[context->current_image].image;
+  VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+  vkCmdPipelineBarrier(
+      cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1,
+      &(VkImageMemoryBarrier){
+          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+          .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+          .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+          .oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+          .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+          .image = image,
+          .subresourceRange = range});
+  vkCmdCopyImageToBuffer(
+      cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, desktop_capture_buffer, 1,
+      &(VkBufferImageCopy){
+          .bufferOffset = 0,
+          .bufferRowLength = 0,
+          .bufferImageHeight = 0,
+          .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+          .imageOffset = {0, 0, 0},
+          .imageExtent = {(uint32_t)context->size[0], (uint32_t)context->size[1], 1}});
+  vkCmdPipelineBarrier(
+      cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+      0, 0, NULL, 1,
+      &(VkBufferMemoryBarrier){
+          .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+          .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+          .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+          .buffer = desktop_capture_buffer,
+          .offset = 0,
+          .size = VK_WHOLE_SIZE},
+      1,
+      &(VkImageMemoryBarrier){
+          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+          .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+          .dstAccessMask = 0,
+          .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+          .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+          .image = image,
+          .subresourceRange = range});
+}
+
+static void desktop_capture_publish(tcontext* context, VkFence fence) {
+  if (!desktop_capture_buffer || !desktop_capture_mapped) return;
+  vkWaitForFences(context->device, 1, &fence, VK_TRUE, UINT64_MAX);
+  vmaInvalidateAllocation(context->allocator, desktop_capture_memory, 0,
+                          VK_WHOLE_SIZE);
+  VkFormat format = context->surface_format.format;
+  int bgra = format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
+  wyrm_desktop_publish_frame(desktop_capture_mapped, context->size[0],
+                             context->size[1], context->size[0] * 4, bgra);
+}
+#endif
+
 void tcontext_end(tcontext* context) {
   tcontext_frame* fr = context->frames + context->current_frame;
 
   vkCmdEndRenderPass(fr->cmd);
+#ifdef WYRM_DESKTOP
+  desktop_capture_record(context, fr->cmd);
+#endif
   vkEndCommandBuffer(fr->cmd);
 
   VkResult submit_result = vkQueueSubmit(
@@ -1022,6 +1142,9 @@ void tcontext_end(tcontext* context) {
   }
   context->last_present_succeeded =
       (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR);
+#ifdef WYRM_DESKTOP
+  desktop_capture_publish(context, fr->wait_fence);
+#endif
 #ifdef VLITHER_ANDROID
   if (!context->last_present_succeeded && r != VK_ERROR_SURFACE_LOST_KHR &&
       r != VK_ERROR_OUT_OF_DATE_KHR) {

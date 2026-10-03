@@ -68,6 +68,9 @@ void tinit(tenv* env) {
 }
 
 void tdestroy(tenv* env) {
+  /* `env` is about to go (it lives on tentry's stack, usr is freed after this):
+     Compose can still ask for a snapshot from onPause. */
+  android_settings_bind_env(NULL);
   game_data_destroy(env);
   save_user_settings(&env->usr->usrs);
   ui_skin_editor_destroy(env);
@@ -149,7 +152,7 @@ static bool wyrm_engine_visible(tenv* env) {
   return false;
 }
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(WYRM_DESKTOP)
 #include <stdatomic.h>
 #include <SDL3/SDL.h>
 
@@ -311,7 +314,7 @@ void trender(tenv* env) {
     tcontext_end(ctx);
   }
   renderer_clear_instances(usr->r);
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(WYRM_DESKTOP)
   wyrm_pace(draw);
 #endif
 }

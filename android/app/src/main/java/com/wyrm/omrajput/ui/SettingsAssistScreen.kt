@@ -156,6 +156,7 @@ fun SettingsAssistScreen(
                     }
                 }
 
+                if (LocalTouchControls.current) {
                 SettingsSectionLabel("Joystick guide")
                 SettingsCard {
                     HeadDotPreview(size = headDotSize, colour = headDotColor)
@@ -172,8 +173,10 @@ fun SettingsAssistScreen(
                     }
                 }
 
+                }
+
                 // OM, 2026-10-01: the assist laser for joystick players, with a live preview.
-                if (visibleMode == 1) {
+                if (visibleMode == 1 && LocalTouchControls.current) {
                     val laserColour = settings.named("general.laser_color")?.channels
                         ?.let { Color(it[0], it[1], it[2], it.getOrElse(3) { 1f }) }
                         ?: Color(0.5f, 1f, 0.5f, 1f)

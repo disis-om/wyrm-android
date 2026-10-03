@@ -99,11 +99,15 @@ private fun DrawScope.wyrmPath(px: Float): Path {
             left + w * 0.30f, top + h * 0.96f,
             left + w * 0.36f, top + h * 0.38f,
         )
+        // Each curve its own subpath: the round caps draw the inner peaks
+        // (Skia on the desktop squared them off at the round joins).
+        moveTo(left + w * 0.36f, top + h * 0.38f)
         cubicTo(
             left + w * 0.42f, top + h * 0.94f,
             left + w * 0.58f, top + h * 0.94f,
             left + w * 0.64f, top + h * 0.38f,
         )
+        moveTo(left + w * 0.64f, top + h * 0.38f)
         cubicTo(
             left + w * 0.70f, top + h * 0.96f,
             left + w * 0.87f, top + h * 0.92f,

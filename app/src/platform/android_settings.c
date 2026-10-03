@@ -379,9 +379,14 @@ static pending_hotkey pending_hotkeys[NUM_MOBILE_ACTIONS];
 /* 1 reset everything, 2 controls, 4 buttons, 8 arena HUD positions. */
 static int pending_actions = 0;
 
+/* NULL on the way out (tdestroy): `env` lives on the engine thread's stack and
+ * `env->usr` is freed after it, so a snapshot asked for later (onPause saving
+ * the account) read freed memory. Crash reports 2026-10-02/03, 6.3.7. */
 void android_settings_bind_env(tenv* env) {
-  settings_env = env;
   if (!settings_mutex) settings_mutex = SDL_CreateMutex();
+  SDL_LockMutex(settings_mutex);
+  settings_env = env;
+  SDL_UnlockMutex(settings_mutex);
 }
 
 static void* owner_base(user_settings* settings, setting_owner owner) {
@@ -674,7 +679,11 @@ JNIEXPORT jstring JNICALL
 Java_com_wyrm_omrajput_WyrmActivity_nativeSettingsSnapshot(JNIEnv* env,
                                                            jclass clazz) {
   (void)clazz;
-  if (!settings_env) return (*env)->NewStringUTF(env, "");
+  SDL_LockMutex(settings_mutex);
+  if (!settings_env) {
+    SDL_UnlockMutex(settings_mutex);
+    return (*env)->NewStringUTF(env, "");
+  }
   user_settings* settings = &settings_env->usr->usrs;
 
   static char buffer[32768];
@@ -700,6 +709,7 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeSettingsSnapshot(JNIEnv* env,
                  desc->options, field);
     }
   }
+  SDL_UnlockMutex(settings_mutex);
   return (*env)->NewStringUTF(env, buffer);
 }
 
@@ -709,7 +719,11 @@ JNIEXPORT jstring JNICALL
 Java_com_wyrm_omrajput_WyrmActivity_nativeHotkeysSnapshot(JNIEnv* env,
                                                           jclass clazz) {
   (void)clazz;
-  if (!settings_env) return (*env)->NewStringUTF(env, "");
+  SDL_LockMutex(settings_mutex);
+  if (!settings_env) {
+    SDL_UnlockMutex(settings_mutex);
+    return (*env)->NewStringUTF(env, "");
+  }
   user_settings* settings = &settings_env->usr->usrs;
 
   static char buffer[4096];
@@ -751,6 +765,7 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeHotkeysSnapshot(JNIEnv* env,
     append_float(&builder, y);
     append(&builder, "\n");
   }
+  SDL_UnlockMutex(settings_mutex);
   return (*env)->NewStringUTF(env, buffer);
 }
 
@@ -758,13 +773,18 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeHotkeysSnapshot(JNIEnv* env,
 JNIEXPORT jstring JNICALL Java_com_wyrm_omrajput_WyrmActivity_nativeKeyOptions(
     JNIEnv* env, jclass clazz) {
   (void)clazz;
-  if (!settings_env) return (*env)->NewStringUTF(env, "");
+  SDL_LockMutex(settings_mutex);
+  if (!settings_env) {
+    SDL_UnlockMutex(settings_mutex);
+    return (*env)->NewStringUTF(env, "");
+  }
 
   static char buffer[2048];
   text_builder builder = {buffer, 0, sizeof(buffer)};
   buffer[0] = '\0';
 
   user_settings preview = settings_env->usr->usrs;
+  SDL_UnlockMutex(settings_mutex);
   for (int i = 0; i < BINDABLE_COUNT; ++i) {
     mobile_hotkey_set_key(&preview, HOTKEY_HUD, BINDABLE_KEYS[i]);
     append_int(&builder, BINDABLE_KEYS[i]);
@@ -786,8 +806,12 @@ JNIEXPORT jstring JNICALL
 Java_com_wyrm_omrajput_WyrmActivity_nativeSettingsVersion(JNIEnv* env,
                                                           jclass clazz) {
   (void)clazz;
-  if (!settings_env) return (*env)->NewStringUTF(env, "");
-  return (*env)->NewStringUTF(env, settings_env->usr->usrs.version);
+  char version[sizeof(settings_env->usr->usrs.version) + 1] = "";
+  SDL_LockMutex(settings_mutex);
+  if (settings_env)
+    memcpy(version, settings_env->usr->usrs.version, sizeof(version) - 1);
+  SDL_UnlockMutex(settings_mutex);
+  return (*env)->NewStringUTF(env, version);
 }
 
 /* ------------------------------------------------------------------ writers */

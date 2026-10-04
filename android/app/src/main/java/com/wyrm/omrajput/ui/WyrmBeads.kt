@@ -14,13 +14,13 @@ package com.wyrm.omrajput.ui
  */
 internal object WyrmBeads {
     /**
-     * Colour wheel and Wyrm beads switched off (OM, 2026-10-04, drop test):
-     * both are faded in Skin › Pattern and cannot be picked, and the arena
-     * draws even our own snake from the slither colours the join carried
-     * (`WYRM_BUILT_BEADS_IN_ARENA` in game/redraw.c). Saved patterns are left
-     * as they are. Set to false (and the engine flag to 1) to bring them back.
+     * Colour wheel and Wyrm beads: on again (OM, 2026-10-04, after the drop
+     * test; they were off for one build). We see the exact colour; the arena
+     * only ever gets each bead's nearest original slither colour (the join
+     * carries colour groups, never RGB). true fades both and stops new ones;
+     * with it set `WYRM_BUILT_BEADS_IN_ARENA` in game/redraw.c goes to 0.
      */
-    const val BUILT_BEADS_OFF = true
+    const val BUILT_BEADS_OFF = false
     const val COUNT = 54
     /** Beads 0-23 are tagged 0xE0 + k; beads 24-53 are tagged 0xC0 + k - 24. */
     private const val FIRST = 24

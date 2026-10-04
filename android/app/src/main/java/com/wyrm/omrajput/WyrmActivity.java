@@ -149,6 +149,8 @@ public final class WyrmActivity extends SDLActivity {
     private static native void nativeSettingsAction(int action);
     private static native String nativeTeamPresence();
     private static native void nativeSetTeamMembers(String packed);
+    private static native void nativeSetTeamChat(String packed);
+    private static native void nativeSetTeamHudStyle(float[] values);
     private static native void nativeCloseTeamChat(float seconds);
     private static native String nativeUpdateSnapshot();
     private static native void nativeUpdateAction(int action);
@@ -176,6 +178,11 @@ public final class WyrmActivity extends SDLActivity {
             return kotlin.Unit.INSTANCE;
         });
         com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.attach(this, this::applyFramePolicy);
+        // The arena's team roster and chat window: their saved look reaches the engine first.
+        com.wyrm.omrajput.ui.TeamHudStore.attach(this, values -> {
+            try { nativeSetTeamHudStyle(values); } catch (UnsatisfiedLinkError ignored) { }
+            return kotlin.Unit.INSTANCE;
+        });
         // The assist laser in joystick mode: the saved choice reaches the engine first.
         com.wyrm.omrajput.ui.JoystickLaserStore.attach(this, (on, length) -> {
             try { nativeSetJoystickLaser(on, length); } catch (UnsatisfiedLinkError ignored) { }
@@ -328,6 +335,11 @@ public final class WyrmActivity extends SDLActivity {
             @Override
             public void onWriteTeamMembers(String packed) {
                 nativeSetTeamMembers(packed);
+            }
+
+            @Override
+            public void onWriteTeamChat(String packed) {
+                try { nativeSetTeamChat(packed); } catch (UnsatisfiedLinkError ignored) { }
             }
 
             /**

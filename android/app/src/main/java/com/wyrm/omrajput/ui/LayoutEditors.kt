@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -343,6 +346,13 @@ fun UnifiedArenaLayoutEditor(
         options = LayoutOptions(key, title, listOfNotNull(primary, secondary), choice)
     }
 
+    /* Team roster and chat window (OM, 2026-10-04): every slider and the two
+       text colours, saved app side (TeamHudStore). */
+    fun teamHudSlider(label: String, key: String) =
+        LayoutSlider(label, TeamHudStore.value(key), TeamHudStore.range(key)) { onSettingChange("teamhud.$key", it) }
+    fun teamHudColour(label: String, key: String) =
+        LayoutColours(label, TeamHudStore.value(key).toInt()) { onSettingChange("teamhud.$key", it.toFloat()) }
+
     val minimapDp = with(density) { minimapSize.coerceIn(128f, 512f).toDp() }
     val leaderboardScale = 1f + leaderboardFont.coerceIn(0, 2) * 0.16f
     val statsPreviewScale = (1f + statsFont.coerceIn(0, 2) * 0.14f) * statsScale
@@ -436,24 +446,52 @@ fun UnifiedArenaLayoutEditor(
             }) {
                 HudPreviewPanel("STATS\nSCORE   9503\nKILLS      4\nRANK    8 / 46\nPING    64 ms\nFPS     61", with(density) { (142f * statsPreviewScale).toDp() }, with(density) { (132f * statsPreviewScale).toDp() }, statsOpacity)
             }
+            // The roster and chat window are drawn by the engine over the AI arena
+            // with placeholder rows; these are their hit boxes at the same size.
+            val teamScale = TeamHudStore.value("team_scale")
             Draggable(hudPosition(ArenaHudTarget.TEAM), area, { onMoveHud(ArenaHudTarget.TEAM, it) }, onLongPress = {
-                openOptions("team", "TEAM")
-            }) {
-                HudPreviewPanel("TEAM\n● Om Rajput       9503\n● Northwind       2819\n○ Meadow           389", with(density) { 210f.toDp() }, with(density) { 98f.toDp() })
-            }
-            Draggable(hudPosition(ArenaHudTarget.CHAT), area, { onMoveHud(ArenaHudTarget.CHAT, it) }, onLongPress = {
-                openOptions(
-                    "chat", "CHAT",
-                    LayoutSlider("SIZE", chatScale, 0.65f..1.60f) { onSettingChange("layout.chat_scale", it) },
-                    LayoutSlider("OPACITY", chatOpacity, 0.05f..1f) { onSettingChange("layout.chat_opacity", it) },
+                options = LayoutOptions(
+                    "team", "TEAM",
+                    listOf(
+                        teamHudSlider("SIZE", "team_scale"),
+                        teamHudSlider("OPACITY", "team_opacity"),
+                        teamHudSlider("WIDTH", "team_width"),
+                        teamHudSlider("HEIGHT", "team_height"),
+                    ),
+                    colours = listOf(
+                        teamHudColour("PLAYER NAME AND SCORE", "team_name"),
+                        teamHudColour("KEY NAME AND SERVER", "team_data"),
+                    ),
                 )
             }) {
                 Box(
-                    Modifier.width(with(density) { (124f * chatScale).toDp() }).height(with(density) { (56f * chatScale).toDp() })
-                        .background(Wyrm.Card.copy(alpha = 0.94f * chatOpacity), wyrmRounded(28.dp))
-                        .border(1.5.dp, Wyrm.Ink.copy(alpha = 0.45f), wyrmRounded(28.dp)),
-                    contentAlignment = Alignment.Center,
-                ) { Text("CHAT", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = Wyrm.Ink) }
+                    Modifier
+                        .width(with(density) { (TeamHudStore.value("team_width") * teamScale).toDp() })
+                        .height(with(density) { (TeamHudStore.value("team_height") * teamScale).toDp() })
+                        .background(Wyrm.Card, wyrmRounded(14.dp)),
+                )
+            }
+            Draggable(hudPosition(ArenaHudTarget.CHAT), area, { onMoveHud(ArenaHudTarget.CHAT, it) }, onLongPress = {
+                options = LayoutOptions(
+                    "chat", "CHAT",
+                    listOf(
+                        LayoutSlider("SIZE", chatScale, 0.65f..1.60f) { onSettingChange("layout.chat_scale", it) },
+                        LayoutSlider("OPACITY", chatOpacity, 0.05f..1f) { onSettingChange("layout.chat_opacity", it) },
+                        teamHudSlider("WIDTH", "chat_width"),
+                        teamHudSlider("HEIGHT", "chat_height"),
+                    ),
+                    colours = listOf(
+                        teamHudColour("PLAYER NAME", "chat_name"),
+                        teamHudColour("MESSAGES", "chat_text"),
+                    ),
+                )
+            }) {
+                Box(
+                    Modifier
+                        .width(with(density) { (TeamHudStore.value("chat_width") * chatScale).toDp() })
+                        .height(with(density) { (TeamHudStore.value("chat_height") * chatScale).toDp() })
+                        .background(Wyrm.Card, wyrmRounded(14.dp)),
+                )
             }
             }
         }
@@ -481,14 +519,23 @@ private data class LayoutOptions(
     val title: String,
     val sliders: List<LayoutSlider>,
     val choice: LayoutChoice? = null,
+    val colours: List<LayoutColours> = emptyList(),
+)
+
+/** A row of colour swatches; [selected] indexes TeamHudStore.COLOUR_NAMES. */
+private data class LayoutColours(
+    val label: String,
+    val selected: Int,
+    val onSelect: (Int) -> Unit,
 )
 
 @Composable
 private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
     Popup(alignment = Alignment.Center, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
         Column(
-            Modifier.width(300.dp).background(Wyrm.Card, wyrmRounded(20.dp))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(20.dp)).padding(18.dp),
+            Modifier.width(300.dp).heightIn(max = 340.dp).background(Wyrm.Card, wyrmRounded(20.dp))
+                .border(1.dp, Wyrm.Rule, wyrmRounded(20.dp))
+                .verticalScroll(rememberScrollState()).padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(options.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 1.4.sp, color = Wyrm.Ink)
@@ -512,6 +559,22 @@ private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
                     selected = selected,
                     onSelect = { next -> selected = next; choice.onSelect(next) },
                 )
+            }
+            options.colours.forEach { row ->
+                var selected by remember(options.key, row.label) { mutableStateOf(row.selected) }
+                Text("${row.label} · ${TeamHudStore.COLOUR_NAMES.getOrElse(selected) { "Theme" }.uppercase()}",
+                    fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    TeamHudStore.COLOUR_SWATCHES.forEachIndexed { index, swatch ->
+                        val fill = if (swatch == Color.Unspecified) Wyrm.Ink else swatch
+                        Box(
+                            Modifier.size(24.dp)
+                                .border(if (index == selected) 2.dp else 1.dp, if (index == selected) Wyrm.Ink else Wyrm.Rule, CircleShape)
+                                .padding(3.dp).clip(CircleShape).background(fill)
+                                .clickable { selected = index; row.onSelect(index) },
+                        )
+                    }
+                }
             }
             Text("DONE", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.2.sp, color = Wyrm.Ink, modifier = Modifier.align(Alignment.End).clickable(onClick = onDismiss).padding(8.dp))
         }

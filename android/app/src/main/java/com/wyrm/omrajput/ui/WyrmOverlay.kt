@@ -610,6 +610,8 @@ class WyrmOverlay(private val activity: Activity) :
         fun onGameModeEligible(eligible: Boolean)
         fun onReadPresence(): String
         fun onWriteTeamMembers(packed: String)
+        /** The team chat for the arena's chat window: a total, then `author<TAB>body` lines. */
+        fun onWriteTeamChat(packed: String)
         fun onCloseTeamChat(seconds: Float)
         fun onReadUpdate(): String
         fun onUpdateAction(action: Int)
@@ -1634,8 +1636,12 @@ class WyrmOverlay(private val activity: Activity) :
                             onMoveKey = ::moveKey,
                             onMoveHud = ::moveArenaHud,
                             onSettingChange = { id, next ->
-                                settings.firstOrNull { it.id == id }?.let { setting ->
-                                    writeSetting(setting, listOf(next))
+                                if (TeamHudStore.owns(id)) {
+                                    TeamHudStore.apply(id, next)
+                                } else {
+                                    settings.firstOrNull { it.id == id }?.let { setting ->
+                                        writeSetting(setting, listOf(next))
+                                    }
                                 }
                             },
                             onReset = { resetOrientationLayout(listOf(2, 4, 8)) },
@@ -2838,6 +2844,15 @@ class WyrmOverlay(private val activity: Activity) :
         // No NTL traffic at all while NTL services are switched off.
         if (TeamService.NTL_SERVICES_DISABLED) return
         if (teamJob != null) return
+        // The arena's chat window shows the same list as the Team page (OM,
+        // 2026-10-04): every change is handed to the engine.
+        if (teamChatJob == null) {
+            teamChatJob = scope.launch {
+                androidx.compose.runtime.snapshotFlow { teamMessages }.collect { list ->
+                    host?.onWriteTeamChat(packTeamChat(list))
+                }
+            }
+        }
         teamJob = scope.launch {
             while (true) {
                 if (teamEnabled && team.configured) {
@@ -2860,6 +2875,7 @@ class WyrmOverlay(private val activity: Activity) :
                     }
                     if (updated != teamState) teamState = updated
                     if (next.messages.isNotEmpty()) {
+                        teamMessageTotal += next.messages.size
                         teamMessages = (teamMessages + next.messages).takeLast(200)
                     }
                     if (next.connected) {
@@ -2889,6 +2905,20 @@ class WyrmOverlay(private val activity: Activity) :
      * arenas: a teammate's coordinates mean nothing unless they are in the same
      * arena as this player.
      */
+    private var teamChatJob: Job? = null
+    private var teamMessageTotal = 0L
+
+    /** First line: messages ever received (the folded window counts unread from it). */
+    private fun packTeamChat(list: List<TeamMessage>): String = buildString {
+        append(teamMessageTotal.coerceAtLeast(list.size.toLong()))
+        list.forEach { message ->
+            append('\n')
+            append(message.from.replace('\t', ' ').replace('\n', ' '))
+            append('\t')
+            append(message.text.replace('\t', ' ').replace('\n', ' '))
+        }
+    }
+
     private fun pack(state: TeamState, myArena: String): String =
         state.members
             // The service reports the whole team, you included, and a green dot
@@ -2903,6 +2933,9 @@ class WyrmOverlay(private val activity: Activity) :
                 member.x, member.y, member.score, member.rank,
                 if (member.bot) 1 else 0,
                 if (present) 1 else 0,
+                0, -1,
+                member.owner.replace('\t', ' ').replace('\n', ' '),
+                if (member.playing) member.arena.replace('\t', ' ').replace('\n', ' ') else "",
             ).joinToString("\t")
         }
 
@@ -6000,6 +6033,7 @@ class WyrmOverlay(private val activity: Activity) :
         com.wyrm.omrajput.data.WyrmPerformance.reload(activity)
         com.wyrm.omrajput.data.PlayOrientation.reload(activity)
         JoystickLaserStore.reload(activity)
+        TeamHudStore.reload(activity)
         NearOriginalStore.reload(activity)
         appTheme = WyrmThemeId.fromStored(uiPreferences.getString("theme", null))
         themeIntensity = uiPreferences.getFloat("theme_intensity", 0.5f).coerceIn(0f, 1f)

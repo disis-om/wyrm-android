@@ -14,7 +14,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -402,7 +401,7 @@ private fun Header(
     }
 }
 
-/** Home's Alerts button: a bell on a card disc, with the unread count. */
+/** Home's Alerts button: a bell on a card squircle (the avatar's own shape), with the unread count. */
 @Composable
 private fun AlertsBellButton(unread: Int, onClick: (Rect) -> Unit) {
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -418,9 +417,11 @@ private fun AlertsBellButton(unread: Int, onClick: (Rect) -> Unit) {
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .clip(CircleShape)
+                // The avatar beside it is a 36 dp squircle with 10.8 dp corners;
+                // the bell matches it (OM, 2026-10-04: one shape, not a circle).
+                .clip(wyrmRounded(10.8.dp))
                 .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, CircleShape)
+                .border(1.dp, Wyrm.Rule, wyrmRounded(10.8.dp))
                 .clickable(interactionSource = interaction, indication = null) { onClick(bounds) },
             contentAlignment = Alignment.Center,
         ) {

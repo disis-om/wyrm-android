@@ -20,8 +20,9 @@
  *     [nick, server, tagpass, tagid, skin, x, y, snakeid]
  *
  * and after that only `[x, y]`. `tagid` is `-1` and `tagpass` empty unless the
- * player has *claimed* a private tag — the free and bundled ones travel on the
- * team endpoint's `tg` instead, which Wyrm already sends. So this connection is
+ * player has *claimed* a private tag. The free and public ones travel in the
+ * corner of the join's skin block (callback.c, `ntl_tag_corner`), as NTL's
+ * do, and to teammates on the team endpoint's `tg`. So this connection is
  * here to listen, and it announces mostly so that it is allowed to.
  *
  * Inbound is a flat array of four-byte records, big-endian throughout:
@@ -41,9 +42,9 @@
    arrive when they arrive. */
 #define NTL_REPORT_MS 1000
 
-/* Long enough that a service which is simply down is not hammered, short enough
-   that a player who was disconnected mid-match gets their tags back. */
-#define NTL_RETRY_MS 15000
+/* NTL's own pace (OM, 2026-10-04: same timing as NTL): its one-second tick
+   dials again whenever the socket is gone (`Zo` from `D5`). Was 15000. */
+#define NTL_RETRY_MS 1000
 
 static struct mg_connection* ntl_conn = NULL;
 static bool announced = false;

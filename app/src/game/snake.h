@@ -15,6 +15,10 @@ typedef struct snake {
    * team row can be resolved back to the snake the renderer actually owns.
    */
   int ntl_id;
+  /* The tag in NTL's corner of this snake's skin block (callback.c), as an
+     index into the tag sheet plus one: 0 is none, so a zeroed snake (the AI
+     arena's) wears nothing. */
+  int skin_tag;
   bool local_player;
   int cv;
   int fpos;

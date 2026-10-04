@@ -200,7 +200,8 @@ internal data class LastRun(
 )
 
 /** What the Share editor starts from: the run (null for "Share this skin"), and the skin and look the player wears. */
-internal data class ShareRunInput(val run: LastRun?, val skin: SkinState, val look: WyrmLookSpec)
+/** [tagId] is the worn tag's index in [SkinCatalog.tags], -1 for none (OM, 2026-10-04). */
+internal data class ShareRunInput(val run: LastRun?, val skin: SkinState, val look: WyrmLookSpec, val tagId: Int = -1)
 
 internal enum class ShareLayer { SKIN, SCREENSHOT }
 
@@ -220,7 +221,7 @@ internal enum class StatsStyle(val label: String) {
 }
 
 /** The worn skin and look as the shared-skin JSON ("Share my skin"), the shape Wyrm iOS sends too. */
-internal fun SkinState.toTrailSkin(look: WyrmLookSpec): com.wyrm.omrajput.data.TrailSkin {
+internal fun SkinState.toTrailSkin(look: WyrmLookSpec, tagNtlId: Int = -1): com.wyrm.omrajput.data.TrailSkin {
     val letters = code.take(256)
     return com.wyrm.omrajput.data.TrailSkin(
         custom = custom && letters.isNotEmpty(),
@@ -229,6 +230,7 @@ internal fun SkinState.toTrailSkin(look: WyrmLookSpec): com.wyrm.omrajput.data.T
         colours = coloursFor(letters.length).toList(),
         accessory = accessory.coerceIn(-1, 255),
         look = com.wyrm.omrajput.data.TrailSkinLook(look.hair, look.hairTone, look.ears, look.glasses),
+        tag = tagNtlId,
     )
 }
 
@@ -638,7 +640,7 @@ internal class StudioDraft {
                         androidx.compose.ui.unit.LayoutDirection.Ltr,
                         androidx.compose.ui.graphics.Canvas(canvas),
                         androidx.compose.ui.geometry.Size(w, h),
-                    ) { drawSkinSticker(t, input.skin, input.look, stickerBead(type)) }
+                    ) { drawSkinSticker(t, input.skin, input.look, stickerBead(type), input.tagId) }
                 }
             }
             canvas.restore()
@@ -861,7 +863,9 @@ internal fun TrailStudioScreen(
         val input = draft.share
         if (sharing && input != null) {
             // A shared run says whether the skin goes with it; the skin only when it does.
-            TrailsStore.post(image, draft.caption, if (shareSkin) input.skin.toTrailSkin(input.look) else null, shareSkin)
+            TrailsStore.post(image, draft.caption,
+                if (shareSkin) input.skin.toTrailSkin(input.look, SkinCatalog.tags.getOrNull(input.tagId)?.ntlId ?: -1) else null,
+                shareSkin)
             onPosted()
         } else {
             TrailsStore.post(image, draft.caption)

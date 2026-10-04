@@ -139,7 +139,8 @@ private data class NotificationOpen(
 )
 
 /** A skin being tried from a trail: whose it is, the skin as a Skin-tab state, and the Wyrm look. */
-private data class SkinTrial(val author: String, val skin: SkinState, val look: WyrmLookSpec)
+/** [tagId]: the poster's tag as an index in [SkinCatalog.tags], -1 for none. */
+private data class SkinTrial(val author: String, val skin: SkinState, val look: WyrmLookSpec, val tagId: Int = -1)
 
 private const val STATS_RECONCILE_MS = 5L * 60L * 60L * 1000L
 private const val STATS_RETRY_MS = 15L * 60L * 1000L
@@ -1477,7 +1478,7 @@ class WyrmOverlay(private val activity: Activity) :
                                     insetTop = insetTop,
                                     insetBottom = insetBottom,
                                     onClose = ::closeShareRun,
-                                    share = ShareRunInput(run?.takeIf { !shareSkinOnly }, skinState, WyrmLookStore.spec()),
+                                    share = ShareRunInput(run?.takeIf { !shareSkinOnly }, skinState, WyrmLookStore.spec(), shareTagId),
                                     onPosted = ::openTrailsAfterShare,
                                 )
                             }
@@ -6538,9 +6539,19 @@ class WyrmOverlay(private val activity: Activity) :
      * its title screen) and into the Share editor on the last run. showRoute
      * ignores the engine's title echo while it is open.
      */
+    /** The tag worn when Share opened (an index in [SkinCatalog.tags]), for its sticker and JSON. */
+    private var shareTagId = -1
+
+    /** The worn tag, read from the engine (the cached [settings] can be empty). */
+    private fun wornTagId(): Int =
+        SettingsCodec.settings(host?.onReadSettings().orEmpty())
+            .firstOrNull { it.id == "tags.index" }?.number?.roundToInt()
+            ?.takeIf { it in SkinCatalog.tags.indices } ?: -1
+
     private fun openShareRun() {
         val run = lastRun ?: return
         if (!TRAILS_ENABLED || !repository.hasSession) return
+        shareTagId = wornTagId()
         shareRun = run
         shareSkinOnly = false
         lobbyJob?.cancel()
@@ -6564,6 +6575,7 @@ class WyrmOverlay(private val activity: Activity) :
     /** Skin › Share this skin: the Share editor with the worn skin as the preview draws it; closing goes back to Skin. */
     private fun openShareSkin() {
         if (!TRAILS_ENABLED || !repository.hasSession) return
+        shareTagId = wornTagId()
         shareSkinOnly = true
         panelOpen = false
         tabRoot = Route.SKIN
@@ -6581,7 +6593,8 @@ class WyrmOverlay(private val activity: Activity) :
     /** Trail › Try this skin: the Skin tab with the poster's look as a draft. */
     private fun tryTrailSkin(trail: com.wyrm.omrajput.data.Trail) {
         val skin = trail.skin ?: return
-        skinTrial = SkinTrial(trail.author.name, skin.toSkinState(), skin.lookSpec())
+        skinTrial = SkinTrial(trail.author.name, skin.toSkinState(), skin.lookSpec(),
+            SkinCatalog.tags.firstOrNull { it.ntlId == skin.tag }?.id ?: -1)
         openSkinTab()
     }
 
@@ -6603,6 +6616,11 @@ class WyrmOverlay(private val activity: Activity) :
         host?.onSkinAccessory(skin.accessory)
         host?.onSkinSync(true)
         WyrmLookStore.wear(trial.look)
+        // The poster's tag too (OM, 2026-10-04). A trail without one leaves yours on.
+        if (trial.tagId >= 0) {
+            refreshSettings()
+            settings.firstOrNull { it.id == "tags.index" }?.let { writeSetting(it, listOf(trial.tagId.toFloat())) }
+        }
         // Shown at once; the engine's answer confirms it.
         skinState = if (custom) skin else skinState.copy(custom = false, preset = skin.preset, accessory = skin.accessory)
         skinTrial = null

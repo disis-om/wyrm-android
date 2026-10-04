@@ -47,7 +47,9 @@ data class TrailSkinLook(val hair: Int = -1, val hairTone: Float = 0.22f, val ea
  * A poster's skin for "Try this skin" (OM, 2026-09-30). The same JSON from
  * both apps, stored by the backend as text and returned only when the poster
  * chose to share it:
- * `{"v":1,"custom","preset","code","colours":["AARRGGBB"…],"accessory","look":{"hair","hairTone","ears","glasses"}}`.
+ * `{"v":1,"custom","preset","code","colours":["AARRGGBB"…],"accessory","look":{"hair","hairTone","ears","glasses"},"tag"}`.
+ * `tag` (OM, 2026-10-04) is the NTL tag worn, in NTL's numbering, and is
+ * written only when one is worn; older skins have none.
  * [colours] pairs with [code] position by position; 0 ("00000000") is the
  * palette colour, and the alpha byte keeps the AIR / Wyrm bead tags.
  */
@@ -58,6 +60,8 @@ data class TrailSkin(
     val colours: List<Int>,
     val accessory: Int,
     val look: TrailSkinLook,
+    /** The NTL tag worn (NTL's numbering), -1 for none. */
+    val tag: Int = -1,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("v", 1)
@@ -71,6 +75,7 @@ data class TrailSkin(
             .put("hairTone", Math.round(look.hairTone.coerceIn(0f, 1f) * 10000.0) / 10000.0)
             .put("ears", look.ears.coerceIn(-1, 255))
             .put("glasses", look.glasses.coerceIn(-1, 255)))
+        .apply { if (tag in 0..65535) put("tag", tag) }
 
     companion object {
         private val HEX8 = Regex("^[0-9A-Fa-f]{8}$")
@@ -97,6 +102,7 @@ data class TrailSkin(
                     ears = slot(look?.optInt("ears", -1) ?: -1),
                     glasses = slot(look?.optInt("glasses", -1) ?: -1),
                 ),
+                tag = json.optInt("tag", -1).takeIf { it in 0..65535 } ?: -1,
             )
         }
     }

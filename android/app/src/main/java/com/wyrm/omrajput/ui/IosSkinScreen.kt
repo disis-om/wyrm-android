@@ -1208,7 +1208,7 @@ internal fun skinStickerSize(bead: Float): androidx.compose.ui.geometry.Size =
  * textures, beads, wheel colours, accessory and Wyrm look — centred on the
  * origin. Draws into any DrawScope, including a bitmap for the export.
  */
-internal fun DrawScope.drawSkinSticker(t: SkinTextures, skin: SkinState, look: WyrmLookSpec, bead: Float) {
+internal fun DrawScope.drawSkinSticker(t: SkinTextures, skin: SkinState, look: WyrmLookSpec, bead: Float, tagId: Int = -1) {
     // The preview's own choice of beads: the custom pattern, else the preset, 256 long.
     val customGroups = skin.code.mapNotNull { SkinCatalog.group(it) }.filter { it in SkinCatalog.validGroups }.take(256)
     val active = skin.custom && customGroups.isNotEmpty()
@@ -1222,6 +1222,29 @@ internal fun DrawScope.drawSkinSticker(t: SkinTextures, skin: SkinState, look: W
     // The preview's 1 dp against its usual ~17 dp bead.
     drawSkinRows(t, groups, colours, skin.preset, active, skin.accessory, look.checked(), x, headY, tailY, bead, bead / 17f) { img, l, tp, iw, ih, tint, alpha ->
         drawImageExact(img, l, tp, iw, ih, tint, alpha)
+    }
+    // The tag (OM, 2026-10-04): the rope and art of [SwingTag] at rest (chain 1,
+    // size 1), hanging back from the head along the head row.
+    val item = SkinCatalog.tags.getOrNull(tagId) ?: return
+    val image = t.tags[tagId] ?: return
+    val step = 8f * (bead / 48f)
+    val head = Offset(x + bead * 0.5f + step * (SKIN_ROW - 1), headY)
+    val unit = bead / 29f
+    val anchor = Offset(head.x - 8 * unit, head.y)
+    val end = Offset(anchor.x - 9 * 4f * unit, anchor.y)
+    val width = item.width * 0.285f * unit
+    val height = item.height * 0.285f * unit
+    // At rest the rope points straight back (angle pi), so the art turns half way.
+    val centre = Offset(end.x - (item.anchorX * 0.285f * unit + width * 0.5f), end.y - (item.anchorY * 0.285f * unit + height * 0.5f))
+    drawLine(item.accentA.rgbColor(), anchor, end, strokeWidth = 5 * unit, cap = StrokeCap.Round)
+    for (lineWidth in listOf(4f, 3f, 2f)) {
+        drawLine(item.accentB.rgbColor().copy(alpha = 0.5f), anchor, end, strokeWidth = lineWidth * unit, cap = StrokeCap.Round)
+    }
+    rotate(180f, pivot = centre) {
+        val fit = min(width / image.width, height / image.height)
+        val dw = image.width * fit
+        val dh = image.height * fit
+        drawImageExact(image, centre.x - dw / 2, centre.y - dh / 2, dw, dh, null, 1f)
     }
 }
 

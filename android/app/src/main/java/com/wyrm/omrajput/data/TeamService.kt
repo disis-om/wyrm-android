@@ -648,7 +648,14 @@ class TeamService(context: Context) {
          * so these only have to be eight of something.
          */
         private const val NICK_PREFIX = "WYRMPLYR"
-        private const val VERSION = BuildConfig.VERSION_NAME
+        /*
+         * NTL's own version, not Wyrm's (OM, 2026-10-04). The team service reads
+         * `ver` as a number and answers only a window around NTL's current release:
+         * tested live, 9.67-9.70 get the roster; 9.61, 9.99, 10.1, 6.4, 6.4.5 and
+         * 0.18.31 get an empty or opaque answer (shown as "credentials rejected").
+         * Raise this when NTL moves on.
+         */
+        private const val VERSION = "9.68"
         private const val SYSTEM_NICK = "00000000"
         private const val PREFS = "wyrm_team_mode"
         private const val PREF_CREDENTIALS = "credentials"

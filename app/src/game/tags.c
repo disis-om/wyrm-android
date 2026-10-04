@@ -523,9 +523,11 @@ void tags_draw(tenv* env, snake* o, bool mine, bool teammate) {
      hundred slots and an arena is not, and filling it with tagless snakes used
      to starve the ones that had a tag — the player's own included. */
   tag_slot* slot = slot_find(o->id);
+  /* Someone else's: the tag socket's when it named one, else the one in
+     NTL's corner of their skin block (`skin_tag`, index + 1), as NTL does. */
   int index = (mine && tags_valid(usrs->tag_index)) ? usrs->tag_index
-              : slot                               ? slot->tag
-                                                   : -1;
+              : slot && tags_valid(slot->tag)      ? slot->tag
+                                                   : o->skin_tag - 1;
   if (!tags_valid(index)) return;
   if (!slot) {
     slot = slot_for(o->id);

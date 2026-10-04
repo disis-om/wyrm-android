@@ -433,16 +433,12 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
        failure was only evidence about the socket. */
     gdata->persona_tested = true;
 
-    /* Two clients, two answers to the same challenge. The web packet is the
-       obfuscated program which produces its per-connection answer; the visible
-       `gotServerVersion` stub is not that answer. `decode_secret` executes the
-       packet's fixed transformation byte-for-byte. The AIR client instead uses
-       the CRC32 path compiled into that store binary. */
-    if (persona->crc32_answer) {
-      uint8_t answer[ARENA_CRC32_ANSWER_LEN];
-      size_t answer_len = arena_persona_crc32_answer(a, a_len, answer);
-      arena_send(c, answer, answer_len);
-    } else {
+    /* The web client's answer. The challenge packet is the obfuscated program
+       which produces its per-connection answer; the visible `gotServerVersion`
+       stub is not that answer. `decode_secret` executes the packet's fixed
+       transformation byte-for-byte. (The AIR client's CRC32 answer was removed
+       with that identity, 2026-10-04.) */
+    {
       uint8_t answer[27];
       decode_secret(a, (size_t)a_len, answer);
       arena_send(c, answer, sizeof(answer));
@@ -1493,28 +1489,9 @@ void server_callback(struct mg_connection* c, int ev, void* ev_data) {
      * the socket simply stayed open and silent until the timeout gave up. Same
      * outcome, five times the wait, and no clue on the wire.
      */
-    const arena_persona* persona = arena_persona_get(gdata->persona);
-    if (persona->full_c_packet) {
-      user_settings* usrs = &usr->usrs;
-      uint8_t cp[16];
-      int n = 0;
-      cp[n++] = 'c';
-      cp[n++] = 1;   /* not a team join */
-      cp[n++] = 2;   /* platform: Android */
-      /* Wyrm steers by relative drag, which is the AIR client's arrow mode. */
-      cp[n++] = 2;
-      cp[n++] = usrs->mobile_controls.boost_mode ? 1 : 0;
-      cp[n++] = 0;   /* controls are not flipped */
-      cp[n++] = usrs->hotkeys[HOTKEY_SHOW_NAMES].active ? 1 : 0;
-      cp[n++] = 1;   /* high quality */
-      cp[n++] = 0;   /* minimap is not pinned top-left */
-      cp[n++] = 0;   /* no named background: Wyrm draws its own */
-      cp[n++] = 0;   /* no look-ahead camera */
-      cp[n++] = 1;   /* the nickname is saved */
-      arena_send(c, cp, n);
-    } else {
-      arena_send(c, (uint8_t[]){'c', 0}, 2);
-    }
+    /* The web client's `63 00`. (The AIR client's settings block was removed
+       with that identity, 2026-10-04.) */
+    arena_send(c, (uint8_t[]){'c', 0}, 2);
   } else if (ev == MG_EV_WS_MSG) {
     struct mg_ws_message* msg = (struct mg_ws_message*)ev_data;
     if (!msg || msg->data.len == 0) {

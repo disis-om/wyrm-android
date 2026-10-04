@@ -56,6 +56,7 @@ object AccountSync {
         PrefFile("wyrm_ui_preferences", Scope.SYNC),           // theme, intensity, nickname_chosen, …
         PrefFile("wyrm_arrows", Scope.SYNC),
         PrefFile("wyrm_near_original", Scope.SYNC),            // Home: Near Original (also in the shared document)
+        PrefFile("wyrm_play_feel", Scope.SYNC),                // Controls: arrow motion, look ahead, zoom style (also shared)
         PrefFile("wyrm_team_hud", Scope.SYNC),                 // Layout editor: team roster + chat window look
         PrefFile("wyrm_joystick_laser", Scope.SYNC),           // Modes › Assist: joystick laser on, length
         PrefFile("wyrm_orientation", Scope.SYNC),              // Controls › Play orientation + each orientation's layout

@@ -23,7 +23,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.painterResource
+import com.composables.icons.lucide.R as LucideR
 import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.wyrm.omrajput.data.Hotkey
+import com.wyrm.omrajput.data.Setting
 import java.util.Locale
 
 /**
@@ -441,10 +445,14 @@ fun UnifiedArenaLayoutEditor(
                 HudPreviewPanel("LEADERBOARD\n1  Wyrm Player     9503\n2  Northwind       2819\n3  Orbit            418\n4  Meadow           389\n5  Drift            248", with(density) { (250f * leaderboardScale).toDp() }, with(density) { (132f * leaderboardScale).toDp() })
             }
             Draggable(hudPosition(ArenaHudTarget.STATS), area, { onMoveHud(ArenaHudTarget.STATS, it) }, onLongPress = {
-                openOptions(
+                options = LayoutOptions(
                     "stats", "STATS",
-                    LayoutSlider("SIZE", statsScale, 0.65f..1.60f) { onSettingChange("layout.stats_scale", it) },
-                    LayoutSlider("OPACITY", statsOpacity, 0.05f..1f) { onSettingChange("layout.stats_opacity", it) },
+                    listOf(
+                        LayoutSlider("SIZE", statsScale, 0.65f..1.60f) { onSettingChange("layout.stats_scale", it) },
+                        LayoutSlider("OPACITY", statsOpacity, 0.05f..1f) { onSettingChange("layout.stats_opacity", it) },
+                        // BACK (OM, 2026-10-05): the white plate only; the text keeps OPACITY.
+                        teamHudSlider("BACK", "stats_panel"),
+                    ),
                 )
             }) {
                 HudPreviewPanel("STATS\nSCORE   9503\nKILLS      4\nRANK    8 / 46\nPING    64 ms\nFPS     61", with(density) { (142f * statsPreviewScale).toDp() }, with(density) { (132f * statsPreviewScale).toDp() }, statsOpacity)
@@ -631,12 +639,14 @@ private fun EditorFooter(
         val narrow = maxWidth < 560.dp
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             if (narrow) {
-                Text(
-                    "HOLD ANY OBJECT FOR MORE OPTIONS",
-                    fontFamily = Wyrm.Body, fontSize = 9.sp, letterSpacing = 0.6.sp, color = Wyrm.Quiet,
-                    modifier = Modifier.padding(bottom = 6.dp).clip(wyrmRounded(999.dp))
+                // Upright: the knob sits at the bar's left end, below this pill.
+                Column(
+                    Modifier.padding(bottom = 6.dp).clip(wyrmRounded(14.dp))
                         .background(Wyrm.Card.copy(alpha = 0.92f)).padding(horizontal = 12.dp, vertical = 5.dp),
-                )
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    EditorBarHint(LucideR.drawable.lucide_ic_arrow_down_left)
+                }
             }
             Row(
                 Modifier.clip(wyrmRounded(999.dp)).background(Wyrm.Card.copy(alpha = 0.96f))
@@ -668,7 +678,7 @@ private fun EditorFooter(
                     }
                 }
                 if (!narrow) {
-                    Text("HOLD ANY OBJECT FOR MORE OPTIONS", fontFamily = Wyrm.Body, fontSize = 9.sp, letterSpacing = 0.6.sp, color = Wyrm.Quiet)
+                    Column { EditorBarHint(LucideR.drawable.lucide_ic_arrow_left) }
                 }
                 // Turns the phone (and swaps to that orientation's layout).
                 onToggleOrientation?.let { toggle ->
@@ -679,6 +689,21 @@ private fun EditorFooter(
                 EditorFooterAction("SAVE", Wyrm.OnInk, onSave, filled = true)
             }
         }
+    }
+}
+
+/**
+ * The bar's hint (OM, 2026-10-05): "hold any object" moved up, and under it an
+ * arrow pointing at the grip knob with "drag this knob to move this bar".
+ */
+@Composable
+private fun EditorBarHint(arrow: Int) {
+    Text("HOLD ANY OBJECT FOR MORE OPTIONS", fontFamily = Wyrm.Body, fontSize = 9.sp, letterSpacing = 0.6.sp, color = Wyrm.Quiet)
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+        Icon(painterResource(arrow), contentDescription = null, tint = Wyrm.Ink, modifier = Modifier.size(11.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("DRAG THIS KNOB TO MOVE THIS BAR", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold,
+            fontSize = 8.sp, letterSpacing = 0.6.sp, color = Wyrm.Ink.copy(alpha = 0.8f))
     }
 }
 
@@ -751,6 +776,86 @@ fun ArenaBackgroundSizeEditor(
                 EditorFooterAction("CANCEL", Wyrm.Quiet, onCancel)
                 EditorFooterAction("RESET", Wyrm.Quiet, onReset)
                 EditorFooterAction("SAVE", Wyrm.OnInk, onSave, filled = true)
+            }
+        }
+    }
+}
+
+/**
+ * Snake look (OM, 2026-10-05). The same bare arena as the background-size
+ * editor, with the real snake. Normal and Assist are the engine's two modes;
+ * every change is written live so the snake redraws before Done.
+ */
+@Composable
+fun SnakeLookPreviewEditor(
+    settings: List<Setting>,
+    assist: Boolean,
+    safeInsets: SafeInsets,
+    onAssist: (Boolean) -> Unit,
+    onChange: (Setting, List<Float>) -> Unit,
+    onDone: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val group = if (assist) "assist" else "normal"
+    val render = settings.named("$group.render_mode")
+    val spine = settings.named("$group.spine")
+    val hide = settings.named("assist.hide_cosmetics")
+    val density = LocalDensity.current
+    Box(Modifier.fillMaxSize()) {
+        ArenaHint()
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = with(density) { safeInsets.bottom.toDp() } + 14.dp)
+                .width(460.dp)
+                .clip(wyrmRounded(24.dp))
+                .background(Wyrm.Card.copy(alpha = 0.96f))
+                .border(1.dp, Wyrm.Rule, wyrmRounded(24.dp))
+                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp),
+        ) {
+            Text(
+                "SNAKE LOOK",
+                fontFamily = Wyrm.Body,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                letterSpacing = 1.2.sp,
+                color = Wyrm.Quiet,
+            )
+            PaperSegmented(
+                options = listOf("Normal", "Assist"),
+                selected = if (assist) 1 else 0,
+                onSelect = { onAssist(it == 1) },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
+            PaperSegmented(
+                options = listOf("Texture", "Solid", "Flat", "Skinless"),
+                selected = (render?.index ?: 0).coerceIn(0, 3),
+                onSelect = { index -> render?.let { onChange(it, listOf(index.toFloat())) } },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
+            SettingsBoolRow(
+                title = "Spine",
+                detail = "A thin white line down the middle of every snake.",
+                on = spine?.enabled == true,
+                first = true,
+                onToggle = { on -> spine?.let { onChange(it, listOf(if (on) 1f else 0f)) } },
+            )
+            if (assist) {
+                SettingsBoolRow(
+                    title = "Hide own tag and accessories",
+                    detail = "While assist is on, your tag, accessory and Wyrm look are hidden.",
+                    on = hide?.enabled == true,
+                    first = false,
+                    onToggle = { on -> hide?.let { onChange(it, listOf(if (on) 1f else 0f)) } },
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                EditorFooterAction("CANCEL", Wyrm.Quiet, onCancel)
+                EditorFooterAction("DONE", Wyrm.OnInk, onDone, filled = true)
             }
         }
     }

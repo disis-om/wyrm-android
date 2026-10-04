@@ -342,10 +342,28 @@ fun ControlsScreen(
                 if (!nearOriginal) Box(Modifier.settingAnchor("arrow.style")) {
                     ArrowStyleRow(arrowStyleSetting, arrowColor, first = true) { arrowPickerOpen = true }
                 }
+                // Customise arrow movement (OM, 2026-10-05): on, the start distance
+                // and lag below are the player's; off, the arrow moves exactly like
+                // slither's and they fold away. Near Original always moves like slither's.
+                if (!nearOriginal) SettingsBoolRow(
+                    title = "Customise arrow movement",
+                    detail = if (PlayFeelStore.customArrow) "Your own start distance and lag."
+                    else "Off: the arrow moves exactly like slither's, from the start distance to the drift.",
+                    on = PlayFeelStore.customArrow,
+                    first = false,
+                    onToggle = { PlayFeelStore.applyCustomArrow(it) },
+                )
                 arrowRows.filter { it.id != "arrow.style" && it.id != "arrow.color" }
                     .filter { !nearOriginal || it.id == "arrow.size" }
                     .forEach { setting ->
-                        SettingTypedRow(setting = setting, first = nearOriginal, onChange = onChange)
+                        val movement = setting.id == "arrow.separation" || setting.id == "arrow.smoothness"
+                        AnimatedVisibility(
+                            visible = !movement || PlayFeelStore.customArrow,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically(),
+                        ) {
+                            SettingTypedRow(setting = setting, first = nearOriginal, onChange = onChange)
+                        }
                     }
                 if (!nearOriginal) androidx.compose.runtime.CompositionLocalProvider(LocalAdjustSubject provides AdjustSubject.ARROW) {
                     Box(Modifier.settingAnchor("app.arrow-brightness")) { SettingsSliderRow(
@@ -375,12 +393,42 @@ fun ControlsScreen(
             )
         }
 
+        // Look ahead (OM, 2026-10-05): slither's own; Near Original and Wyrm alike.
+        SettingsSectionLabel("Camera")
+        SettingsCard {
+            Box(Modifier.settingAnchor("app.look-ahead")) { SettingsBoolRow(
+                title = "Look ahead",
+                detail = "Like slither: the view moves ahead of your snake, toward where it is going, and a little further while boosting.",
+                on = PlayFeelStore.lookAhead,
+                first = true,
+                onToggle = { PlayFeelStore.applyLookAhead(it) },
+            ) }
+        }
+
         if (zoomRows.isNotEmpty()) {
             AdvancedFold(label = "Advanced · zoom bar", open = zoomOpen, onToggle = { zoomOpen = !zoomOpen })
             if (zoomOpen) {
                 SettingsCard {
                     zoomRows.forEachIndexed { index, setting ->
                         SettingTypedRow(setting = setting, first = index == 0, onChange = onChange)
+                    }
+                    // The zoom bar's style (OM, 2026-10-05): the slider, or a spring
+                    // whose knob rests in the middle and springs back.
+                    SettingsHairline()
+                    Column(Modifier.padding(14.dp).settingAnchor("app.zoom-style")) {
+                        Text("Zoom bar style", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+                        Spacer(Modifier.height(8.dp))
+                        PaperSegmented(
+                            options = listOf("Slider", "Spring"),
+                            selected = if (PlayFeelStore.zoomSpring) 1 else 0,
+                            onSelect = { PlayFeelStore.applyZoomSpring(it == 1) },
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            if (PlayFeelStore.zoomSpring) "Push the knob toward + to zoom in, toward - to zoom out; let go and it springs back to the middle."
+                            else "Slide to the zoom you want; it stays there.",
+                            fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet,
+                        )
                     }
                 }
             }

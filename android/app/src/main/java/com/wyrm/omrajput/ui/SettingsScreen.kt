@@ -9,6 +9,11 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.runtime.rememberUpdatedState
+import kotlin.math.abs
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -715,8 +720,8 @@ private fun SliderRow(setting: Setting, onChange: (List<Float>) -> Unit) {
 /**
  * A hairline track with a filled run.
  *
- * Dragging anywhere on the row moves it, and so does a tap, because a 2dp line
- * is a cruel thing to ask a thumb to find.
+ * Only the knob moves it (OM, 2026-10-05): a tap on the line, or a scroll
+ * passing over it, used to change the value.
  */
 @Composable
 fun WyrmSlider(
@@ -744,36 +749,54 @@ fun WyrmSlider(
     val travel = remember { mutableFloatStateOf(0f) }
 
     fun report(x: Float) = onChange(minimum + (x / run).coerceIn(0f, 1f) * span)
+    val shownFraction = rememberUpdatedState(fraction)
+    val latestRun = rememberUpdatedState(run)
+    val latestKnob = rememberUpdatedState(knobPx)
+    val latestChange = rememberUpdatedState(onChange)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(40.dp)
             .onSizeChanged { width = it.width.toFloat().coerceAtLeast(1f) }
-            .pointerInput(minimum, maximum, width) {
-                detectTapGestures { report(it.x - knobPx / 2f) }
-            }
             /*
-             * Horizontal drags only.
-             *
-             * This used to take the finger the instant it landed, in any
-             * direction — so a scroll that happened to begin on a slider moved
-             * the slider instead of the page. Asking for one orientation means
-             * the gesture has to travel sideways before it is claimed, and a
-             * vertical swipe passes straight through to the list.
+             * Only the knob moves it (OM, 2026-10-05). A touch elsewhere on the
+             * row, or a scroll that happens to start on it, changes nothing; the
+             * knob is claimed once the finger goes sideways, and a mostly
+             * vertical swipe stays the page's.
              */
-            .draggable(
-                state = rememberDraggableState { delta ->
-                    travel.floatValue = (travel.floatValue + delta).coerceIn(0f, run)
-                    report(travel.floatValue)
-                },
-                orientation = Orientation.Horizontal,
-                onDragStarted = {
-                    dragging = true
-                    travel.floatValue = fraction * run
-                },
-                onDragStopped = { dragging = false },
-            ),
+            .pointerInput(minimum, maximum) {
+                val slop = viewConfiguration.touchSlop
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // Read live: the knob grows while held, which changes the run.
+                    val run = latestRun.value
+                    val knob = latestKnob.value
+                    val startX = shownFraction.value * run
+                    val reach = knob / 2f + 14.dp.toPx()
+                    if (abs(down.position.x - (startX + knob / 2f)) > reach) return@awaitEachGesture
+                    var dx = 0f
+                    var dy = 0f
+                    var claimed = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!pointer.pressed) break
+                        val moved = pointer.positionChange()
+                        dx += moved.x
+                        dy += moved.y
+                        if (!claimed) {
+                            if (abs(dy) > slop && abs(dy) > abs(dx)) break
+                            if (abs(dx) <= slop / 3f) continue
+                            claimed = true
+                            dragging = true
+                        }
+                        pointer.consume()
+                        latestChange.value(minimum + ((startX + dx) / run).coerceIn(0f, 1f) * span)
+                    }
+                    dragging = false
+                }
+            },
         contentAlignment = Alignment.CenterStart,
     ) {
         // The track: a capsule, the way a phone draws one, with the run behind

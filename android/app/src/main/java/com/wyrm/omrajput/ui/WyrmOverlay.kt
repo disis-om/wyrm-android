@@ -547,7 +547,7 @@ class WyrmOverlay(private val activity: Activity) :
         CROP_PHOTO, SETTINGS, SETTINGS_GENERAL, SETTINGS_ASSIST, SETTINGS_NORMAL,
         SETTINGS_CONTROLS, SETTINGS_BUTTONS, SETTINGS_BOT, SETTINGS_NOTIFICATIONS,
         SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_PERFORMANCE, SETTINGS_BACKUP,
-        SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR,
+        SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR, SNAKE_LOOK_EDITOR,
         CHAT, THREAD, PLAYER, CONNECTIONS, TEAM, VOICE, ARENA_CHAT, PRIVACY, NOTIFICATIONS,
         GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT, TRAILS, TRAIL, TRAIL_STUDIO,
         HELP, SUPPORT_COMPOSE, SUPPORT_REPORTS, TRAIL_SHARE;
@@ -573,7 +573,7 @@ class WyrmOverlay(private val activity: Activity) :
             get() = this !in setOf(
                 // Trails is a tab and Alerts opens from Home's bell (OM, 2026-10-04).
                 AUTH, ONBOARDING, HOME, SOCIAL, SKIN, SETTINGS, TRAILS, DEATH, ARENA_CHAT, PRIVACY, LOBBY,
-                CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR,
+                CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR, SNAKE_LOOK_EDITOR,
                 GUEST_SIGN_UP, GUEST_LOG_IN,
                 // Share run is opened from the lobby, a full page of its own like it.
                 TRAIL_SHARE,
@@ -589,6 +589,8 @@ class WyrmOverlay(private val activity: Activity) :
         fun onToggleEditorLeaderboard()
         /** The background-size editor: the engine draws only its map and board, assist off. */
         fun onSetEditorBare(bare: Boolean)
+        /** Snake-look preview: the bare editor shows assist or normal (OM, 2026-10-05). */
+        fun onSetEditorAssist(on: Boolean)
         fun onSetNickname(nickname: String)
         fun onOpenLobby()
         fun onLeaveLobby()
@@ -1290,6 +1292,7 @@ class WyrmOverlay(private val activity: Activity) :
                             onBack = { panelOpen = false },
                             onChange = ::writeSetting,
                             onAdjustBackground = { openBackgroundSizeEditor(route) },
+                            onOpenSnakeLook = { assist -> openSnakeLookPreview(route, assist) },
                         )
 
                         Route.BACKGROUND_SIZE_EDITOR -> ArenaBackgroundSizeEditor(
@@ -1303,6 +1306,19 @@ class WyrmOverlay(private val activity: Activity) :
                             onReset = { setBackgroundScale(DEFAULT_BG_SCALE) },
                             onSave = { closeEditor(backgroundEditorReturn, save = true) },
                             onCancel = { closeEditor(backgroundEditorReturn, save = false) },
+                        )
+
+                        Route.SNAKE_LOOK_EDITOR -> SnakeLookPreviewEditor(
+                            settings = settings,
+                            assist = snakeLookAssist,
+                            safeInsets = SafeInsets(),
+                            onAssist = { on ->
+                                snakeLookAssist = on
+                                host?.onSetEditorAssist(on)
+                            },
+                            onChange = ::writeSetting,
+                            onDone = { closeEditor(snakeLookReturn, save = true) },
+                            onCancel = { closeEditor(snakeLookReturn, save = false) },
                         )
 
                         Route.SETTINGS_BOT -> SettingsBotScreen(
@@ -1844,7 +1860,7 @@ class WyrmOverlay(private val activity: Activity) :
                         !backupResultPromptVisible &&
                         route !in setOf(
                             Route.LOBBY, Route.DEATH, Route.ARENA_CHAT,
-                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT, Route.BACKGROUND_SIZE_EDITOR,
+                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT, Route.BACKGROUND_SIZE_EDITOR, Route.SNAKE_LOOK_EDITOR,
                         )
                     ) {
                         CrashPromptHost(repository = repository, insetBottom = insetBottom, insetTop = insetTop)
@@ -1861,7 +1877,7 @@ class WyrmOverlay(private val activity: Activity) :
                         !enteringArena &&
                         route !in setOf(
                             Route.DEATH, Route.ARENA_CHAT,
-                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT, Route.BACKGROUND_SIZE_EDITOR,
+                            Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT, Route.BACKGROUND_SIZE_EDITOR, Route.SNAKE_LOOK_EDITOR,
                         )
                     ) {
                         DropPromptHost(repository = repository, insetBottom = insetBottom, insetTop = insetTop)
@@ -3919,6 +3935,21 @@ class WyrmOverlay(private val activity: Activity) :
                 onOpen = { openBackgroundSizeEditor(Route.SETTINGS_ASSIST) },
             )
         }
+        out += SettingsSearchEntry(
+            id = "app.snake-preview",
+            title = "See it in the arena",
+            detail = "Skinless draws every snake as a clear strip. Spine is a thin white line.",
+            page = "Modes",
+            keywords = "snake look skinless spine render texture solid flat hide tag accessories preview arena",
+            open = { openSnakeLookPreview(Route.SETTINGS_ASSIST, false) },
+        ) {
+            SettingsValueRow(
+                title = "See it in the arena",
+                value = "",
+                first = true,
+                onOpen = { openSnakeLookPreview(Route.SETTINGS_ASSIST, false) },
+            )
+        }
         val byAction = hotkeys.associateBy { it.action }
         listOf(1, 2, 3, 4, 6, 7, 8, 9).mapNotNull(byAction::get).forEach { key ->
             out += SettingsSearchEntry(
@@ -4473,6 +4504,12 @@ class WyrmOverlay(private val activity: Activity) :
     /** Where the background-size editor goes back to: Modes, or the Skin tab. */
     private var backgroundEditorReturn = Route.SETTINGS_ASSIST
 
+    /** Where the snake-look preview goes back to (OM, 2026-10-05). */
+    private var snakeLookReturn = Route.SETTINGS_ASSIST
+
+    /** Which mode the snake-look preview is showing. Assist is true. */
+    private var snakeLookAssist by mutableStateOf(false)
+
     /**
      * Adjust arena background size (OM, 2026-10-01): the AI arena sideways with
      * one slider. One size for both modes, written live; Cancel puts it back.
@@ -4481,6 +4518,18 @@ class WyrmOverlay(private val activity: Activity) :
         backgroundEditorReturn = from
         host?.onSetEditorBare(true)
         openEditor(Route.BACKGROUND_SIZE_EDITOR)
+    }
+
+    /**
+     * Snake look (OM, 2026-10-05): the same bare arena, on the real snake.
+     * [assist] is the mode the preview opens on. It is not forced off.
+     */
+    private fun openSnakeLookPreview(from: Route, assist: Boolean) {
+        snakeLookReturn = from
+        snakeLookAssist = assist
+        host?.onSetEditorBare(true)
+        host?.onSetEditorAssist(assist)
+        openEditor(Route.SNAKE_LOOK_EDITOR)
     }
 
     private fun setBackgroundScale(scale: Float) {
@@ -4527,6 +4576,7 @@ class WyrmOverlay(private val activity: Activity) :
             "layout.joystick_opacity", "layout.boost_opacity", "layout.zoom_opacity",
             "layout.stats_scale", "layout.stats_opacity", "layout.chat_scale", "layout.chat_opacity",
             "normal.bg_scale", "assist.bg_scale",
+            "normal.render_mode", "assist.render_mode", "normal.spine", "assist.spine", "assist.hide_cosmetics",
         ) }.forEach { setting ->
             setting.raw.toFloatOrNull()?.let { host?.onWriteSetting(setting.id, floatArrayOf(it)) }
         }
@@ -5161,6 +5211,7 @@ class WyrmOverlay(private val activity: Activity) :
 
     fun isLayoutEditorActive(): Boolean = route in setOf(
         Route.CONTROL_LAYOUT, Route.ON_SCREEN_BUTTON_LAYOUT, Route.ARENA_HUD_LAYOUT, Route.BACKGROUND_SIZE_EDITOR,
+        Route.SNAKE_LOOK_EDITOR,
     )
 
     fun consumeLayoutEditorExit(): Boolean {
@@ -5974,6 +6025,37 @@ class WyrmOverlay(private val activity: Activity) :
         .put("performanceMode", com.wyrm.omrajput.data.WyrmPerformance.mode.key)
         // Home › Near Original (OM, 2026-10-02): the same switch on every platform.
         .put("nearOriginal", NearOriginalStore.on)
+        // Controls › play feel (OM, 2026-10-05): the same on every platform.
+        .put("arrowCustomMotion", PlayFeelStore.customArrow)
+        .put("lookAhead", PlayFeelStore.lookAhead)
+        .put("zoomSpring", PlayFeelStore.zoomSpring)
+        // Auto restart (OM, 2026-10-05): the on-screen toggle's state, the engine's
+        // `general.auto_respawn`. Only when the engine has said what it is, so an
+        // empty read never uploads "off" over the account's "on".
+        .apply {
+            SettingsCodec.settings(host?.onReadSettings().orEmpty())
+                .firstOrNull { it.id == "general.auto_respawn" }
+                ?.let { put("autoRestart", it.number >= 0.5f) }
+        }
+        // Snake look (OM, 2026-10-05): only keys the engine has already reported.
+        .apply {
+            val reported = SettingsCodec.settings(host?.onReadSettings().orEmpty())
+            reported.firstOrNull { it.id == "normal.render_mode" }?.let {
+                put("renderModeNormal", it.number.toInt().coerceIn(0, 3))
+            }
+            reported.firstOrNull { it.id == "assist.render_mode" }?.let {
+                put("renderModeAssist", it.number.toInt().coerceIn(0, 3))
+            }
+            reported.firstOrNull { it.id == "normal.spine" }?.let {
+                put("spineNormal", it.number >= 0.5f)
+            }
+            reported.firstOrNull { it.id == "assist.spine" }?.let {
+                put("spineAssist", it.number >= 0.5f)
+            }
+            reported.firstOrNull { it.id == "assist.hide_cosmetics" }?.let {
+                put("assistHideCosmetics", it.number >= 0.5f)
+            }
+        }
 
     private fun applySharedSettings(doc: org.json.JSONObject) {
         com.wyrm.omrajput.data.TrailSkin.from(doc.optJSONObject("skin"))?.let { skin ->
@@ -6010,6 +6092,38 @@ class WyrmOverlay(private val activity: Activity) :
             activity.getSharedPreferences("wyrm_near_original", android.content.Context.MODE_PRIVATE).edit()
                 .putBoolean("on", doc.optBoolean("nearOriginal", false)).commit()
         }
+        // Auto restart (OM, 2026-10-05): straight into the engine (user.dat keeps it).
+        if (doc.has("autoRestart")) {
+            host?.onWriteSetting("general.auto_respawn",
+                floatArrayOf(if (doc.optBoolean("autoRestart", false)) 1f else 0f))
+        }
+        // Snake look (OM, 2026-10-05): a missing key leaves this phone's value.
+        if (doc.has("renderModeNormal")) {
+            host?.onWriteSetting("normal.render_mode",
+                floatArrayOf(doc.optInt("renderModeNormal", 0).coerceIn(0, 3).toFloat()))
+        }
+        if (doc.has("renderModeAssist")) {
+            host?.onWriteSetting("assist.render_mode",
+                floatArrayOf(doc.optInt("renderModeAssist", 0).coerceIn(0, 3).toFloat()))
+        }
+        if (doc.has("spineNormal")) {
+            host?.onWriteSetting("normal.spine",
+                floatArrayOf(if (doc.optBoolean("spineNormal", false)) 1f else 0f))
+        }
+        if (doc.has("spineAssist")) {
+            host?.onWriteSetting("assist.spine",
+                floatArrayOf(if (doc.optBoolean("spineAssist", false)) 1f else 0f))
+        }
+        if (doc.has("assistHideCosmetics")) {
+            host?.onWriteSetting("assist.hide_cosmetics",
+                floatArrayOf(if (doc.optBoolean("assistHideCosmetics", false)) 1f else 0f))
+        }
+        // Play feel (OM, 2026-10-05): each key on its own; a missing one keeps the phone's.
+        activity.getSharedPreferences("wyrm_play_feel", android.content.Context.MODE_PRIVATE).edit().apply {
+            if (doc.has("arrowCustomMotion")) putBoolean("custom_arrow", doc.optBoolean("arrowCustomMotion", true))
+            if (doc.has("lookAhead")) putBoolean("look_ahead", doc.optBoolean("lookAhead", false))
+            if (doc.has("zoomSpring")) putBoolean("zoom_spring", doc.optBoolean("zoomSpring", false))
+        }.commit()
         doc.optString("performanceMode").takeIf { key ->
             com.wyrm.omrajput.data.WyrmPerformance.Mode.entries.any { it.key == key }
         }?.let { key ->
@@ -6033,6 +6147,7 @@ class WyrmOverlay(private val activity: Activity) :
         com.wyrm.omrajput.data.WyrmPerformance.reload(activity)
         com.wyrm.omrajput.data.PlayOrientation.reload(activity)
         JoystickLaserStore.reload(activity)
+        PlayFeelStore.reload(activity)
         TeamHudStore.reload(activity)
         NearOriginalStore.reload(activity)
         appTheme = WyrmThemeId.fromStored(uiPreferences.getString("theme", null))

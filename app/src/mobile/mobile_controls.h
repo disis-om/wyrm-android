@@ -54,6 +54,16 @@ void mobile_controls_update(tenv* env);
 bool mobile_controls_process_event(tenv* env, const void* event);
 bool mobile_controls_get_aim(tenv* env, int* x, int* y);
 bool mobile_controls_get_arrow_position(tenv* env, float* x, float* y);
+
+/* Play feel (OM, 2026-10-05), from the app: slither's own arrow motion (Wyrm
+   mode; Near Original always), look ahead (both modes), and the zoom bar's
+   style (0 the slider, 1 the spring). */
+void mobile_controls_set_play_feel(bool original_arrow, bool look_ahead,
+                                   int zoom_style);
+/* Look ahead: step it once a frame (redraw), then read the camera's offset
+   in screen pixels (the snake is drawn this far the other way). */
+void mobile_controls_look_ahead_step(tenv* env);
+void mobile_controls_look_ahead_offset(tenv* env, float* x, float* y);
 bool mobile_controls_boost_down(tenv* env);
 /* The steering actually in use: always the arrow upright (portrait play). */
 int mobile_controls_steering_mode(tenv* env);

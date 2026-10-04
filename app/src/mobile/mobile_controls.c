@@ -50,6 +50,103 @@ static float original_unit(tenv* env) {
   return short_side / 480.0f;
 }
 
+/*
+ * Play feel (OM, 2026-10-05), set by the app (Settings > Controls) through
+ * mobile_controls_set_play_feel:
+ *  - original_arrow: slither's own arrow motion, number for number (Main.as).
+ *    Near Original always moves like this; Wyrm's arrow does when
+ *    "Customise arrow movement" is off.
+ *  - look_ahead: slither's look ahead (Main.as `look_ahead`), both modes.
+ *  - zoom_spring: the zoom bar as a spring: the knob rests in the middle,
+ *    toward + zooms in, toward - zooms out, and it springs back on release.
+ * Plain ints: written from the app's thread, read once a frame here.
+ */
+static volatile int feel_original_arrow = 0;
+static volatile int feel_look_ahead = 0;
+static volatile int feel_zoom_spring = 0;
+
+void mobile_controls_set_play_feel(bool original_arrow, bool look_ahead,
+                                   int zoom_style) {
+  feel_original_arrow = original_arrow ? 1 : 0;
+  feel_look_ahead = look_ahead ? 1 : 0;
+  feel_zoom_spring = zoom_style == 1 ? 1 : 0;
+}
+
+/* Whether the arrow moves exactly as slither's does. */
+static bool arrow_original_motion(void) {
+  return android_home_near_original() || feel_original_arrow != 0;
+}
+
+/* The spring zoom knob: -1 (all the way to -) .. 1 (all the way to +). */
+static float zoom_spring_t = 0.0f;
+
+/* Look ahead (Main.as `view_lav`, `lav_d`), in the original's units. */
+static float look_lav = 0.0f;
+static float look_lav_d = 75.0f;
+
+/* The player's own snake while alive, or NULL. */
+static snake* feel_own_snake(tenv* env) {
+  game_data* gdata = &env->usr->gdata;
+  int count = tdarray_length(gdata->data.snakes);
+  if (count <= 0) return NULL;
+  snake* own = gdata->data.snakes + (count - 1);
+  return own->local_player ? own : NULL;
+}
+
+/*
+ * Look ahead, once a frame (Main.as 12891-12950). Sideways the camera moves
+ * up or down toward where the snake is heading (sin of its eased angle,
+ * squared with its sign), upright left or right (cos); 75 units ahead, 125
+ * while boosting, eased by slither's own p005 / p01 tables and never more than
+ * 160 a step. Off: no offset at all, and it starts from zero when turned on.
+ */
+void mobile_controls_look_ahead_step(tenv* env) {
+  snake* own = feel_own_snake(env);
+  if (!feel_look_ahead || !own) {
+    look_lav = 0.0f;
+    look_lav_d = 75.0f;
+    return;
+  }
+  if (own->dead) return;
+  game_data* gdata = &env->usr->gdata;
+  float vfr = gdata->data.vfr;
+  if (!(vfr > 0.0f)) vfr = 0.0f;
+  int vfrb = gdata->data.vfrb;
+  if (vfrb < 0) vfrb = 0;
+  if (vfrb > 120) vfrb = 120;
+  bool upright = env->wnd->size[1] > env->wnd->size[0];
+  float s = upright ? cosf(own->eang) : sinf(own->eang);
+  s = s < 0.0f ? -(s * s) : s * s;
+  bool wmd = gdata->data.wmd || mobile_controls_boost_down(env);
+  if (wmd) {
+    if (look_lav_d != 125.0f) {
+      look_lav_d += vfr * 0.5f;
+      if (look_lav_d >= 125.0f) look_lav_d = 125.0f;
+    }
+  } else if (look_lav_d != 75.0f) {
+    look_lav_d -= vfr * 0.25f;
+    if (look_lav_d <= 75.0f) look_lav_d = 75.0f;
+  }
+  float step = s * look_lav_d - look_lav;
+  if (step < -160.0f) step = -160.0f;
+  if (step > 160.0f) step = 160.0f;
+  float k = wmd ? 0.01f : 0.005f;
+  look_lav += step * (1.0f - powf(1.0f - k, (float)vfrb));
+}
+
+/* Where the camera sits ahead of the snake, in screen pixels (the snake is
+   drawn this far the other way from the middle). */
+void mobile_controls_look_ahead_offset(tenv* env, float* x, float* y) {
+  *x = 0.0f;
+  *y = 0.0f;
+  if (!feel_look_ahead) return;
+  float px = look_lav * original_unit(env);
+  if (env->wnd->size[1] > env->wnd->size[0])
+    *x = px;
+  else
+    *y = px;
+}
+
 static bool original_joystick_right(tenv* env) {
   return env->usr->usrs.mobile_controls.handedness != MOBILE_LEFT_HANDED;
 }
@@ -114,6 +211,15 @@ static void set_zoom_from_touch(tenv* env, float x, float y) {
   mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
   float cx, cy, length, thickness;
   zoom_geometry(env, &cx, &cy, &length, &thickness);
+  if (feel_zoom_spring) {
+    /* The spring bar (OM, 2026-10-05): the finger pulls the knob from the
+       middle; + is right (sideways bar) or up (upright bar). */
+    float pull = cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL
+                     ? (x - cx) / (length * 0.5f)
+                     : (cy - y) / (length * 0.5f);
+    zoom_spring_t = clampf(pull, -1.0f, 1.0f);
+    return;
+  }
   float t = cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL
                 ? (x - (cx - length * 0.5f)) / length
                 : 1.0f - (y - (cy - length * 0.5f)) / length;
@@ -258,8 +364,16 @@ static float arrow_seed_distance(tenv* env) {
   mobile_arrow_settings* arrow = &env->usr->usrs.arrow_controls;
   int count = tdarray_length(gdata->data.snakes);
   float sc = count > 0 ? gdata->data.snakes[count - 1].sc : 1.0f;
-  /* Near Original: the original start distance (separation 1). */
-  float separation = android_home_near_original() ? 1.0f : arrow->separation;
+  /* slither's own start distance (Main.as touch begin): 58 x snake.sc x its
+     zoom for this length (dgsc = 0.35 + 0.35 / max(1, (sct + 16) / 36)) in its
+     unit, with no floor (OM, 2026-10-05). */
+  if (arrow_original_motion()) {
+    int sct = count > 0 ? gdata->data.snakes[count - 1].sct : 2;
+    float wanted = (sct + 16) / 36.0f;
+    float dgsc = 0.35f + 0.35f / (wanted > 1.0f ? wanted : 1.0f);
+    return 58.0f * sc * dgsc * original_unit(env);
+  }
+  float separation = arrow->separation;
   float d = 58.0f * sc * gdata->data.gsc * separation;
   float least = 40.0f * control_scale(env);
   return d < least ? least : d;
@@ -271,6 +385,10 @@ static void arrow_seed(tenv* env, float x, float y) {
   game_data* gdata = &env->usr->gdata;
   int count = tdarray_length(gdata->data.snakes);
   float heading = count > 0 ? gdata->data.snakes[count - 1].ang : 0.0f;
+  /* slither seeds along the last steering angle (`twang`), not the snake's. */
+  if (arrow_original_motion() && state->aim_valid &&
+      (state->joystick_axis[0] != 0.0f || state->joystick_axis[1] != 0.0f))
+    heading = atan2f(state->joystick_axis[1], state->joystick_axis[0]);
   float d = arrow_seed_distance(env);
   state->arrow_vec[0] = cosf(heading) * d;
   state->arrow_vec[1] = sinf(heading) * d;
@@ -772,10 +890,15 @@ void mobile_controls_update(tenv* env) {
 
     /* The setting reads as how much it lags, so it is one minus the catch-up.
        slither eases at 0.6, which is a smoothness of 0.4. */
-    /* Near Original: slither's own 0.6 catch-up (smoothness 0.4). */
-    float smoothness = android_home_near_original() ? 0.4f : arrow->smoothness;
-    float ease = clampf(1.0f - smoothness, 0.05f, 0.95f);
-    ease = 1.0f - powf(1.0f - ease, vfr);
+    /* The original motion eases 0.6 every frame, as Main.as does (not per
+       unit of time); Wyrm's own uses the player's lag, frame-rate free. */
+    float ease;
+    if (arrow_original_motion()) {
+      ease = 0.6f;
+    } else {
+      ease = clampf(1.0f - arrow->smoothness, 0.05f, 0.95f);
+      ease = 1.0f - powf(1.0f - ease, vfr);
+    }
     state->arrow_draw[0] += (state->arrow_vec[0] - state->arrow_draw[0]) * ease;
     state->arrow_draw[1] += (state->arrow_vec[1] - state->arrow_draw[1]) * ease;
 
@@ -788,6 +911,23 @@ void mobile_controls_update(tenv* env) {
       if (state->arrow_opacity < 0.0f) state->arrow_opacity = 0.0f;
       state->arrow_dead += vfr * 0.01f;
       if (state->arrow_dead > 1.0f) state->arrow_dead = 1.0f;
+    }
+
+    /* The spring zoom bar: while pulled it zooms (gently near the middle,
+       quickly at the ends); let go, it springs back to the middle. */
+    if (feel_zoom_spring) {
+      if (!state->zoom_down) {
+        zoom_spring_t *= powf(0.72f, vfr);
+        if (fabsf(zoom_spring_t) < 0.01f) zoom_spring_t = 0.0f;
+      }
+      if (fabsf(zoom_spring_t) > 0.04f) {
+        float rate = 1.4f * zoom_spring_t * fabsf(zoom_spring_t);
+        float* zoom = &env->usr->gdata.data.ms_zoom;
+        *zoom *= expf(rate * vfr * 0.008f);
+        *zoom = clampf(*zoom, MAX_ZOOM_OUT, MAX_ZOOM_IN);
+      }
+    } else {
+      zoom_spring_t = 0.0f;
     }
 
     /* Near Original: the boost button's alpha (Main.as: 0.2 idle, up to 0.4
@@ -864,11 +1004,15 @@ static bool arrow_geometry(tenv* env, float* ax, float* ay, float* dx,
      along the heading: the arrow is the steering vector made visible, so a
      longer drag genuinely puts it further out. Once the finger is gone it
      carries on forward as it fades — 260 pixels by the time it is invisible. */
-  /* Near Original: the release drift is in the original's unit. */
-  float drift = 260.0f * (android_home_near_original() ? original_unit(env) : scale) *
+  /* The original motion drifts 260 of the original's units. */
+  float drift = 260.0f * (arrow_original_motion() ? original_unit(env) : scale) *
                 powf(state->arrow_dead, 2.5f);
-  *ax = env->wnd->size[0] * 0.5f + state->arrow_draw[0] + *dx * drift;
-  *ay = env->wnd->size[1] * 0.5f + state->arrow_draw[1] + *dy * drift;
+  /* Look ahead moves the camera, so the arrow keeps to the snake (Main.as:
+     arrow_batch at -view_lav). */
+  float lax, lay;
+  mobile_controls_look_ahead_offset(env, &lax, &lay);
+  *ax = env->wnd->size[0] * 0.5f - lax + state->arrow_draw[0] + *dx * drift;
+  *ay = env->wnd->size[1] * 0.5f - lay + state->arrow_draw[1] + *dy * drift;
   *length = 70.0f * scale * arrow->size;
   *width = 52.0f * scale * arrow->size;
   return true;
@@ -1036,6 +1180,8 @@ static mobile_arrow_shape arrow_shape(int style) {
   }
 }
 
+static void draw_original_arrow(tenv* env, ImDrawList* dl);
+
 static void draw_arrow(tenv* env, ImDrawList* dl) {
   mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
   mobile_arrow_settings* arrow = &env->usr->usrs.arrow_controls;
@@ -1051,6 +1197,13 @@ static void draw_arrow(tenv* env, ImDrawList* dl) {
                           env->usr->mobile_controls.arrow_opacity / 0.85f))
     return;
   float brightness = android_arrow_brightness();
+  /* The Original style is slither's own arrow, drawn as Near Original draws
+     it: outline, shadow, the snake's arrow colour, its size (OM, 2026-10-05).
+     An image arrow (above) still wins. */
+  if (env->usr->usrs.arrow_style == MOBILE_ARROW_ORIGINAL) {
+    draw_original_arrow(env, dl);
+    return;
+  }
   mobile_arrow_shape shape = arrow_shape(env->usr->usrs.arrow_style);
   ImVec2 points[8];
   for (int i = 0; i < shape.count; ++i) {
@@ -1141,6 +1294,13 @@ static void draw_original_arrow(tenv* env, ImDrawList* dl) {
   float py = dx;
   static const float shape_x[] = {15.0f, 15.0f, 41.0f, 41.0f, 67.0f, 41.0f, 41.0f};
   static const float shape_y[] = {-10.88f, 10.88f, 7.68f, 25.6f, 0.0f, -25.6f, -7.68f};
+  /* (e.y, -e.x) of each edge points out of a counter-clockwise shape. */
+  float shadow_area = 0.0f;
+  for (int i = 0; i < 7; ++i) {
+    int next = (i + 1) % 7;
+    shadow_area += shape_x[i] * shape_y[next] - shape_x[next] * shape_y[i];
+  }
+  float shadow_side = shadow_area > 0.0f ? 1.0f : -1.0f;
   ImVec2 p[7];
   for (int i = 0; i < 7; ++i)
     p[i] = (ImVec2){ax + dx * shape_x[i] * s + px * shape_y[i] * s,
@@ -1149,17 +1309,50 @@ static void draw_original_arrow(tenv* env, ImDrawList* dl) {
      black halo (sigma ~6 texture px) around the outlined arrow. Nested strokes,
      widest first, each set so the pile at a distance x outside the 9 px outline
      reads 0.5 erfc(x / (sigma sqrt 2)) of the arrow's alpha. */
+  /* OM, 2026-10-05: the shadow spread the arrow. slither draws it inside an
+     84 px texture with the arrow 10 px in, so it reaches only about 11.5 px
+     past the 9 px outline; and thick closed strokes grew mitre spikes at the
+     head's corners. Now: nested fills of the outline pushed out by d along
+     each corner's bisector (no mitre), widest first, the same erfc profile,
+     never past 11.5 texture px, drawn as rings outside the path. */
   {
-    const int bands = 8;
+    const int bands = 6;
     const float sigma = 6.0f;
+    const float reach = 11.5f;
+    /* The outline's outside edge: 4.5 px out from the path. */
     float before = 0.0f;
     for (int j = bands; j >= 1; --j) {
-      float x = (j - 0.5f) * (3.0f * sigma / bands);
+      float x = (j - 0.5f) * (reach / bands);
       float want = alpha * 0.5f * erfcf(x / (sigma * 1.41421356f));
       float a = before >= 0.999f ? 0.0f : 1.0f - (1.0f - want) / (1.0f - before);
-      if (a > 0.003f)
-        ImDrawList_AddPolyline(dl, p, 7, color_u32(0, 0, 0, a), ImDrawFlags_Closed,
-                               (9.0f + 2.0f * j * (3.0f * sigma / bands)) * s);
+      if (a > 0.003f) {
+        float d = 4.5f + j * (reach / bands);
+        ImVec2 q[7];
+        for (int i = 0; i < 7; ++i) {
+          int prev = (i + 6) % 7, next = (i + 1) % 7;
+          /* Outward normals of the two edges at this corner (the shape winds
+             clockwise in screen space: x along, y across). */
+          float e1x = shape_x[i] - shape_x[prev], e1y = shape_y[i] - shape_y[prev];
+          float e2x = shape_x[next] - shape_x[i], e2y = shape_y[next] - shape_y[i];
+          float l1 = sqrtf(e1x * e1x + e1y * e1y), l2 = sqrtf(e2x * e2x + e2y * e2y);
+          float n1x = e1y / l1, n1y = -e1x / l1;
+          float n2x = e2y / l2, n2y = -e2x / l2;
+          float bx = n1x + n2x, by = n1y + n2y;
+          float bl = sqrtf(bx * bx + by * by);
+          if (bl < 0.0001f) { bx = n1x; by = n1y; bl = 1.0f; }
+          float ox = shape_x[i] + bx / bl * d * shadow_side;
+          float oy = shape_y[i] + by / bl * d * shadow_side;
+          q[i] = (ImVec2){ax + dx * ox * s + px * oy * s, ay + dy * ox * s + py * oy * s};
+        }
+        /* A ring from the path out to q: nothing lands under the fill, which
+           the arrow's own alpha would let show through. */
+        ImU32 shade = color_u32(0, 0, 0, a);
+        for (int i = 0; i < 7; ++i) {
+          int next = (i + 1) % 7;
+          ImDrawList_AddTriangleFilled(dl, p[i], p[next], q[next], shade);
+          ImDrawList_AddTriangleFilled(dl, p[i], q[next], q[i], shade);
+        }
+      }
       if (want > before) before = want;
     }
   }
@@ -1284,10 +1477,41 @@ static void draw_zoom(tenv* env, ImDrawList* dl, bool editor) {
                            arena_theme_colour(ARENA_THEME_CARD, alpha * 0.94f),
                            half, 0);
 
+  /* The spring bar (OM, 2026-10-05): the knob rests in the middle, the run
+     reads from the middle to the knob, with - and + at the two ends. */
+  if (feel_zoom_spring) {
+    float half_len = length * 0.5f;
+    if (cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL)
+      knob = (ImVec2){cx + zoom_spring_t * half_len, cy};
+    else
+      knob = (ImVec2){cx, cy - zoom_spring_t * half_len};
+  }
   /* The run reads from the near end to the knob, whichever way the bar sits. */
   ImVec2 fill_min = track_min;
   ImVec2 fill_max = track_max;
-  if (cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL)
+  if (feel_zoom_spring) {
+    if (cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL) {
+      fill_min.x = knob.x < cx ? knob.x : cx;
+      fill_max.x = knob.x < cx ? cx : knob.x;
+    } else {
+      fill_min.y = knob.y < cy ? knob.y : cy;
+      fill_max.y = knob.y < cy ? cy : knob.y;
+    }
+    float mark = half * 0.9f;
+    ImU32 sign = arena_theme_colour(ARENA_THEME_INK, alpha * 0.9f);
+    float inset = half * 2.2f;
+    ImVec2 minus, plus;
+    if (cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL) {
+      minus = (ImVec2){track_min.x + inset, cy};
+      plus = (ImVec2){track_max.x - inset, cy};
+    } else {
+      minus = (ImVec2){cx, track_max.y - inset};
+      plus = (ImVec2){cx, track_min.y + inset};
+    }
+    ImDrawList_AddLine(dl, (ImVec2){minus.x - mark, minus.y}, (ImVec2){minus.x + mark, minus.y}, sign, 2.5f);
+    ImDrawList_AddLine(dl, (ImVec2){plus.x - mark, plus.y}, (ImVec2){plus.x + mark, plus.y}, sign, 2.5f);
+    ImDrawList_AddLine(dl, (ImVec2){plus.x, plus.y - mark}, (ImVec2){plus.x, plus.y + mark}, sign, 2.5f);
+  } else if (cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL)
     fill_max.x = knob.x;
   else
     fill_min.y = knob.y;

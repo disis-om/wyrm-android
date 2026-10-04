@@ -51,6 +51,8 @@ fun SettingsAssistScreen(
     onChange: (Setting, List<Float>) -> Unit,
     /** Opens the live background-size editor (the slider moved there, OM 2026-10-01). */
     onAdjustBackground: () -> Unit = {},
+    /** Opens the real snake in the arena. True when this page's mode is assist (OM, 2026-10-05). */
+    onOpenSnakeLook: (Boolean) -> Unit = {},
 ) {
     // Settings search picks the tab that holds the row it opened.
     var mode by remember { mutableIntStateOf(if (SettingsFocus.target?.startsWith("normal.") == true) 0 else 1) }
@@ -58,6 +60,7 @@ fun SettingsAssistScreen(
     val foodIds = setOf("food_type", "food_scale", "food_float", "food_flicker",
         "const_food_scale", "uniform_food_color", "food_color")
     val dotIds = setOf("show_crosshair", "head_dot_size", "head_dot_color")
+    val snakeIds = setOf("render_mode", "spine", "hide_cosmetics")
     val laser = listOfNotNull(
         settings.named("general.laser_thickness"),
         settings.named("general.laser_color"),
@@ -130,11 +133,36 @@ fun SettingsAssistScreen(
             val headDotSize = modeSettings.firstOrNull { it.id.substringAfter('.') == "head_dot_size" }
             val headDotColor = modeSettings.firstOrNull { it.id.substringAfter('.') == "head_dot_color" }
             val rest = modeSettings.filter {
-                it !in colours && it.id.substringAfter('.') !in foodIds + dotIds + "bg_scale"
+                it !in colours && it.id.substringAfter('.') !in foodIds + dotIds + snakeIds + "bg_scale"
             }
             val backgroundScale = modeSettings.firstOrNull { it.id.substringAfter('.') == "bg_scale" }
 
             Column {
+                // Snake look (OM, 2026-10-05): follows the visible mode tab.
+                SettingsSectionLabel("Snake")
+                SettingsCard {
+                    Box(Modifier.settingAnchor("app.snake-preview")) {
+                        SettingsValueRow(
+                            title = "See it in the arena",
+                            value = "",
+                            first = true,
+                            onOpen = { onOpenSnakeLook(visibleMode == 1) },
+                        )
+                    }
+                    modeSettings.firstOrNull { it.id.substringAfter('.') == "render_mode" }?.let { setting ->
+                        SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                    }
+                    modeSettings.firstOrNull { it.id.substringAfter('.') == "spine" }?.let { setting ->
+                        SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                    }
+                    if (visibleMode == 1) {
+                        modeSettings.firstOrNull { it.id.substringAfter('.') == "hide_cosmetics" }?.let { setting ->
+                            SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                        }
+                    }
+                }
+                SettingsCaption("Skinless draws every snake as a clear strip in its own colour. Spine is a thin white line down every snake.")
+
                 SettingsSectionLabel("Arena colours")
                 SettingsCard {
                     colours.forEachIndexed { index, setting ->

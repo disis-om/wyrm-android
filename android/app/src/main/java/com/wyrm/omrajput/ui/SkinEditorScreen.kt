@@ -13,6 +13,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -790,6 +794,7 @@ private fun StudioSlider(
         )
         Spacer(Modifier.height(6.dp))
         var width by remember { mutableFloatStateOf(0f) }
+        val latestValue = rememberUpdatedState(value)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -802,16 +807,34 @@ private fun StudioSlider(
                     if (paper) SolidColor(Wyrm.Rule) else glassEdge(),
                     wyrmRounded(Wyrm.Pill),
                 )
+                /* Only the knob moves it (OM, 2026-10-05): a tap on the track or a
+                   scroll passing over it changes nothing. */
                 .pointerInput(Unit) {
-                    detectTapGestures { position ->
-                        if (width > 0f) onValue((position.x / width).coerceIn(0f, 1f))
-                    }
-                }
-                .pointerInput(Unit) {
-                    detectDragGestures { change, _ ->
-                        change.consume()
-                        if (width > 0f) {
-                            onValue((change.position.x / width).coerceIn(0f, 1f))
+                    val slop = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val w = width
+                        if (w <= 0f) return@awaitEachGesture
+                        val startX = latestValue.value.coerceIn(0f, 1f) * w
+                        val reach = size.height * 0.34f + 16.dp.toPx()
+                        if (kotlin.math.abs(down.position.x - startX) > reach) return@awaitEachGesture
+                        var dx = 0f
+                        var dy = 0f
+                        var claimed = false
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!pointer.pressed) break
+                            val moved = pointer.positionChange()
+                            dx += moved.x
+                            dy += moved.y
+                            if (!claimed) {
+                                if (kotlin.math.abs(dy) > slop && kotlin.math.abs(dy) > kotlin.math.abs(dx)) break
+                                if (kotlin.math.abs(dx) <= slop / 3f) continue
+                                claimed = true
+                            }
+                            pointer.consume()
+                            onValue(((startX + dx) / w).coerceIn(0f, 1f))
                         }
                     }
                 },

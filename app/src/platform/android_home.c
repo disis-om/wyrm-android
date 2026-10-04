@@ -19,6 +19,7 @@
 #include "../ui/lobby.h"
 #include "../user.h"
 #include "android_team.h"
+#include "../mobile/mobile_controls.h"
 
 static tenv* home_env = NULL;
 static SDL_Mutex* home_mutex = NULL;
@@ -53,6 +54,8 @@ static bool death_watching = false;
 static Uint64 death_began_at = 0;
 static float death_opacity = 1;
 static bool run_recorded = false;
+/* Auto restart (OM, 2026-10-05): this death's restart is closing the socket. */
+static bool auto_restart_closing = false;
 
 /* Arena drops: what the current socket said on its way out, and whether this
    life has already been reported. Engine thread only. */
@@ -342,6 +345,18 @@ static bool drop_can_report(game_data* gdata) {
 
 static void arena_drop_report(tenv* env, const char* reason, int death_code);
 
+/* Auto restart off after an arena drop (OM, 2026-10-05). A drop and an instant
+   rejoin could chase each other round and round (and earn the arena's IP
+   penalty), so any drop the app reports turns the toggle off; the player turns
+   it back on. Saved at once, so it goes to the account too. */
+static void drop_ends_auto_restart(tenv* env) {
+  user_settings* auto_settings = &env->usr->usrs;
+  if (!auto_settings->auto_respawn) return;
+  auto_settings->auto_respawn = 0;
+  save_user_settings(auto_settings);
+  SDL_Log("Wyrm: auto restart turned off (arena drop)");
+}
+
 void android_home_arena_drop(tenv* env) {
   if (!env) return;
   /* Evaluated before `android_home_notify_death`: once that has run a death is
@@ -363,6 +378,8 @@ static void arena_drop_report(tenv* env, const char* reason, int death_code) {
   game_data* gdata = &env->usr->gdata;
   user_settings* settings = &env->usr->usrs;
   drop_reported = true;
+  /* Before the death that follows ('v' path): no auto restart after a drop. */
+  drop_ends_auto_restart(env);
 
   /* The same numbers `game_capture_final_score` reads, without writing any of
      them: the death that follows still records the run exactly as before. */
@@ -457,6 +474,7 @@ void android_home_arena_prespawn_close(tenv* env, const char* phase) {
       gdata->leaving || gdata->restart_req)
     return;
   prespawn_reported = true;
+  drop_ends_auto_restart(env);
 
   uint64_t now = SDL_GetTicks();
   long long since_dial = gdata->attempt_started_ms && now >= gdata->attempt_started_ms
@@ -587,6 +605,27 @@ void android_home_notify_death(tenv* env) {
     game_capture_final_score(env);
     if (env->usr->gdata.join_spawned) record_finished_run(env);
     run_recorded = true;
+  }
+  /* Auto restart (OM, 2026-10-05): with the on-screen toggle on, a kill is
+     answered with Restart at once, as if the Restart key were pressed: no
+     death wait, no lobby. Only for a real kill on an open arena socket (a
+     drop still goes to the lobby and its report), and never during a
+     champion's victory exchange. The rejoin keeps the arena's cooldowns. */
+  game_data* auto_gdata = &env->usr->gdata;
+  /* A second death report while that restart closes changes nothing. */
+  if (auto_restart_closing && auto_gdata->restart_req) return;
+  auto_restart_closing = false;
+  if (env->usr->usrs.auto_respawn && auto_gdata->connection &&
+      auto_gdata->join_spawned && !auto_gdata->data.victory_message_requested) {
+    death_watching = false;
+    death_active = false;
+    auto_gdata->data.follow_view = false;
+    auto_gdata->leaving = false;
+    auto_gdata->restart_req = true;
+    auto_restart_closing = true;
+    game_close_connection(auto_gdata, "auto restart");
+    SDL_Log("Wyrm death: auto restart");
+    return;
   }
   env->usr->gdata.data.follow_view = false;
   env->usr->gdata.data.lagging = false;
@@ -979,6 +1018,16 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeSetEditorBare(JNIEnv* env,
   ai_mode_set_editor_bare(bare == JNI_TRUE);
 }
 
+/* Snake-look preview (OM, 2026-10-05): bare editor can show assist or normal. */
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetEditorAssist(JNIEnv* env,
+                                                          jclass clazz,
+                                                          jboolean on) {
+  (void)env;
+  (void)clazz;
+  ai_mode_set_editor_assist(on == JNI_TRUE);
+}
+
 /* Settings › Performance: present mode and frame cap (main.c). */
 extern void wyrm_set_frame_policy(int vsync, int cap);
 
@@ -1079,6 +1128,20 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeOpenScreen(JNIEnv* env, jclass clazz,
   SDL_LockMutex(home_mutex);
   pending_screen = (int)screen;
   SDL_UnlockMutex(home_mutex);
+}
+
+
+/* Play feel (OM, 2026-10-05): Settings > Controls (PlayFeelStore). */
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetPlayFeel(JNIEnv* env,
+                                                      jclass clazz,
+                                                      jboolean original_arrow,
+                                                      jboolean look_ahead,
+                                                      jint zoom_style) {
+  (void)env;
+  (void)clazz;
+  mobile_controls_set_play_feel(original_arrow == JNI_TRUE,
+                                look_ahead == JNI_TRUE, (int)zoom_style);
 }
 
 #else

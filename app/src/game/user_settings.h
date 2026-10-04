@@ -4,6 +4,7 @@
 #include <cglm/cglm.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #include "../constants.h"
 
@@ -111,6 +112,22 @@ typedef enum mobile_hotkey_label_mode {
   MOBILE_HOTKEY_LABEL_FUNCTION = 1,
   MOBILE_HOTKEY_LABEL_BOTH = 2
 } mobile_hotkey_label_mode;
+
+/* Settings added after v2.8 (OM, 2026-10-05). The file stays "2.8": this
+   block is found by its magic and carries its own size, so a file written
+   before a field existed reads back with that field at its default and
+   nothing before it is lost; a newer file read by an older build simply
+   has a longer tail the older build ignores.
+   RULE: every new persistent setting from now on is appended at the END of
+   this block (never in the middle, never elsewhere in user_settings) and
+   gets its default in user_settings_ext_default(). */
+#define USER_SETTINGS_EXT_MAGIC 0x54584557u /* "WEXT" */
+typedef struct user_settings_ext {
+  uint32_t magic;
+  uint32_t size; /* sizeof(user_settings_ext) of the build that wrote it */
+  bool spine[2];              /* normal, assist (OM, 2026-10-05) */
+  bool assist_hide_cosmetics; /* assist only (OM, 2026-10-05) */
+} user_settings_ext;
 
 typedef struct user_settings {
   char version[4];
@@ -252,7 +269,14 @@ typedef struct user_settings {
   float hud_stats_opacity;
   float hud_chat_scale;
   float hud_chat_opacity;
+
+  /* Appended after v2.8 without a version bump (OM, 2026-10-05). */
+  user_settings_ext ext;
 } user_settings;
+
+void user_settings_ext_default(user_settings_ext* ext);
+/* True when a missing or damaged ext field was put back, so the caller saves. */
+bool user_settings_ext_fix(user_settings* settings, size_t bytes_read);
 
 void user_settings_default(user_settings* usr_settings);
 void user_settings_reset_hud_layout(user_settings* usr_settings);

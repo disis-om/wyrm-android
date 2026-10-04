@@ -495,6 +495,7 @@ object TrailsStore {
         failure is ApiException -> when (failure.message) {
             "IMAGE_TOO_LARGE" -> "That photo is too large."
             "UNSUPPORTED_IMAGE" -> "That photo could not be read."
+            "STORAGE_FULL" -> "Trails is full right now. Try again later."
             "NOT_FOUND" -> "This trail is no longer here."
             "BLOCKED" -> "You can't reply to this trail."
             "HTTP_429" -> "Slow down a little and try again soon."

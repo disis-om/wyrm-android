@@ -14,14 +14,16 @@
 static const char* ACTION_NAMES[NUM_MOBILE_ACTIONS] = {
     "HUD",         "Show names", "Big food",   "Assist",     "Bot",
     "Hotkey menu", "Restart",    "Quit",       "Zoom in",    "Zoom out",
-    "Boost",       "Turn left",  "Turn right", "Fullscreen", "Rope mode"};
+    "Boost",       "Turn left",  "Turn right", "Fullscreen", "Auto restart"};
 
 bool mobile_hotkey_is_on_screen_button(int action) {
   return action == HOTKEY_SHOW_NAMES || action == HOTKEY_BIG_FOOD ||
          action == HOTKEY_ASSIST || action == HOTKEY_BOT ||
          action == HOTKEY_RESTART || action == HOTKEY_QUIT ||
          action == MOBILE_HOTKEY_ZOOM_IN ||
-         action == MOBILE_HOTKEY_ZOOM_OUT;
+         action == MOBILE_HOTKEY_ZOOM_OUT ||
+         /* Auto restart (OM, 2026-10-05) lives in the rope-mode slot. */
+         action == MOBILE_HOTKEY_ROPE_MODE;
 }
 
 static float clampf_local(float value, float lo, float hi) {
@@ -104,9 +106,6 @@ bool mobile_hotkeys_process_event(tenv* env, const void* raw_event) {
   if (event->type == SDL_EVENT_FINGER_DOWN) {
     for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action) {
       if (!mobile_hotkey_is_on_screen_button(action)) continue;
-      if (!WYRM_EXPERIMENTAL_ROPE_MODE &&
-          action == MOBILE_HOTKEY_ROPE_MODE)
-        continue;
       bool visible = false;
       mobile_hotkey_get_layout(&env->usr->usrs, action, &visible, NULL, NULL);
       if (!visible || state->down[action] || !hit_action(env, action, x, y))
@@ -143,8 +142,10 @@ static ImU32 color(float r, float g, float b, float a) {
 static bool action_active(tenv* env, int action) {
   if (action >= 0 && action < NUM_HOTKEYS)
     return env->usr->usrs.hotkeys[action].active;
+  /* The rope-mode slot is the Auto restart toggle now: lit while it is on. */
   if (action == MOBILE_HOTKEY_ROPE_MODE)
-    return env->usr->mobile_hotkeys.rope_mode;
+    return WYRM_EXPERIMENTAL_ROPE_MODE ? env->usr->mobile_hotkeys.rope_mode
+                                       : env->usr->usrs.auto_respawn != 0;
   if (action >= NUM_HOTKEYS && action < NUM_MOBILE_ACTIONS)
     return mobile_hotkeys_down(env, action) ||
            twindow_key_down(env->wnd,
@@ -162,8 +163,6 @@ void mobile_hotkeys_draw_gameplay(tenv* env) {
   ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(igGetMainViewport());
   for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action) {
     if (!mobile_hotkey_is_on_screen_button(action)) continue;
-    if (!WYRM_EXPERIMENTAL_ROPE_MODE && action == MOBILE_HOTKEY_ROPE_MODE)
-      continue;
     bool visible = false;
     mobile_hotkey_get_layout(&env->usr->usrs, action, &visible, NULL, NULL);
     if (!visible) continue;
@@ -214,8 +213,16 @@ void mobile_hotkeys_draw_gameplay(tenv* env) {
     ImVec2 size;
     igCalcTextSize(&size, function, NULL, false, -1);
     igPopFont();
+    /* A longer name ("Auto restart") is set smaller to stay inside the key. */
+    float text_size = font->LegacySize;
+    float room = width - 16.0f;
+    if (size.x > room && size.x > 0.0f) {
+      text_size *= room / size.x;
+      size.x = room;
+      size.y *= text_size / font->LegacySize;
+    }
     ImDrawList_AddText_FontPtr(
-        draw, font, font->LegacySize,
+        draw, font, text_size,
         (ImVec2){cx - size.x * 0.5f, cy - size.y * 0.5f}, primary, function,
         NULL, 0, NULL);
   }

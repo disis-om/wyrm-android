@@ -365,9 +365,9 @@ private fun GlassThumb(
 
 /**
  * The iOS 26 slider: a 6 dp track filled in [active] up to a 38 × 24 capsule
- * thumb. Touch the thumb and it lifts into a lens and follows the finger
- * relative to where it was caught; touch the track and the thumb comes to the
- * finger first. [steps] follows Material's meaning — the stops between ends.
+ * thumb. Drag the thumb and it lifts into a lens and follows the finger
+ * relative to where it was caught. Only the thumb moves it (OM, 2026-10-05):
+ * a tap on the track, or a scroll passing over it, changes nothing. [steps] follows Material's meaning — the stops between ends.
  */
 @Composable
 fun LiquidSlider(
@@ -419,25 +419,37 @@ fun LiquidSlider(
                 val run = (size.width - thumbPx).coerceAtLeast(1f)
                 val slop = viewConfiguration.touchSlop
                 awaitEachGesture {
-                    val down = awaitFirstDown()
+                    val down = awaitFirstDown(requireUnconsumed = false)
                     val current = animatedFraction.value
                     val thumbCentre = thumbPx / 2f + run * current
                     val onThumb = abs(down.position.x - thumbCentre) <= thumbPx / 2f + 14.dp.toPx()
-                    var start = current
-                    if (!onThumb) start = ((down.position.x - thumbPx / 2f) / run).coerceIn(0f, 1f)
+                    // OM, 2026-10-05: only the thumb moves a slider. A touch anywhere
+                    // else on the track (a scroll passing over it) changes nothing,
+                    // and a mostly vertical swipe stays the page's.
+                    if (!onThumb) return@awaitEachGesture
+                    val start = current
                     var lastStop = snap(start)
-                    dragFraction = start
-                    val held = adjusting
-                    held?.let { AdjustPreview.editing(it, true) }
-                    change(valueRange.start + snap(start) * span)
-                    scope.launch { lift.animateTo(1f, iosSpring(0.3f, 0.5f)) }
+                    var claimed = false
+                    var held: AdjustSubject? = null
                     var dx = 0f
+                    var dy = 0f
                     try { while (true) {
                         val event = awaitPointerEvent()
                         val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!pointer.pressed) break
-                        dx += pointer.positionChange().x
-                        if (abs(dx) > slop / 3f) pointer.consume()
+                        val moved = pointer.positionChange()
+                        dx += moved.x
+                        dy += moved.y
+                        if (!claimed) {
+                            if (abs(dy) > slop && abs(dy) > abs(dx)) break
+                            if (abs(dx) <= slop / 3f) continue
+                            claimed = true
+                            dragFraction = start
+                            held = adjusting
+                            held?.let { AdjustPreview.editing(it, true) }
+                            scope.launch { lift.animateTo(1f, iosSpring(0.3f, 0.5f)) }
+                        }
+                        pointer.consume()
                         val raw = (start + dx / run).coerceIn(0f, 1f)
                         val stop = snap(raw)
                         dragFraction = if (steps > 0) stop else raw
@@ -449,9 +461,11 @@ fun LiquidSlider(
                         }
                         change(valueRange.start + stop * span)
                     } } finally { held?.let { AdjustPreview.editing(it, false) } }
-                    dragFraction = -1f
-                    finished?.invoke()
-                    scope.launch { lift.animateTo(0f, iosInterpolatingSpring(260f, 13f)) }
+                    if (claimed) {
+                        dragFraction = -1f
+                        finished?.invoke()
+                        scope.launch { lift.animateTo(0f, iosInterpolatingSpring(260f, 13f)) }
+                    }
                 }
             },
     ) {

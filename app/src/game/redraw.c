@@ -3,6 +3,7 @@
 #include "../user.h"
 #include "backgrounds.h"
 #include "tags.h"
+#include "../mobile/mobile_controls.h"
 #if defined(VLITHER_ANDROID)
 #include "../platform/android_look.h"
 #endif
@@ -274,6 +275,151 @@ static void draw_rope_backbone(tenv* env, snake* o, int point_count,
 /* mobile/mobile_controls.c: the arrow upright, the chosen steering sideways. */
 int mobile_controls_steering_mode(tenv* env);
 
+
+/* Skinless strip and the spine (OM, 2026-10-05). ImGui is drawn after the
+   sprite batches, so a line here covers the body. Eyes for these modes are
+   circles on the same list and therefore sit on top. */
+static void snake_screen_point(const game_data* gdata, int point, float cx,
+                               float cy, ImVec2* out) {
+  out->x = cx + (gdata->data.pbx[point] - gdata->data.view_xx) * gdata->data.gsc;
+  out->y = cy + (gdata->data.pby[point] - gdata->data.view_yy) * gdata->data.gsc;
+}
+
+static void stroke_smooth(ImDrawList* draw, ImVec2* pts, int count, ImU32 col,
+                          float width) {
+  int i;
+  if (count < 2 || width <= 0.0f) return;
+  ImDrawList_PathClear(draw);
+  ImDrawList_PathLineTo(draw, pts[0]);
+  for (i = 1; i < count - 1; ++i) {
+    ImVec2 mid;
+    mid.x = (pts[i].x + pts[i + 1].x) * 0.5f;
+    mid.y = (pts[i].y + pts[i + 1].y) * 0.5f;
+    ImDrawList_PathBezierQuadraticCurveTo(draw, pts[i], mid, 0);
+  }
+  ImDrawList_PathLineTo(draw, pts[count - 1]);
+  ImDrawList_PathStroke(draw, col, 0, width);
+}
+
+/* On-screen runs only. A full buffer is stroked and continued from its last
+   point so a long snake does not need a 32k stack. */
+static void draw_body_line(tenv* env, int bp, int start, float cx, float cy,
+                           ImU32 under, float under_w, ImU32 over, float over_w) {
+  game_data* gdata = &env->usr->gdata;
+  ImDrawList* draw = igGetWindowDrawList();
+  ImVec2 buf[160];
+  int n = 0;
+  int i;
+  for (i = start; i <= bp; ++i) {
+    int live = i < bp && gdata->data.pbu[i] >= 1;
+    if (live && n < 160) {
+      snake_screen_point(gdata, i, cx, cy, &buf[n]);
+      n += 1;
+      if (n < 160) continue;
+    }
+    if (n >= 2) {
+      if (under_w > 0.0f) stroke_smooth(draw, buf, n, under, under_w);
+      stroke_smooth(draw, buf, n, over, over_w);
+    }
+    if (live) {
+      buf[0] = buf[n > 0 ? n - 1 : 0];
+      n = 1;
+    } else {
+      n = 0;
+    }
+  }
+}
+
+static void snake_strip_colour(tenv* env, snake* o, float* red, float* green,
+                               float* blue) {
+  game_data* gdata = &env->usr->gdata;
+  uint32_t built = built_skin_rgba(env, o, 0);
+  int cg_id;
+  vec3s* col;
+  if (built) {
+    *red = (float)((built >> 16) & 255) / 255.0f;
+    *green = (float)((built >> 8) & 255) / 255.0f;
+    *blue = (float)(built & 255) / 255.0f;
+    return;
+  }
+  cg_id = o->cusk && o->cusk_len > 0 ? o->cusk_data[0]
+                                    : gdata->default_skins[o->cv][1];
+  col = gdata->cg_colors + cg_id;
+  *red = col->r;
+  *green = col->g;
+  *blue = col->b;
+}
+
+static float snake_line_dpi(tenv* env) {
+  float dpi = 1.0f;
+  int w;
+  int h;
+  float short_side;
+  if (!env->wnd) return dpi;
+  w = env->wnd->size[0];
+  h = env->wnd->size[1];
+  short_side = (float)(w < h ? w : h);
+  dpi = short_side / 480.0f;
+  if (dpi < 1.0f) dpi = 1.0f;
+  return dpi;
+}
+
+static void draw_skinless_strip(tenv* env, snake* o, int bp, float cx, float cy,
+                                float lsz, float alpha) {
+  float red, green, blue;
+  float width = lsz * env->usr->gdata.data.gsc;
+  int boosting = o->tsp > o->fsp;
+  ImU32 main_col;
+  ImU32 glow_col;
+  snake_strip_colour(env, o, &red, &green, &blue);
+  main_col = igColorConvertFloat4ToU32((ImVec4){red, green, blue, 0.8f * alpha});
+  glow_col = igColorConvertFloat4ToU32((ImVec4){red, green, blue, 0.22f * alpha});
+  if (boosting)
+    draw_body_line(env, bp, 1, cx, cy, glow_col, width * 1.65f, main_col, width);
+  else
+    draw_body_line(env, bp, 1, cx, cy, 0, 0.0f, main_col, width);
+}
+
+static void draw_snake_spine(tenv* env, int bp, float cx, float cy, float alpha) {
+  float dpi = snake_line_dpi(env);
+  ImU32 dark = igColorConvertFloat4ToU32((ImVec4){0.0f, 0.0f, 0.0f, 0.35f * alpha});
+  ImU32 white = igColorConvertFloat4ToU32((ImVec4){1.0f, 1.0f, 1.0f, 0.8f * alpha});
+  draw_body_line(env, bp, 1, cx, cy, dark, 4.0f * dpi, white, 2.0f * dpi);
+}
+
+static void draw_snake_imgui_eyes(tenv* env, snake* o, float fang, float hx,
+                                  float hy, float ssc, float ea, float cx,
+                                  float cy) {
+  game_data* gdata = &env->usr->gdata;
+  default_skin_data* dfs = gdata->dfs + ((1 - o->cusk) * (1 + o->cv));
+  float ed = 6 * ssc;
+  float esp = 6 * ssc;
+  float iris_r = 6 * ssc * gdata->data.gsc;
+  float pupil_r = dfs->pr * ssc * gdata->data.gsc;
+  ImDrawList* draw = igGetWindowDrawList();
+  ImU32 iris = igColorConvertFloat4ToU32((ImVec4){dfs->ec.r, dfs->ec.g, dfs->ec.b, ea});
+  ImU32 pupil =
+      igColorConvertFloat4ToU32((ImVec4){dfs->ppc.r, dfs->ppc.g, dfs->ppc.b, ea});
+  float side;
+  float ex;
+  float ey;
+  ImVec2 at;
+  for (side = -1.0f; side <= 1.0f; side += 2.0f) {
+    ex = cosf(fang) * ed + cosf(fang + side * (PI / 2)) * (esp + 0.5f);
+    ey = sinf(fang) * ed + sinf(fang + side * (PI / 2)) * (esp + 0.5f);
+    at.x = cx + (ex + hx - gdata->data.view_xx) * gdata->data.gsc;
+    at.y = cy + (ey + hy - gdata->data.view_yy) * gdata->data.gsc;
+    ImDrawList_AddCircleFilled(draw, at, iris_r, iris, 16);
+    ex = cosf(fang) * (ed + 0.5f) + o->rex * ssc +
+         cosf(fang + side * (PI / 2)) * esp;
+    ey = sinf(fang) * (ed + 0.5f) + o->rey * ssc +
+         sinf(fang + side * (PI / 2)) * esp;
+    at.x = cx + (ex + hx - gdata->data.view_xx) * gdata->data.gsc;
+    at.y = cy + (ey + hy - gdata->data.view_yy) * gdata->data.gsc;
+    ImDrawList_AddCircleFilled(draw, at, pupil_r, pupil, 12);
+  }
+}
+
 void redraw(tenv* env) {
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
@@ -314,6 +460,15 @@ void redraw(tenv* env) {
       snake* me = gdata->data.snakes + (snakes_len - 1);
       gdata->data.view_xx = me->xx + me->fx + gdata->data.fvx;
       gdata->data.view_yy = me->yy + me->fy + gdata->data.fvy;
+      /* Look ahead (OM, 2026-10-05): slither's camera sits ahead of the
+         snake; off, the offset is zero. */
+      mobile_controls_look_ahead_step(env);
+      float ahead_x, ahead_y;
+      mobile_controls_look_ahead_offset(env, &ahead_x, &ahead_y);
+      if (gdata->data.gsc > 0.0f) {
+        gdata->data.view_xx += ahead_x / gdata->data.gsc;
+        gdata->data.view_yy += ahead_y / gdata->data.gsc;
+      }
     }
 
     gdata->data.bpx1 = gdata->data.view_xx - (mww2 / gdata->data.gsc + 84);
@@ -1355,6 +1510,10 @@ void redraw(tenv* env) {
                           {cg_col->r, cg_col->g, cg_col->b, a}});
                 }
             }
+          } else if (mode->render_mode == 3) {
+            /* Skinless (OM, 2026-10-05): one clear strip in the snake's own
+               colour. No body sprites and no snake shadows. */
+            draw_skinless_strip(env, o, bp, mww2, mhh2, lsz, a);
           }
 
           // debugging
@@ -1420,7 +1579,7 @@ void redraw(tenv* env) {
               }
           }
 
-          if (mode->show_boost) {
+          if (mode->show_boost && mode->render_mode != 3) {
             if (mode->render_mode == 2) {
               if (o->tsp > o->fsp) {
                 m = a *
@@ -1755,6 +1914,16 @@ void redraw(tenv* env) {
                          ? o->alive_amt * o->alive_amt * sqrtf(1 - o->dead_amt)
                          : a;
 
+          /* Spine sits on the ImGui list, which is drawn after the sprites,
+             so eyes for a spine or a skinless strip are circles on that list
+             and end up on top (OM, 2026-10-05). */
+          {
+            int assist_on = usrs->hotkeys[HOTKEY_ASSIST].active ? 1 : 0;
+            int spine_on = usrs->ext.spine[assist_on] ? 1 : 0;
+            if (spine_on) draw_snake_spine(env, bp, mww2, mhh2, a);
+            if (mode->render_mode == 3 || spine_on)
+              draw_snake_imgui_eyes(env, o, fang, hx, hy, ssc, ea, mww2, mhh2);
+            else {
           bp_renderer_push(
               usr->r->bpr,
               &(bp_instance){
@@ -1812,12 +1981,20 @@ void redraw(tenv* env) {
                   gdata->cg_uvs[BLANK_UV],
                   {dfs->ppc.r, dfs->ppc.g, dfs->ppc.b, ea}});
 
+            }
+          }
+
           // The tag hangs off the head, over everything else the snake is
           // wearing, which is where the mod puts it too.
+          const int hide_own_cosmetics =
+              usrs->hotkeys[HOTKEY_ASSIST].active &&
+              usrs->ext.assist_hide_cosmetics &&
+              o->id == gdata->data.snake_id;
+          if (!hide_own_cosmetics)
           tags_draw(env, o, o->id == gdata->data.snake_id, false);
 
           // accessory:
-          if (mode->show_accessories && o->accessory < NUM_ACCESSORIES) {
+          if (!hide_own_cosmetics && mode->show_accessories && o->accessory < NUM_ACCESSORIES) {
             accessory_data* acc = gdata->accessories + o->accessory;
             ex = acc->of * cosf(fang) * ed;
             ey = acc->of * sinf(fang) * ed;
@@ -1835,12 +2012,14 @@ void redraw(tenv* env) {
 #if defined(VLITHER_ANDROID)
           // Wyrm's own hair, ears and glasses: the player's snake only, and
           // only on this phone (platform/android_look.c).
-          if (o->id == gdata->data.snake_id)
+          if (!hide_own_cosmetics && o->id == gdata->data.snake_id)
             wyrm_look_draw(env, hx, hy, fang, lsz, ea, mww2, mhh2);
 #endif
         } else {
           // Tags are a separate cosmetic hanging from the head, not snake
           // thickness, so Rope Mode leaves the player's chosen tag intact.
+          if (!(usrs->hotkeys[HOTKEY_ASSIST].active &&
+                usrs->ext.assist_hide_cosmetics))
           tags_draw(env, o, true, false);
         }
 

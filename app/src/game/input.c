@@ -210,6 +210,15 @@ static void input_with_policy(tenv* env, bool team_protected,
        mobile_hotkeys_pressed(env, MOBILE_HOTKEY_ROPE_MODE)))
     env->usr->mobile_hotkeys.rope_mode = !env->usr->mobile_hotkeys.rope_mode;
 
+  /* Auto restart (OM, 2026-10-05): the on-screen toggle in the rope-mode slot.
+     On, a kill is answered with Restart at once (android_home_notify_death).
+     Kept in `auto_respawn`, which user.dat already holds. */
+  if (!WYRM_EXPERIMENTAL_ROPE_MODE &&
+      mobile_hotkeys_pressed(env, MOBILE_HOTKEY_ROPE_MODE)) {
+    usrs->auto_respawn = usrs->auto_respawn ? 0 : 1;
+    save_user_settings(usrs);
+  }
+
   /* A restart used to be thrown away once the snake was worth more than a
      thousand — a guard against losing a good run to a stray key. On a phone
      that reads as a broken button: the one time you most want out is when the

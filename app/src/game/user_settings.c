@@ -146,6 +146,52 @@ static void user_settings_default_layout_appearance(user_settings* settings) {
   settings->hud_chat_opacity = 1.0f;
 }
 
+void user_settings_ext_default(user_settings_ext* x) {
+  memset(x, 0, sizeof(*x));
+  x->magic = USER_SETTINGS_EXT_MAGIC;
+  x->size = (uint32_t)sizeof(user_settings_ext);
+  x->spine[0] = false;
+  x->spine[1] = false;
+  x->assist_hide_cosmetics = false;
+}
+
+/* A bool is one byte. A value other than 0 or 1 is not a bool this build wrote. */
+static bool ext_take_bool(bool* field, int present) {
+  unsigned char byte = 0;
+  if (!present) {
+    *field = false;
+    return true;
+  }
+  memcpy(&byte, field, 1);
+  *field = byte == 1;
+  return byte > 1;
+}
+
+bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
+  user_settings_ext* ext = &settings->ext;
+  size_t ext_at = offsetof(user_settings, ext);
+  size_t spine0 = offsetof(user_settings_ext, spine);
+  size_t hide_at = offsetof(user_settings_ext, assist_hide_cosmetics);
+  int fixed;
+  uint32_t written;
+  if (bytes_read < ext_at + 8 || ext->magic != USER_SETTINGS_EXT_MAGIC ||
+      ext->size < 8) {
+    user_settings_ext_default(ext);
+    return true;
+  }
+  written = ext->size;
+  fixed = 0;
+  fixed |= ext_take_bool(&ext->spine[0], written >= spine0 + 1);
+  fixed |= ext_take_bool(&ext->spine[1], written >= spine0 + 2);
+  fixed |= ext_take_bool(&ext->assist_hide_cosmetics, written >= hide_at + 1);
+  /* A longer tail belongs to a newer build. Do not shrink it just to rewrite
+     the size we already understood. A shorter one is missing fields, so save. */
+  if (written < (uint32_t)sizeof(user_settings_ext)) fixed = 1;
+  ext->magic = USER_SETTINGS_EXT_MAGIC;
+  ext->size = (uint32_t)sizeof(user_settings_ext);
+  return fixed != 0;
+}
+
 void user_settings_default(user_settings* usr_settings) {
   usr_settings->ui_font_size = FONT_SIZE_SMALL;
   usr_settings->lb_font_size = FONT_SIZE_REGULAR;
@@ -222,6 +268,7 @@ void user_settings_default(user_settings* usr_settings) {
   arrow_settings_default(&usr_settings->arrow_controls);
   mobile_hotkeys_default(&usr_settings->mobile_hotkeys);
   user_settings_default_layout_appearance(usr_settings);
+  user_settings_ext_default(&usr_settings->ext);
 
   // normal mode
   usr_settings->modes[0].food_flicker = true;
@@ -298,18 +345,22 @@ static bool load_current_backup(user_settings* settings) {
   const size_t v21_size = offsetof(user_settings, skin_rgba);
   const size_t v25_size = offsetof(user_settings, head_dot_size);
   const size_t v26_size = offsetof(user_settings, hud_minimap_x);
-  bool current = file_size == (long)sizeof(recovered);
+  const size_t ext_at = offsetof(user_settings, ext);
+  bool current = file_size >= (long)ext_at &&
+                 file_size <= (long)sizeof(recovered) + 4096;
   bool v26 = file_size == (long)v26_size;
   bool v25 = file_size == (long)v25_size;
   bool v21 = file_size == (long)v21_size;
   bool v20 = file_size == (long)v20_size;
-  size_t want = current ? sizeof(recovered)
+  size_t want = current ? ((size_t)file_size < sizeof(recovered)
+                               ? (size_t)file_size
+                               : sizeof(recovered))
                         : v26 ? v26_size
                               : v25 ? v25_size : v21 ? v21_size : v20_size;
   bool valid =
       (current || v26 || v25 || v21 || v20) &&
-      fread(&recovered, want, 1, file) == 1;
-  int trailing = fgetc(file);
+      fread(&recovered, 1, want, file) == want;
+  int trailing = current ? EOF : fgetc(file);
   fclose(file);
   valid = valid && trailing == EOF &&
           ((current && strncmp(recovered.version, SETTINGS_VERSION,
@@ -328,6 +379,7 @@ static bool load_current_backup(user_settings* settings) {
     }
   }
   if (valid && v26) user_settings_reset_hud_layout(&recovered);
+  if (valid && current) user_settings_ext_fix(&recovered, want);
   if (valid && !current) strcpy(recovered.version, SETTINGS_VERSION);
   if (valid) *settings = recovered;
   return valid;
@@ -339,6 +391,7 @@ void write_default_settings(user_settings* usr_settings) {
 }
 
 void read_user_settings(user_settings* usr_settings) {
+  user_settings_ext_default(&usr_settings->ext);
   FILE* f = fopen(USER_SETTINGS_FILE, "rb");
 
   if (f == NULL) {
@@ -583,7 +636,15 @@ void read_user_settings(user_settings* usr_settings) {
     return;
   }
 
-  size_t read = fread(usr_settings, sizeof(user_settings), 1, f);
+  const size_t ext_at = offsetof(user_settings, ext);
+  size_t read_bytes = 0;
+  int read_ok = 0;
+  if (file_size >= (long)ext_at) {
+    size_t want = (size_t)file_size < sizeof(user_settings) ? (size_t)file_size
+                                                           : sizeof(user_settings);
+    read_bytes = fread(usr_settings, 1, want, f);
+    read_ok = read_bytes == want;
+  }
   fclose(f);
 
   /*
@@ -597,15 +658,16 @@ void read_user_settings(user_settings* usr_settings) {
    * So the version string decides, and a new field that does not change
    * `sizeof` has to be migrated here rather than up there.
    */
-  if (read == 1 && strncmp(usr_settings->version, "1.8", 3) == 0) {
+  if (read_ok && strncmp(usr_settings->version, "1.8", 3) == 0) {
     usr_settings->auto_respawn = 0;
+    user_settings_ext_default(&usr_settings->ext);
     strcpy(usr_settings->version, SETTINGS_VERSION);
     save_user_settings(usr_settings);
     return;
   }
 
-  if (read != 1 || strncmp(usr_settings->version, SETTINGS_VERSION,
-                           strlen(SETTINGS_VERSION)) != 0) {
+  if (!read_ok || strncmp(usr_settings->version, SETTINGS_VERSION,
+                          strlen(SETTINGS_VERSION)) != 0) {
     if (load_current_backup(usr_settings)) {
       remove(USER_SETTINGS_FILE);
       save_user_settings(usr_settings);
@@ -615,6 +677,9 @@ void read_user_settings(user_settings* usr_settings) {
     write_default_settings(usr_settings);
     return;
   }
+
+  if (user_settings_ext_fix(usr_settings, read_bytes))
+    save_user_settings(usr_settings);
 
   if (sanitize_mobile_controls(&usr_settings->mobile_controls))
     save_user_settings(usr_settings);
@@ -712,6 +777,8 @@ void read_user_settings(user_settings* usr_settings) {
 void save_user_settings(user_settings* usr_settings) {
   normalize_on_screen_buttons(usr_settings);
   strcpy(usr_settings->version, SETTINGS_VERSION);
+  usr_settings->ext.magic = USER_SETTINGS_EXT_MAGIC;
+  usr_settings->ext.size = (uint32_t)sizeof(user_settings_ext);
   FILE* file = fopen(USER_SETTINGS_TEMP_FILE, "wb");
   if (!file) {
     printf("Error opening temporary settings file.\n");

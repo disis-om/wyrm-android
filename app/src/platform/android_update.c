@@ -320,7 +320,7 @@ static bool layout_appearance_valid(const user_settings* settings) {
 
 static bool gameplay_valid(const gameplay_mode* mode) {
   if (mode->food_type < 0 || mode->food_type > 8 || mode->boost_type < 0 ||
-      mode->boost_type > 1 || mode->render_mode < 0 || mode->render_mode > 2 ||
+      mode->boost_type > 1 || mode->render_mode < 0 || mode->render_mode > 3 ||
       !isfinite(mode->food_scale) || mode->food_scale < 0.25f ||
       mode->food_scale > 3.0f || !isfinite(mode->qsm) || mode->qsm < 1.0f ||
       mode->qsm > 4.0f || !isfinite(mode->bg_scale) || mode->bg_scale < 0.05f ||
@@ -499,9 +499,20 @@ JNIEXPORT jstring JNICALL Java_com_wyrm_omrajput_WyrmActivity_nativeApplyBackup(
 
   user_settings merged = {0};
   FILE* current = fopen(USER_SETTINGS_FILE, "rb");
-  bool have_current =
-      current && fread(&merged, sizeof(merged), 1, current) == 1;
-  if (current) fclose(current);
+  bool have_current = false;
+  if (current) {
+    long size = 0;
+    fseek(current, 0, SEEK_END);
+    size = ftell(current);
+    rewind(current);
+    user_settings_ext_default(&merged.ext);
+    if (size >= (long)offsetof(user_settings, ext)) {
+      size_t want = (size_t)size < sizeof(merged) ? (size_t)size : sizeof(merged);
+      have_current = fread(&merged, 1, want, current) == want;
+      if (have_current) user_settings_ext_fix(&merged, want);
+    }
+    fclose(current);
+  }
   if (!have_current) user_settings_default(&merged);
 
   char restored[768] = {0};
@@ -603,7 +614,7 @@ JNIEXPORT jstring JNICALL Java_com_wyrm_omrajput_WyrmActivity_nativeApplyBackup(
 
   if (has_layout_appearance && layout_appearance_valid(&source)) {
     memcpy(&merged.joystick_opacity, &source.joystick_opacity,
-           sizeof(user_settings) - offsetof(user_settings, joystick_opacity));
+           offsetof(user_settings, ext) - offsetof(user_settings, joystick_opacity));
     RESTORED("per-object layout appearance");
   } else if (has_layout_appearance) {
     SKIPPED("per-object layout appearance", "values are outside safe limits");

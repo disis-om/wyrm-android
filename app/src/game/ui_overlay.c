@@ -533,9 +533,18 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
     if (cv < 0 || cv >= NUM_COLOR_GROUPS) cv = 0;
     vec3s colour = gdata->cg_colors[cv];
     float y = ly + (5.0f + 14.0f * row_y) * u;
+    /* Your own row (OM, 2026-10-05): a faint plate behind it and the rank and
+       name nudged right, so you see at once where you are. */
+    float me_x = mine ? 6.0f * u : 0.0f;
+    if (mine)
+      ImDrawList_AddRectFilled(
+          draw, (ImVec2){lx - 6.0f * u, y - 1.5f * u},
+          (ImVec2){lx + 247.0f * u, y + size + 2.5f * u},
+          igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.14f * original_lb_fade}),
+          6.0f * u, 0);
     char rank[8];
     snprintf(rank, sizeof(rank), "#%d", row + 1);
-    original_text(draw, bold, size, (ImVec2){lx, y}, colour, alpha, rank);
+    original_text(draw, bold, size, (ImVec2){lx + me_x, y}, colour, alpha, rank);
     const char* name = gdata->data.lb.entries[row].nickname;
     if (name[0]) {
       char fitted[MAX_NICKNAME_LEN + 8];
@@ -543,7 +552,7 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
       int length = (int)strlen(fitted);
       while (length > 1 && original_text_size(bold, size, fitted).x > 165.0f * u)
         fitted[--length] = 0;
-      original_text(draw, bold, size, (ImVec2){lx + 28.0f * u, y}, colour, alpha, fitted);
+      original_text(draw, bold, size, (ImVec2){lx + 28.0f * u + me_x, y}, colour, alpha, fitted);
     }
     char points[16];
     snprintf(points, sizeof(points), "%d", score);
@@ -975,13 +984,24 @@ void ui_overlay(tenv* env) {
         bool mine = gdata->data.lb_pos == (row + 1);
         float alpha = mine ? 1.0f : 0.86f;
 
-        /* Your own row sits on a soft ink pill. */
-        if (mine)
+        /* Your own row (OM, 2026-10-05: so you see at once where you are): the
+           ink pill, lifted with a Wyrm-green tint and edge, and your name
+           nudged right. */
+        float me_shift = mine ? 8.0f : 0.0f;
+        if (mine) {
+          ImVec2 pill_min = {board_min.x - 6.0f, row_y - 1.0f};
+          ImVec2 pill_max = {board_max.x + 6.0f, row_y + row_height - 1.0f};
           ImDrawList_AddRectFilled(
-              draw, (ImVec2){board_min.x - 6.0f, row_y - 1.0f},
-              (ImVec2){board_max.x + 6.0f, row_y + row_height - 1.0f},
-              hud_colour(WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, 0.34f),
+              draw, pill_min, pill_max,
+              hud_colour(WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, 0.42f),
               row_height * 0.5f, 0);
+          ImDrawList_AddRectFilled(draw, pill_min, pill_max,
+                                   hud_colour(0.247f, 0.933f, 0.588f, 0.16f),
+                                   row_height * 0.5f, 0);
+          ImDrawList_AddRect(draw, pill_min, pill_max,
+                             hud_colour(0.247f, 0.933f, 0.588f, 0.55f),
+                             row_height * 0.5f, 0, 1.5f);
+        }
 
         char rank_text[8];
         snprintf(rank_text, sizeof(rank_text), "%d", row + 1);
@@ -1007,7 +1027,7 @@ void ui_overlay(tenv* env) {
 
         /* The name gets whatever is left after the score has taken its width,
            and is shortened to fit rather than allowed to run over it. */
-        float name_x = board_min.x + rank_size.x + 10.0f;
+        float name_x = board_min.x + rank_size.x + 10.0f + me_shift;
         wyrm_halo_fitted(draw, name_font, (ImVec2){name_x, row_y + 3.0f},
                          snake_ink, alpha, gdata->data.lb.entries[row].nickname,
                          board_max.x - score_width - 10.0f - name_x);
@@ -1077,7 +1097,9 @@ void ui_overlay(tenv* env) {
                                 panel_width, panel_height, edge);
       min = hud_clamp_top_left(env, min, panel_width, panel_height, edge);
       ImVec2 max = {min.x + panel_width, min.y + panel_height};
-      draw_hud_paper(draw, min, max, stats_alpha);
+      /* BACK (OM, 2026-10-05): the plate alone fades; the rows keep
+         OPACITY. */
+      draw_hud_paper(draw, min, max, stats_alpha * android_team_stats_panel());
 
       ImDrawList_AddText_FontPtr(draw, stats_label_font,
                                  stats_label_font->LegacySize * stats_scale,

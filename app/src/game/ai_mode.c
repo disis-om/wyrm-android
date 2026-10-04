@@ -854,7 +854,11 @@ void ai_mode_start(tenv* e, const char* nick) {
 static bool editor_bare;
 static bool bare_assist_saved;
 static bool bare_assist_was;
+/* The snake-look preview (OM, 2026-10-05): the bare editor shows the mode
+   the Modes page is on, so assist can be forced on as well as off. */
+static bool bare_assist_on;
 void ai_mode_set_editor_bare(bool bare) { editor_bare = bare; }
+void ai_mode_set_editor_assist(bool on) { bare_assist_on = on; }
 bool ai_mode_editor_bare(void) { return editor_session && editor_bare; }
 
 void ai_mode_start_editor(tenv* e, const char* nick) {
@@ -863,7 +867,7 @@ void ai_mode_start_editor(tenv* e, const char* nick) {
     bare_assist_was = e->usr->usrs.hotkeys[HOTKEY_ASSIST].active;
     bare_assist_saved = true;
   }
-  if (editor_bare) e->usr->usrs.hotkeys[HOTKEY_ASSIST].active = false;
+  if (editor_bare) e->usr->usrs.hotkeys[HOTKEY_ASSIST].active = bare_assist_on;
   ai_mode_start(e, nick);
 }
 bool ai_mode_is_editor(void) { return editor_session; }
@@ -880,14 +884,20 @@ void ai_mode_stop(tenv* e) {
   SDL_Log("Wyrm AI: local session cleared");
 }
 void ai_mode_finish_editor(tenv* e) {
+  bool assist_forced = false;
   if (bare_assist_saved) {
+    assist_forced =
+        e->usr->usrs.hotkeys[HOTKEY_ASSIST].active != bare_assist_was;
     e->usr->usrs.hotkeys[HOTKEY_ASSIST].active = bare_assist_was;
     bare_assist_saved = false;
   }
+  bare_assist_on = false;
   editor_bare = false;
   editor_session = false;
   ai_mode_stop(e);
   e->usr->gdata.curr_screen = TITLE_SCREEN;
+  /* A live write during the preview saved the forced assist flag with it. */
+  if (assist_forced) save_user_settings(&e->usr->usrs);
 }
 void ai_mode_tick(tenv* e) {
   game_data* g = &e->usr->gdata;
@@ -895,6 +905,8 @@ void ai_mode_tick(tenv* e) {
   time_step(e);
   uint64_t now = SDL_GetTicks();
   if (editor_session) {
+    if (editor_bare)
+      e->usr->usrs.hotkeys[HOTKEY_ASSIST].active = bare_assist_on;
     int count = tdarray_length(g->data.snakes);
     snake* player = count ? g->data.snakes + count - 1 : NULL;
     sbot_decision decision;

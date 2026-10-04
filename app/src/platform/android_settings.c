@@ -105,6 +105,16 @@ static const setting_desc GLOBAL_FIELDS[] = {
     {"assist.head_dot_color", "assist", "Dot colour", "", SETTING_COLOR3,
      0, 1, NULL, OWNER_SETTINGS,
      SETTINGS_FIELD(head_dot_color) + sizeof(vec3)},
+    {"normal.spine", "normal", "Spine",
+     "A thin white line down the middle of every snake.", SETTING_BOOL, 0, 1,
+     NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.spine[0])},
+    {"assist.spine", "assist", "Spine",
+     "A thin white line down the middle of every snake.", SETTING_BOOL, 0, 1,
+     NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.spine[1])},
+    {"assist.hide_cosmetics", "assist", "Hide own tag and accessories",
+     "While assist is on, your tag, accessory and Wyrm look are hidden.",
+     SETTING_BOOL, 0, 1, NULL, OWNER_SETTINGS,
+     SETTINGS_FIELD(ext.assist_hide_cosmetics)},
     /* TAGS. These are bridged like everything else but they are not listed in
        the settings tree — the skin editor's Tags tab shows them, next to the
        preview, because every one of them is a thing you judge by looking at
@@ -244,6 +254,10 @@ static const setting_desc GLOBAL_FIELDS[] = {
     KEY_APPEARANCE(8),
     KEY_APPEARANCE(9),
 #undef KEY_APPEARANCE
+    /* Auto restart (OM, 2026-10-05): the on-screen toggle's state, so it goes
+       to the account. Never listed as a row. */
+    {"general.auto_respawn", "layout", "", "", SETTING_INT, 0, 1, NULL,
+     OWNER_SETTINGS, SETTINGS_FIELD(auto_respawn)},
     {"layout.stats_scale", "layout", "", "", SETTING_FLOAT, 0.65f, 1.60f,
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(hud_stats_scale)},
     {"layout.stats_opacity", "layout", "", "", SETTING_FLOAT, 0.05f, 1.0f,
@@ -305,8 +319,8 @@ static const mode_desc MODE_FIELDS[] = {
      MODE_FIELD(death_effect)},
     {"player_names_outline", "Outline names", "", SETTING_BOOL, 0, 1, NULL,
      MODE_FIELD(player_names_outline)},
-    {"render_mode", "Snake rendering", "", SETTING_ENUM, 0, 2,
-     "Texture|Solid|Flat", MODE_FIELD(render_mode)},
+    {"render_mode", "Snake rendering", "", SETTING_ENUM, 0, 3,
+     "Texture|Solid|Flat|Skinless", MODE_FIELD(render_mode)},
     {"qsm", "Segment separation", "Higher values space the body out.",
      SETTING_FLOAT, 1.0f, 4.0f, NULL, MODE_FIELD(qsm)},
     {"show_boost", "Boost effect", "", SETTING_BOOL, 0, 1, NULL,
@@ -432,6 +446,45 @@ static bool resolve(user_settings* settings, const char* id, void** out_field,
   return false;
 }
 
+static void clamp_written(const char* id, void* field, setting_type type) {
+  float lo = 0.0f;
+  float hi = 0.0f;
+  int found = 0;
+  int i;
+  const char* dot;
+  const char* name;
+  for (i = 0; i < (int)(sizeof(GLOBAL_FIELDS) / sizeof(GLOBAL_FIELDS[0])); ++i) {
+    if (strcmp(GLOBAL_FIELDS[i].id, id) != 0) continue;
+    lo = GLOBAL_FIELDS[i].minimum;
+    hi = GLOBAL_FIELDS[i].maximum;
+    found = 1;
+    break;
+  }
+  if (!found) {
+    dot = strchr(id, '.');
+    name = dot ? dot + 1 : id;
+    for (i = 0; i < (int)(sizeof(MODE_FIELDS) / sizeof(MODE_FIELDS[0])); ++i) {
+      if (strcmp(MODE_FIELDS[i].id, name) != 0) continue;
+      lo = MODE_FIELDS[i].minimum;
+      hi = MODE_FIELDS[i].maximum;
+      found = 1;
+      break;
+    }
+  }
+  if (!found || lo > hi) return;
+  if (type == SETTING_FLOAT) {
+    float value = *(float*)field;
+    if (value < lo) *(float*)field = lo;
+    else if (value > hi) *(float*)field = hi;
+    return;
+  }
+  {
+    int value = *(int*)field;
+    if (value < (int)lo) *(int*)field = (int)lo;
+    else if (value > (int)hi) *(int*)field = (int)hi;
+  }
+}
+
 static void write_field(tenv* env, const char* id, const float* values,
                         int count) {
   user_settings* settings = &env->usr->usrs;
@@ -496,9 +549,11 @@ static void write_field(tenv* env, const char* id, const float* values,
     case SETTING_INT:
     case SETTING_ENUM:
       *(int*)field = (int)(values[0] + (values[0] < 0 ? -0.5f : 0.5f));
+      clamp_written(id, field, type);
       break;
     case SETTING_FLOAT:
       *(float*)field = values[0];
+      clamp_written(id, field, type);
       break;
     case SETTING_COLOR3:
     case SETTING_COLOR4: {
@@ -732,8 +787,6 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeHotkeysSnapshot(JNIEnv* env,
 
   for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action) {
     if (!mobile_hotkey_is_on_screen_button(action)) continue;
-    if (!WYRM_EXPERIMENTAL_ROPE_MODE && action == MOBILE_HOTKEY_ROPE_MODE)
-      continue;
     /* Restart, quit and the movement actions have no toggle to offer: they
        either fire or they are held, and saying otherwise would be a lie in a
        dropdown. */

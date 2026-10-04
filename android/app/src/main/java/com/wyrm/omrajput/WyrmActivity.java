@@ -94,6 +94,8 @@ public final class WyrmActivity extends SDLActivity {
     private static native void nativeExitAiLayoutEditor();
     private static native void nativeToggleEditorLeaderboard();
     private static native void nativeSetEditorBare(boolean bare);
+    /** Snake-look preview: the bare editor shows assist or normal (OM, 2026-10-05). */
+    private static native void nativeSetEditorAssist(boolean on);
     /** Settings › Modes › Assist: the assist laser in joystick mode (length: share of the short side). */
     private static native void nativeSetJoystickLaser(boolean on, float length);
     private static native void nativeSetNearOriginal(boolean on, int server);
@@ -150,6 +152,7 @@ public final class WyrmActivity extends SDLActivity {
     private static native String nativeTeamPresence();
     private static native void nativeSetTeamMembers(String packed);
     private static native void nativeSetTeamChat(String packed);
+    private static native void nativeSetPlayFeel(boolean originalArrow, boolean lookAhead, int zoomStyle);
     private static native void nativeSetTeamHudStyle(float[] values);
     private static native void nativeCloseTeamChat(float seconds);
     private static native String nativeUpdateSnapshot();
@@ -181,6 +184,11 @@ public final class WyrmActivity extends SDLActivity {
         // The arena's team roster and chat window: their saved look reaches the engine first.
         com.wyrm.omrajput.ui.TeamHudStore.attach(this, values -> {
             try { nativeSetTeamHudStyle(values); } catch (UnsatisfiedLinkError ignored) { }
+            return kotlin.Unit.INSTANCE;
+        });
+        // Settings › Controls play feel: slither's arrow motion, look ahead, spring zoom.
+        com.wyrm.omrajput.ui.PlayFeelStore.attach(this, (originalArrow, lookAhead, zoomStyle) -> {
+            try { nativeSetPlayFeel(originalArrow, lookAhead, zoomStyle); } catch (UnsatisfiedLinkError ignored) { }
             return kotlin.Unit.INSTANCE;
         });
         // The assist laser in joystick mode: the saved choice reaches the engine first.
@@ -253,6 +261,11 @@ public final class WyrmActivity extends SDLActivity {
             @Override
             public void onSetEditorBare(boolean bare) {
                 nativeSetEditorBare(bare);
+            }
+
+            @Override
+            public void onSetEditorAssist(boolean on) {
+                nativeSetEditorAssist(on);
             }
 
             @Override

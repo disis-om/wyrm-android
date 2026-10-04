@@ -516,6 +516,13 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
     return true;
   }
 
+  /* The team roster and chat window own the finger that lands on them
+     (scrolling, folding, the message box); every other finger keeps
+     steering, so nothing is reset (OM, 2026-10-04). */
+  if (android_team_hud_touch(env, (int)event->type,
+                             (unsigned long long)finger, x, y))
+    return true;
+
   /* The interface's own buttons belong to the interface, not to steering. */
   if (event->type == SDL_EVENT_FINGER_DOWN &&
       ui_overlay_leaderboard_hit(env, x, y)) {

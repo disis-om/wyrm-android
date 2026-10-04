@@ -18,7 +18,10 @@ import org.json.JSONObject
  * (`TrailsComingSoonScreen`). `true` brings everything back.
  * Java reads it as `com.wyrm.omrajput.data.TrailsApiKt.TRAILS_ENABLED`.
  */
-const val TRAILS_ENABLED = false
+// ON for test builds only (OM, 2026-10-04). Set back to false before any
+// beta or stable release: releases ship the coming-soon placeholder until
+// Trails is final. iOS: WyrmTrailsFeature.enabled.
+const val TRAILS_ENABLED = true
 
 /** Badges that only make sense with Trails on; hidden from the strip and its count while paused. */
 val TRAIL_BADGE_IDS = setOf("trailblazer", "crowd-favourite")

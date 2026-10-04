@@ -190,6 +190,8 @@ class WyrmOverlay(private val activity: Activity) :
     private var trailReturn by mutableStateOf(Route.TRAILS)
     /** Where the Trails studio closes to: the feed, or your profile's "New trail". */
     private var studioReturn by mutableStateOf(Route.TRAILS)
+    /** Where Back from Alerts goes: a page inside the panel, or the panel closes. */
+    private var notificationsReturn by mutableStateOf(Route.HOME)
 
     // "Share this run" and "Try this skin" (OM, 2026-09-30).
     /** The last finished run, for the lobby's Share run. Memory only; cleared when a run starts. */
@@ -407,6 +409,13 @@ class WyrmOverlay(private val activity: Activity) :
     // Chat, and the people in it.
     private var chatTab by mutableStateOf(ChatTab.DIRECT)
     private var globalMessages by mutableStateOf<List<ChatMessage>>(emptyList())
+    /** New global messages from others since the room was last read (OM, 2026-10-04). */
+    private var globalUnread by mutableStateOf(0)
+    private val globalChatPrefs by lazy {
+        activity.getSharedPreferences("wyrm_global_chat", android.content.Context.MODE_PRIVATE)
+    }
+    /** False while the engine holds an arena connection: no extra requests mid-match. */
+    private var arenaPortFree = true
     private var conversations by mutableStateOf<List<Conversation>>(emptyList())
     private var following by mutableStateOf<List<ApiPlayer>>(emptyList())
     private var threadPlayer by mutableStateOf<ApiPlayer?>(null)
@@ -561,7 +570,8 @@ class WyrmOverlay(private val activity: Activity) :
          */
         val growsFromHome: Boolean
             get() = this !in setOf(
-                AUTH, ONBOARDING, HOME, SOCIAL, SKIN, SETTINGS, NOTIFICATIONS, DEATH, ARENA_CHAT, PRIVACY, LOBBY,
+                // Trails is a tab and Alerts opens from Home's bell (OM, 2026-10-04).
+                AUTH, ONBOARDING, HOME, SOCIAL, SKIN, SETTINGS, TRAILS, DEATH, ARENA_CHAT, PRIVACY, LOBBY,
                 CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR,
                 GUEST_SIGN_UP, GUEST_LOG_IN,
                 // Share run is opened from the lobby, a full page of its own like it.
@@ -776,6 +786,9 @@ class WyrmOverlay(private val activity: Activity) :
                             insetTop = insetTop,
                             insetBottom = insetBottom,
                             showRootTabs = false,
+                            onBack = {
+                                if (notificationsReturn.growsFromHome) route = notificationsReturn else panelOpen = false
+                            },
                             onMarkAllRead = ::markAllNotificationsRead,
                             onOpenNotification = ::openNotificationCard,
                             onSetNotificationRead = ::setNotificationRead,
@@ -1407,21 +1420,26 @@ class WyrmOverlay(private val activity: Activity) :
                             onResetLayout = { resetOrientationLayout(listOf(4)) },
                         )
 
-                        // Trails switched off: the Social card opens the "in development" page.
+                        // The Trails tab (OM, 2026-10-04). Switched off: the "in development" page.
                         Route.TRAILS -> if (!TRAILS_ENABLED) TrailsComingSoonScreen(
                             insetTop = insetTop,
                             insetBottom = insetBottom,
-                            onBack = { panelOpen = false },
                         ) else TrailsFeedScreen(
                             insetTop = insetTop,
                             insetBottom = insetBottom,
-                            onBack = { panelOpen = false },
                             onNew = {
                                 studioReturn = Route.TRAILS
-                                route = Route.TRAIL_STUDIO
+                                tabRoot = Route.TRAILS
+                                openPanel(Rect.Zero) { route = Route.TRAIL_STUDIO }
                             },
                             onOpen = ::openTrail,
-                            onAuthor = { id -> openPlayer(id) },
+                            // From the tab page a profile opens in the panel, as from Social.
+                            onAuthor = { id ->
+                                if (!route.growsFromHome) {
+                                    tabRoot = Route.TRAILS
+                                    openPanel(Rect.Zero) { openPlayer(id) }
+                                } else openPlayer(id)
+                            },
                             onTrySkin = ::tryTrailSkin,
                         )
 
@@ -1443,7 +1461,9 @@ class WyrmOverlay(private val activity: Activity) :
                             TrailStudioScreen(
                                 insetTop = insetTop,
                                 insetBottom = insetBottom,
-                                onClose = { route = studioReturn },
+                                onClose = {
+                                    if (studioReturn.growsFromHome) route = studioReturn else panelOpen = false
+                                },
                             )
                         }
 
@@ -1945,14 +1965,15 @@ class WyrmOverlay(private val activity: Activity) :
     @Composable
     private fun TabUnderneath() {
         when (tabRoot) {
-            Route.NOTIFICATIONS -> NotificationsScreen(
-                notifications = visibleNotifications(),
+            Route.TRAILS -> if (!TRAILS_ENABLED) TrailsComingSoonScreen(
                 insetTop = insetTop,
                 insetBottom = insetBottom,
-                onMarkAllRead = {}, onOpenNotification = {}, onSetNotificationRead = { _, _ -> },
-                onDeleteNotification = {}, onJoinEvent = {}, onOpenUpdate = {},
-                onOpenLeaderboard = {}, onOpenBackup = {}, onTabSocial = {}, onTabPlay = {},
-                onTabSkin = {}, onTabSettings = {},
+            ) else TrailsFeedScreen(
+                insetTop = insetTop,
+                insetBottom = insetBottom,
+                onNew = {},
+                onOpen = {},
+                onAuthor = {},
             )
             Route.SOCIAL -> SocialHome(interactive = false)
             Route.SKIN -> SkinHome(interactive = false)
@@ -2057,8 +2078,8 @@ class WyrmOverlay(private val activity: Activity) :
             onOpenVoice = { origin ->
                 if (interactive) openPanel(origin) { openVoiceChat() }
             },
-            onTabNotifications = {
-                if (interactive) openNotifications()
+            onTabNotifications = { origin ->
+                if (interactive) openNotifications(origin)
             },
             onTabSocial = {
                 if (interactive) {
@@ -2167,6 +2188,7 @@ class WyrmOverlay(private val activity: Activity) :
                 "Global and direct"
             },
             unreadMessages = unreadDmCount,
+            unreadGlobal = globalUnread,
             voiceBadge = unreadOf(NotificationKind.VOICE_INVITE),
             followBadge = unreadOf(NotificationKind.FOLLOW),
             voiceDetail = when {
@@ -2196,15 +2218,8 @@ class WyrmOverlay(private val activity: Activity) :
                     done()
                 }
             },
-            // Trails switched off: the same card, no count; it opens the "in development" page.
-            trailsTeaser = {
-                TrailsTeaser(badge = if (TRAILS_ENABLED) unreadOf(NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY) else 0) {
-                    if (interactive) {
-                        tabRoot = Route.SOCIAL
-                        openPanel(Rect.Zero) { route = Route.TRAILS }
-                    }
-                }
-            },
+            // Trails is a tab of its own now (OM, 2026-10-04): no card on Social.
+            trailsTeaser = null,
             onOpenLeaderboard = { origin ->
                 if (interactive) {
                     tabRoot = Route.SOCIAL
@@ -2659,7 +2674,7 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     private fun rootTabPosition(value: Route): Int? = when (value) {
-        Route.NOTIFICATIONS -> 0
+        Route.TRAILS -> 0
         Route.SOCIAL -> 1
         Route.HOME -> 2
         Route.SKIN -> 3
@@ -2668,7 +2683,7 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     private fun rootTabForRoute(value: Route): RootTab? = when (value) {
-        Route.NOTIFICATIONS -> RootTab.NOTIFICATIONS
+        Route.TRAILS -> RootTab.TRAILS
         Route.SOCIAL -> RootTab.SOCIAL
         Route.HOME -> RootTab.PLAY
         Route.SKIN -> RootTab.SKIN
@@ -2680,7 +2695,7 @@ class WyrmOverlay(private val activity: Activity) :
     private fun FixedRootTabs(selected: RootTab, modifier: Modifier = Modifier) {
         FloatingRootTabs(
             selected = selected,
-            unreadNotifications = visibleNotifications().count { !it.read },
+            trailsBadge = trailsBadgeCount(),
             settingsBadge = com.wyrm.omrajput.data.SupportStore.unseenReplies,
             socialBadge = socialBadgeCount(),
             modifier = modifier,
@@ -2688,7 +2703,7 @@ class WyrmOverlay(private val activity: Activity) :
             onExpand = { rootBarCollapsed = false },
             onSelect = { tab ->
                 when (tab) {
-                    RootTab.NOTIFICATIONS -> openNotifications()
+                    RootTab.TRAILS -> openTrailsTab()
                     RootTab.SOCIAL -> {
                         tabRoot = Route.SOCIAL
                         route = Route.SOCIAL
@@ -3033,6 +3048,7 @@ class WyrmOverlay(private val activity: Activity) :
                             .onSuccess {
                                 globalMessages = it
                                 chatError = ""
+                                noteGlobalSeen(it)
                             }
                             .onFailure { chatError = "Can't reach chat right now." }
 
@@ -3060,7 +3076,10 @@ class WyrmOverlay(private val activity: Activity) :
             runCatching { repository.sendGlobal(body) }
                 .onSuccess {
                     chatError = ""
-                    runCatching { repository.globalMessages() }.onSuccess { globalMessages = it }
+                    runCatching { repository.globalMessages() }.onSuccess {
+                        globalMessages = it
+                        noteGlobalSeen(it)
+                    }
                 }
                 .onFailure {
                     chatError = iosChatError(repository.errorCode(it))
@@ -3223,7 +3242,7 @@ class WyrmOverlay(private val activity: Activity) :
         trailOpenId = id
         trailReturn = if (route == Route.TRAIL) trailReturn else route
         if (!route.growsFromHome) {
-            // From a root page (Alerts, Play…): the trail opens in the panel.
+            // From a root page (Trails, Play…): the trail opens in the panel.
             rootTabForRoute(route)?.let { tabRoot = route }
             panelOrigin = Rect.Zero
             panelOpen = true
@@ -4131,6 +4150,7 @@ class WyrmOverlay(private val activity: Activity) :
 
     private fun settingsBackLabel(): String = when (tabRoot) {
         Route.HOME -> "Play"
+        Route.TRAILS -> "Trails"
         Route.SOCIAL -> "Social"
         Route.SKIN -> "Skin"
         else -> "Settings"
@@ -5119,6 +5139,7 @@ class WyrmOverlay(private val activity: Activity) :
      * overlays can show Compose while PLAYING, so their visibility is never
      * evidence that the old WebSocket has closed. */
     fun onArenaPortAvailable(available: Boolean) {
+        arenaPortFree = available
         if (!available) {
             if (arenaProbeGatePending) {
                 arenaNativePortBusySeen = true
@@ -6238,6 +6259,7 @@ class WyrmOverlay(private val activity: Activity) :
         authState = AuthState()
         notifications = emptyList()
         unreadDmCount = 0
+        globalUnread = 0
         highlightedNotification = null
         pendingNotificationOpen = null
         pendingAchievements = emptyList()
@@ -6259,11 +6281,33 @@ class WyrmOverlay(private val activity: Activity) :
         route = Route.LEADERBOARD
     }
 
-    private fun openNotifications() {
-        panelOpen = false
-        tabRoot = Route.NOTIFICATIONS
-        route = Route.NOTIFICATIONS
+    /**
+     * Alerts, as a page (OM, 2026-10-04): from a tab it opens over that tab
+     * (Home's bell, a notification tap); from inside the panel it is pushed
+     * there. Back returns to wherever it was opened from.
+     */
+    private fun openNotifications(origin: Rect = Rect.Zero) {
+        if (route == Route.NOTIFICATIONS) {
+            refreshNotifications()
+            return
+        }
+        if (panelOpen && route.growsFromHome) {
+            notificationsReturn = route
+            route = Route.NOTIFICATIONS
+        } else {
+            rootTabForRoute(route)?.let { tabRoot = route }
+            notificationsReturn = tabRoot
+            openPanel(origin) { route = Route.NOTIFICATIONS }
+        }
         refreshNotifications()
+    }
+
+    /** The Trails tab (OM, 2026-10-04). */
+    private fun openTrailsTab() {
+        panelOpen = false
+        tabRoot = Route.TRAILS
+        route = Route.TRAILS
+        if (TRAILS_ENABLED) TrailsStore.refresh()
     }
 
     /** What the player has allowed: Android's master gate, then Wyrm's kinds. */
@@ -6358,10 +6402,40 @@ class WyrmOverlay(private val activity: Activity) :
     private fun unreadOf(vararg kinds: NotificationKind): Int =
         visibleNotifications().count { !it.read && it.kind in kinds }
 
-    private fun socialBadgeCount(): Int {
-        val trails = if (TRAILS_ENABLED) unreadOf(NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY) else 0
-        return unreadDmCount.toInt() + unreadOf(NotificationKind.VOICE_INVITE, NotificationKind.FOLLOW) + trails
+    private fun socialBadgeCount(): Int =
+        unreadDmCount.toInt() + unreadOf(NotificationKind.VOICE_INVITE, NotificationKind.FOLLOW) + globalUnread
+
+    /**
+     * Global chat's count (OM, 2026-10-04): messages from others newer than the
+     * newest one this phone has shown in the open room. The first look only
+     * sets that mark, so nobody starts with a day's worth of unread.
+     */
+    private fun refreshGlobalUnread() {
+        if (!repository.hasSession || profile.id.isBlank()) return
+        if (route == Route.CHAT && chatTab == ChatTab.GLOBAL) return
+        scope.launch {
+            runCatching { repository.globalMessages() }.onSuccess { messages ->
+                val seen = globalChatPrefs.getString("seen_at", null)
+                if (seen == null) {
+                    noteGlobalSeen(messages)
+                    return@onSuccess
+                }
+                globalUnread = messages.count { it.createdAt > seen && it.authorId != profile.id }
+            }
+        }
     }
+
+    /** The room is on screen: everything in it is read. */
+    private fun noteGlobalSeen(messages: List<ChatMessage>) {
+        val newest = messages.maxOfOrNull { it.createdAt } ?: return
+        val seen = globalChatPrefs.getString("seen_at", null)
+        if (seen == null || newest > seen) globalChatPrefs.edit().putString("seen_at", newest).apply()
+        globalUnread = 0
+    }
+
+    /** Unread likes and replies on your trails: the Trails tab's count. */
+    private fun trailsBadgeCount(): Int =
+        if (TRAILS_ENABLED) unreadOf(NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY) else 0
 
     private fun markKindsRead(vararg kinds: NotificationKind) {
         notifications.filter { !it.read && it.kind in kinds }.forEach { setNotificationRead(it.id, true) }
@@ -6499,9 +6573,8 @@ class WyrmOverlay(private val activity: Activity) :
     /** Posted: the Trails feed, where the upload shows its progress. */
     private fun openTrailsAfterShare() {
         shareSkinOnly = false
-        tabRoot = Route.SOCIAL
-        panelOrigin = Rect.Zero
-        panelOpen = true
+        panelOpen = false
+        tabRoot = Route.TRAILS
         route = Route.TRAILS
     }
 
@@ -6867,12 +6940,16 @@ class WyrmOverlay(private val activity: Activity) :
     private fun startLiveInbox() {
         if (!repository.hasSession) return
         liveInbox.start()
+        refreshGlobalUnread()
         // Belt and braces: while the Notifications page is open it also asks every 15 s.
+        // Global chat's count is looked at every 45 s, never mid-match.
         if (inboxPollJob?.isActive != true) {
             inboxPollJob = scope.launch {
+                var tick = 0
                 while (activityResumed && repository.hasSession) {
                     delay(15_000L)
                     if (route == Route.NOTIFICATIONS) refreshNotifications()
+                    if (++tick % 3 == 0 && arenaPortFree) refreshGlobalUnread()
                 }
             }
         }

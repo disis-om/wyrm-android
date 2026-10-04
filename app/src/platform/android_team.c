@@ -103,6 +103,9 @@ void android_team_poll(tenv* env) {
 
   int x = 0;
   int y = 0;
+  /* NTL's id for our snake (packet S), which is what the mod publishes as
+     `sid` and looks a tag up by. The raw arena id put our tag on nobody. */
+  int sid = 0;
   if (playing) {
     int length = tdarray_length(game->data.snakes);
     if (length > 0) {
@@ -110,6 +113,7 @@ void android_team_poll(tenv* env) {
       if (game->data.snake_id == me->id) {
         x = (int)(me->xx + me->fx);
         y = (int)(me->yy + me->fy);
+        sid = me->ntl_id;
       }
     }
   }
@@ -126,7 +130,6 @@ void android_team_poll(tenv* env) {
    * `-1` is no tag, which is what the mod sends when the player has none.
    */
   int tag = tags_ntl_id(usr->usrs.tag_index);
-  int sid = playing ? game->data.snake_id : 0;
 
   char line[sizeof(presence)];
   snprintf(line, sizeof(line), "%s\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t%d",

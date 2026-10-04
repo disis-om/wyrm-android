@@ -104,9 +104,9 @@ import kotlin.math.sqrt
  * every change goes to it at once, it saves it, and it tells us back.
  */
 
-/* Tags are switched off until Wyrm's own backend serves them: announcing NTL
-   tags got snakes dropped from the arena. Flip to false to bring the picker back. */
-private const val TAGS_DISABLED = true
+/* Tags are on again (OM, 2026-10-04; off 2026-09-26 to 2026-10-04). true
+   hides the picker and shows "Coming soon". */
+private const val TAGS_DISABLED = false
 
 private enum class SkinSection(val title: String) {
     OVERVIEW("Skin wardrobe"), PRESETS("Default skins"), PATTERN("Pattern"),

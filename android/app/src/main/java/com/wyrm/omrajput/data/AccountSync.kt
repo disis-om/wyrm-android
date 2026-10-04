@@ -87,6 +87,7 @@ object AccountSync {
         PrefFile("wyrm_receipts", Scope.WIPE),
         PrefFile("wyrm_local_notifications", Scope.WIPE),
         PrefFile("wyrm_support_seen", Scope.WIPE),
+        PrefFile("wyrm_global_chat", Scope.WIPE),              // the newest global message seen (a marker)
         PrefFile("wyrm_account_sync", Scope.WIPE),             // an owed restore, per account
         // The retired manual backups (2026-10-01): their folder grant goes too.
         PrefFile("wyrm_backup_state", Scope.WIPE),

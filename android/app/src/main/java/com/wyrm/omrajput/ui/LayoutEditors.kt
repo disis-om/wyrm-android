@@ -329,11 +329,14 @@ fun UnifiedArenaLayoutEditor(
     /** Play orientation (OM, 2026-10-01): the editor turns with it, and so does its layout. */
     portrait: Boolean = false,
     onToggleOrientation: (() -> Unit)? = null,
-    /** Near Original: the original's map, board and stats are fixed, so not shown. */
+    /** Near Original: the original's map, board and stats are fixed, so not shown.
+     *  The team roster and the chat window stay editable. */
     hudEditable: Boolean = true,
 ) {
     var canvas by remember { mutableStateOf(Offset.Zero) }
     var options by remember { mutableStateOf<LayoutOptions?>(null) }
+    /* Editor chrome only. Not saved, not synced. Null until the player drags it. */
+    var footerNorm by remember { mutableStateOf<Offset?>(null) }
     val density = LocalDensity.current
 
     fun openOptions(
@@ -413,8 +416,8 @@ fun UnifiedArenaLayoutEditor(
                     )
                 }) { PaperKey(label = hotkey.name, opacity = keysOpacity, scale = keyScale) }
             }
-            if (hudEditable) {
             fun hudPosition(target: ArenaHudTarget) = hudPositions[target] ?: target.fallback
+            if (hudEditable) {
             Draggable(hudPosition(ArenaHudTarget.MINIMAP), area, { onMoveHud(ArenaHudTarget.MINIMAP, it) }, onLongPress = {
                 openOptions(
                     "minimap", "MINIMAP",
@@ -446,8 +449,9 @@ fun UnifiedArenaLayoutEditor(
             }) {
                 HudPreviewPanel("STATS\nSCORE   9503\nKILLS      4\nRANK    8 / 46\nPING    64 ms\nFPS     61", with(density) { (142f * statsPreviewScale).toDp() }, with(density) { (132f * statsPreviewScale).toDp() }, statsOpacity)
             }
-            // The roster and chat window are drawn by the engine over the AI arena
-            // with placeholder rows; these are their hit boxes at the same size.
+            }
+            // The roster and chat stay editable in Near Original. The engine draws
+            // them over the AI arena; these are their hit boxes at the same size.
             val teamScale = TeamHudStore.value("team_scale")
             Draggable(hudPosition(ArenaHudTarget.TEAM), area, { onMoveHud(ArenaHudTarget.TEAM, it) }, onLongPress = {
                 options = LayoutOptions(
@@ -455,6 +459,7 @@ fun UnifiedArenaLayoutEditor(
                     listOf(
                         teamHudSlider("SIZE", "team_scale"),
                         teamHudSlider("OPACITY", "team_opacity"),
+                        teamHudSlider("BACK", "team_panel"),
                         teamHudSlider("WIDTH", "team_width"),
                         teamHudSlider("HEIGHT", "team_height"),
                     ),
@@ -477,6 +482,7 @@ fun UnifiedArenaLayoutEditor(
                     listOf(
                         LayoutSlider("SIZE", chatScale, 0.65f..1.60f) { onSettingChange("layout.chat_scale", it) },
                         LayoutSlider("OPACITY", chatOpacity, 0.05f..1f) { onSettingChange("layout.chat_opacity", it) },
+                        teamHudSlider("BACK", "chat_panel"),
                         teamHudSlider("WIDTH", "chat_width"),
                         teamHudSlider("HEIGHT", "chat_height"),
                     ),
@@ -493,9 +499,8 @@ fun UnifiedArenaLayoutEditor(
                         .background(Wyrm.Card, wyrmRounded(14.dp)),
                 )
             }
-            }
         }
-        EditorFooter(onReset, onSave, onCancel, Modifier.align(Alignment.BottomCenter), portrait, onToggleOrientation)
+        EditorFooter(onReset, onSave, onCancel, canvas, footerNorm, { footerNorm = it }, portrait, onToggleOrientation)
         options?.let { EditorOptionsPopup(it) { options = null } }
     }
 }
@@ -581,18 +586,48 @@ private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
     }
 }
 
+/** Top-left of the editor bar. [norm] is a fraction of the canvas; null is the bottom centre. */
+private fun footerTopLeft(canvas: Offset, bar: Offset, norm: Offset?, margin: Float, bottomInset: Float): Offset {
+    if (canvas.x <= 1f) return Offset(0f, 100000f)
+    if (bar.x <= 1f) return Offset(0f, canvas.y)
+    val rawCx = if (norm == null) canvas.x / 2f else norm.x * canvas.x
+    val rawCy = if (norm == null) canvas.y - bottomInset - bar.y / 2f else norm.y * canvas.y
+    val maxLeft = (canvas.x - bar.x - margin).coerceAtLeast(margin)
+    val maxTop = (canvas.y - bar.y - margin).coerceAtLeast(margin)
+    return Offset(
+        (rawCx - bar.x / 2f).coerceIn(margin, maxLeft),
+        (rawCy - bar.y / 2f).coerceIn(margin, maxTop),
+    )
+}
+
 @Composable
 private fun EditorFooter(
     onReset: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
-    modifier: Modifier,
+    canvas: Offset,
+    norm: Offset?,
+    onNorm: (Offset) -> Unit,
     portrait: Boolean = false,
     onToggleOrientation: (() -> Unit)? = null,
 ) {
     // Upright the bar is too narrow for the hint and the actions on one line:
-    // the hint goes above, in its own small pill.
-    BoxWithConstraints(modifier.padding(bottom = 14.dp)) {
+    // the hint goes above, in its own small pill. The grip moves the whole bar
+    // (this session only) so a control can sit where the bar was.
+    val density = LocalDensity.current
+    var bar by remember { mutableStateOf(Offset.Zero) }
+    val normState = rememberUpdatedState(norm)
+    val canvasState = rememberUpdatedState(canvas)
+    val barState = rememberUpdatedState(bar)
+    val report = rememberUpdatedState(onNorm)
+    val margin = with(density) { 8.dp.toPx() }
+    val bottomInset = with(density) { 14.dp.toPx() }
+    val topLeft = footerTopLeft(canvas, bar, norm, margin, bottomInset)
+    BoxWithConstraints(
+        Modifier
+            .offset(x = with(density) { topLeft.x.toDp() }, y = with(density) { topLeft.y.toDp() })
+            .onSizeChanged { bar = Offset(it.width.toFloat(), it.height.toFloat()) },
+    ) {
         val narrow = maxWidth < 560.dp
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             if (narrow) {
@@ -605,10 +640,33 @@ private fun EditorFooter(
             }
             Row(
                 Modifier.clip(wyrmRounded(999.dp)).background(Wyrm.Card.copy(alpha = 0.96f))
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(999.dp)).padding(start = 14.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
+                    .border(1.dp, Wyrm.Rule, wyrmRounded(999.dp)).padding(start = 6.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                Box(
+                    Modifier.size(36.dp).pointerInput(Unit) {
+                        detectDragGestures { change, drag ->
+                            change.consume()
+                            val c = canvasState.value
+                            val b = barState.value
+                            if (c.x <= 1f || b.x <= 1f) return@detectDragGestures
+                            val m = 8.dp.toPx()
+                            val inset = 14.dp.toPx()
+                            val placed = footerTopLeft(c, b, normState.value, m, inset)
+                            val nextCx = (placed.x + b.x / 2f + drag.x).coerceIn(m + b.x / 2f, (c.x - m - b.x / 2f).coerceAtLeast(m + b.x / 2f))
+                            val nextCy = (placed.y + b.y / 2f + drag.y).coerceIn(m + b.y / 2f, (c.y - m - b.y / 2f).coerceAtLeast(m + b.y / 2f))
+                            report.value(Offset(nextCx / c.x, nextCy / c.y))
+                        }
+                    },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        repeat(3) {
+                            Box(Modifier.width(16.dp).height(2.dp).clip(wyrmRounded(1.dp)).background(Wyrm.Quiet))
+                        }
+                    }
+                }
                 if (!narrow) {
                     Text("HOLD ANY OBJECT FOR MORE OPTIONS", fontFamily = Wyrm.Body, fontSize = 9.sp, letterSpacing = 0.6.sp, color = Wyrm.Quiet)
                 }

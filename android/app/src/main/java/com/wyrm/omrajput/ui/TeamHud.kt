@@ -9,8 +9,9 @@ import androidx.compose.ui.graphics.Color
  *
  * The engine draws both (`platform/android_team.c`), in the match and in the
  * layout editor; these are the numbers it draws them with, set from the
- * editor's long-press options: roster size, opacity, width, height, name and
- * data colours; chat width, height, name and message colours. The chat's
+ * editor's long-press options: roster size, opacity, back-plate, width, height,
+ * name and data colours; chat width, height, name and message colours, and
+ * its own back-plate. The chat's
  * size and opacity stay the engine's own `layout.chat_scale` /
  * `layout.chat_opacity`. Saved in `wyrm_team_hud`, synced with the account
  * (AccountSync.FILES, platform document: layouts are per device). iOS twin:
@@ -23,11 +24,13 @@ object TeamHudStore {
     val KEYS = listOf(
         "team_scale", "team_opacity", "team_width", "team_height", "team_name", "team_data",
         "chat_width", "chat_height", "chat_name", "chat_text",
+        "team_panel", "chat_panel",
     )
-    private val DEFAULTS = floatArrayOf(1f, 1f, 340f, 210f, 0f, 0f, 400f, 270f, 0f, 0f)
+    private val DEFAULTS = floatArrayOf(1f, 1f, 340f, 210f, 0f, 0f, 400f, 270f, 0f, 0f, 1f, 1f)
     private val RANGES = listOf(
         0.65f..1.60f, 0.05f..1f, 220f..900f, 120f..800f, 0f..8f, 0f..8f,
         240f..1000f, 150f..900f, 0f..8f, 0f..8f,
+        0f..1f, 0f..1f,
     )
 
     /** The engine's palette; 0 keeps the theme's colour. */

@@ -54,11 +54,12 @@ import kotlin.math.sin
  * `WyrmTrailsComingSoon` in WyrmTrails.swift (same copy).
  */
 @Composable
-internal fun TrailsComingSoonScreen(insetTop: Dp, insetBottom: Dp, onBack: () -> Unit) {
+internal fun TrailsComingSoonScreen(insetTop: Dp, insetBottom: Dp, onBack: (() -> Unit)? = null) {
     Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
         Column(Modifier.fillMaxSize().padding(top = insetTop)) {
             Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 16.dp)) {
-                Row(
+                // A tab of its own (OM, 2026-10-04): no Back there.
+                if (onBack != null) Row(
                     Modifier.align(Alignment.CenterStart)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
                     verticalAlignment = Alignment.CenterVertically,
@@ -75,7 +76,7 @@ internal fun TrailsComingSoonScreen(insetTop: Dp, insetBottom: Dp, onBack: () ->
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp)
-                    .padding(bottom = insetBottom + 28.dp),
+                    .padding(bottom = insetBottom + 28.dp + LocalRootTabClearance.current),
             ) {
                 Spacer(Modifier.height(6.dp))
                 TrailsComingSoonHero()

@@ -66,7 +66,9 @@ fun NotificationsScreen(
     notifications: List<WyrmNotification>,
     insetTop: Dp,
     insetBottom: Dp,
-    showRootTabs: Boolean = true,
+    showRootTabs: Boolean = false,
+    /** Alerts is a page opened from Home's bell (OM, 2026-10-04): Back closes it. */
+    onBack: (() -> Unit)? = null,
     onMarkAllRead: () -> Unit,
     onOpenNotification: (String) -> Unit,
     onSetNotificationRead: (String, Boolean) -> Unit,
@@ -107,6 +109,20 @@ fun NotificationsScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = insetTop),
                 ) {
+                    if (onBack != null) {
+                        item {
+                            Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 16.dp)) {
+                                Row(
+                                    Modifier.align(Alignment.CenterStart)
+                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Link, size = 16.dp, semibold = true)
+                                    Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.Link)
+                                }
+                            }
+                        }
+                    }
                     item {
                         IosScreenHeader(kicker = "Inbox", title = "Alerts") {
                             Text(
@@ -145,7 +161,7 @@ fun NotificationsScreen(
 
         if (showRootTabs) {
             RootTabs(
-                selected = RootTab.NOTIFICATIONS,
+                selected = RootTab.PLAY,
                 insetBottom = insetBottom,
                 unreadNotifications = notifications.count { !it.read },
                 onNotifications = {},

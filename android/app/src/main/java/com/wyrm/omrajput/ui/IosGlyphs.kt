@@ -35,6 +35,10 @@ enum class IosGlyph {
     PLUS, ELLIPSIS, ARROW_UP, GEAR, DELETE_LEFT, SHIFT, SHIFT_FILL, GLOBE_KEY, RETURN,
     CHECKMARK, XMARK, ARROW_RIGHT, ARROW_CLOCKWISE, CHECKMARK_SHIELD, WAVEFORM,
     ENVELOPE_SHIELD, NUMBER_SQUARE, CHECKMARK_SEAL,
+    /** Home's Alerts button: the bell without a dot (the count is a real badge). */
+    BELL,
+    /** The Trails tab (OM, 2026-10-04): a post whose trail leaves the frame for a bead. */
+    TRAILS,
 }
 
 @Composable
@@ -94,6 +98,19 @@ private fun buildGlyph(glyph: IosGlyph, weight: Float): ImageVector {
             strokes += "M18.4,10.6 V11.7 C18.4,13.3 18.9,14.5 19.7,15.4 L20.2,16 C20.7,16.6 20.3,17.5 19.5,17.5 H4.5 C3.7,17.5 3.3,16.6 3.8,16 L4.3,15.4 C5.1,14.5 5.6,13.3 5.6,11.7 V9.7 C5.6,6.2 8.2,3.5 11.6,3.5 C12.3,3.5 12.9,3.6 13.5,3.8"
             strokes += "M9.7,20.1 C10.1,21 11,21.5 12,21.5 C13,21.5 13.9,21 14.3,20.1"
             fills += circle(18.4f, 5.6f, 3.0f)
+        }
+        IosGlyph.BELL -> {
+            strokes += "M12,3.5 C8.4,3.5 5.6,6.3 5.6,9.9 V11.7 C5.6,13.3 5.1,14.5 4.3,15.4 L3.8,16 C3.3,16.6 3.7,17.5 4.5,17.5 H19.5 C20.3,17.5 20.7,16.6 20.2,16 L19.7,15.4 C18.9,14.5 18.4,13.3 18.4,11.7 V9.9 C18.4,6.3 15.6,3.5 12,3.5 Z"
+            strokes += "M9.7,20.1 C10.1,21 11,21.5 12,21.5 C13,21.5 13.9,21 14.3,20.1"
+        }
+        IosGlyph.TRAILS -> {
+            // A post (rounded frame, open at the top right) and a slither trail
+            // leaving it for a bead. iOS draws the same paths (WyrmTrailsGlyph).
+            strokes += "M7.4,3.6 H13.2"
+            strokes += "M20.4,10.8 V16.6 C20.4,18.7 18.7,20.4 16.6,20.4 H7.4 C5.3,20.4 3.6,18.7 3.6,16.6 V7.4 C3.6,5.3 5.3,3.6 7.4,3.6"
+            strokes += "M7.6,16.6 C9.8,16.9 11,15.5 11.2,13.8 C11.4,12 12.9,11 14.6,11.4 C16.2,11.8 17.3,10.4 17.6,8.6"
+            fills += circle(7.5f, 16.6f, 1.05f)
+            fills += circle(18.3f, 5.7f, 2.3f)
         }
         IosGlyph.PERSON_2 -> {
             strokes += circle(9f, 8.2f, 3.4f)

@@ -1112,7 +1112,8 @@ private fun TrailNewButton(large: Boolean, onClick: () -> Unit) {
 fun TrailsFeedScreen(
     insetTop: Dp,
     insetBottom: Dp,
-    onBack: () -> Unit,
+    /** Null on the Trails tab (OM, 2026-10-04); a pushed copy passes its Back. */
+    onBack: (() -> Unit)? = null,
     onNew: () -> Unit,
     onOpen: (String) -> Unit,
     onAuthor: (String) -> Unit,
@@ -1130,7 +1131,8 @@ fun TrailsFeedScreen(
     Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
         Column(Modifier.fillMaxSize().padding(top = insetTop)) {
             Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 16.dp)) {
-                Row(
+                // A tab of its own (OM, 2026-10-04): no Back there.
+                if (onBack != null) Row(
                     Modifier.align(Alignment.CenterStart)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1189,7 +1191,7 @@ fun TrailsFeedScreen(
                         Text(TrailsStore.error, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge,
                             modifier = Modifier.padding(horizontal = 20.dp))
                     }
-                    item(key = "foot") { Spacer(Modifier.height(40.dp + insetBottom)) }
+                    item(key = "foot") { Spacer(Modifier.height(40.dp + insetBottom + LocalRootTabClearance.current)) }
                 }
             }
         }

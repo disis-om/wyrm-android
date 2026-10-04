@@ -339,9 +339,8 @@ class TeamService(context: Context) {
                  * beside the rest of this.
                  */
                 append("&sid=").append(presence.snakeId)
-                // NTL tags disabled: announcing a tag got the snake dropped
-                // from the arena. -1 is "no tag". Was: presence.tag
-                append("&tg=").append(-1)
+                // Tags on again (OM, 2026-10-04): the tag in the mod's numbering, -1 for none.
+                append("&tg=").append(presence.tag)
                 append("&rank=").append(presence.rank.coerceAtLeast(0))
                 append("&ver=").append(encode(VERSION))
                 /*
@@ -586,8 +585,6 @@ class TeamService(context: Context) {
      * so nothing here throws for one.
      */
     suspend fun claimTag(id: String, pass: String): String = withContext(Dispatchers.IO) {
-        // NTL tags are off (they got snakes dropped); Wyrm will serve its own.
-        throw java.io.IOException("Tags are coming soon")
         val url = TAG_ENDPOINT +
             "?id=" + encode(id) +
             "&pass=" + encode(digest(pass))
@@ -665,12 +662,11 @@ class TeamService(context: Context) {
         const val POLL_INTERVAL_MS = 4_000L
 
         /**
-         * Every NTL service is switched off (OM, 2026-09-27): arena drops kept
-         * following NTL traffic, so nothing is sent to or received from
-         * ntl-slither.com. The team poll never starts, [poll] makes no request
-         * and tag claims refuse. Saved teams stay on the phone. Set to false to
-         * bring Team Mode back.
+         * NTL services are on again (OM, 2026-10-04): the arena drops were the
+         * oversized skin block and other causes, not NTL. Off (2026-09-27 to
+         * 2026-10-04): nothing went to ntl-slither.com. true switches Team mode,
+         * team chat and tags off again.
          */
-        const val NTL_SERVICES_DISABLED = true
+        const val NTL_SERVICES_DISABLED = false
     }
 }

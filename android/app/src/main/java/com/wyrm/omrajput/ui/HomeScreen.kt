@@ -14,6 +14,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -69,6 +70,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -190,6 +193,8 @@ fun HomeScreen(
                 onFinishRename = ::finishNickname,
                 onEditorBounds = { nicknameEditorBounds = it },
                 onOpenProfile = onOpenProfile,
+                unreadAlerts = unreadNotifications,
+                onOpenAlerts = onTabNotifications,
             )
             IosPaperCard {
                 IosArenaCard(
@@ -263,12 +268,13 @@ private fun Header(
     onFinishRename: () -> Unit,
     onEditorBounds: (Rect) -> Unit,
     onOpenProfile: (Rect) -> Unit,
+    unreadAlerts: Int,
+    onOpenAlerts: (Rect) -> Unit,
 ) {
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val name = displayName.ifBlank { "Wyrm" }
-    val handle = username.trim().removePrefix("@")
     val initial = name.filter { it.isLetter() }.take(2).uppercase().ifEmpty { "W" }
     val focusRequester = remember { FocusRequester() }
     val density = LocalDensity.current
@@ -370,45 +376,76 @@ private fun Header(
                 color = Wyrm.Quiet.copy(alpha = 0.55f),
             )
         }
-        Row(
-            modifier = Modifier
-                .scale(pressScale(pressed))
-                .onGloballyPositioned { bounds = it.boundsInRoot() }
-                .clip(wyrmRounded(12.dp))
-                .clickable(interactionSource = interaction, indication = null) {
-                    onOpenProfile(bounds)
-                },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = name,
-                    fontFamily = Wyrm.Body,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = Wyrm.Ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+        // Top right (OM, 2026-10-04): Alerts as a button, then your avatar.
+        // No name or @username here any more; the avatar opens your profile.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AlertsBellButton(unread = unreadAlerts, onClick = onOpenAlerts)
+            Spacer(Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .scale(pressScale(pressed))
+                    .onGloballyPositioned { bounds = it.boundsInRoot() }
+                    .clip(wyrmRounded(12.dp))
+                    .clickable(interactionSource = interaction, indication = null) {
+                        onOpenProfile(bounds)
+                    },
+            ) {
+                WyrmAvatar(
+                    url = avatarUrl,
+                    avatarKey = avatarKey,
+                    initial = initial,
+                    size = 36.dp,
+                    corner = 10.8.dp,
                 )
-                if (handle.isNotBlank()) {
-                    Text(
-                        text = "@$handle",
-                        fontFamily = Wyrm.Body,
-                        fontSize = 10.5.sp,
-                        color = Wyrm.Quiet,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
-            Spacer(Modifier.width(9.dp))
-            WyrmAvatar(
-                url = avatarUrl,
-                avatarKey = avatarKey,
-                initial = initial,
-                size = 36.dp,
-                corner = 10.8.dp,
-            )
+        }
+    }
+}
+
+/** Home's Alerts button: a bell on a card disc, with the unread count. */
+@Composable
+private fun AlertsBellButton(unread: Int, onClick: (Rect) -> Unit) {
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // One box: the disc, and the count pinned to its top right corner.
+    Box(
+        modifier = Modifier
+            .scale(pressScale(pressed))
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
+            .semantics { contentDescription = if (unread > 0) "Alerts, $unread new" else "Alerts" },
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(Wyrm.Card)
+                .border(1.dp, Wyrm.Rule, CircleShape)
+                .clickable(interactionSource = interaction, indication = null) { onClick(bounds) },
+            contentAlignment = Alignment.Center,
+        ) {
+            IosIcon(glyph = IosGlyph.BELL, tint = Wyrm.Ink, size = 20.dp)
+        }
+        if (unread > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 5.dp, y = (-4).dp)
+                    .height(16.dp)
+                    .widthIn(min = 16.dp)
+                    .clip(WyrmCapsule)
+                    .background(Wyrm.Badge)
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (unread > 99) "99+" else unread.toString(),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 9.sp,
+                    color = Wyrm.contentOn(Wyrm.Badge),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -867,10 +904,11 @@ private fun Chevron() {
     )
 }
 
-enum class RootTab { NOTIFICATIONS, SOCIAL, PLAY, SKIN, SETTINGS }
+/** Trails took Alerts' place in the tab bar (OM, 2026-10-04); Alerts is the bell on Home. */
+enum class RootTab { TRAILS, SOCIAL, PLAY, SKIN, SETTINGS }
 
 /**
- * Wyrm iOS's root tab bar, glyph for glyph: Alerts, Social, Play, Skin,
+ * Wyrm iOS's root tab bar, glyph for glyph: Trails, Social, Play, Skin,
  * Settings over a floating capsule of glass. The chosen tab is semibold ink,
  * the rest take the theme's tab colour, and every glyph carries a faint paper
  * halo because clear glass shows whatever happens to scroll beneath it.
@@ -878,7 +916,8 @@ enum class RootTab { NOTIFICATIONS, SOCIAL, PLAY, SKIN, SETTINGS }
 @Composable
 fun FloatingRootTabs(
     selected: RootTab,
-    unreadNotifications: Int,
+    /** Unread likes and replies on your trails, on the Trails tab. */
+    trailsBadge: Int,
     onSelect: (RootTab) -> Unit,
     modifier: Modifier = Modifier,
     collapsed: Boolean = false,
@@ -891,7 +930,7 @@ fun FloatingRootTabs(
     val order = RootTab.entries
     val tabs = order.map { tab ->
         val badge = when (tab) {
-            RootTab.NOTIFICATIONS -> unreadNotifications
+            RootTab.TRAILS -> trailsBadge
             RootTab.SOCIAL -> socialBadge
             RootTab.SETTINGS -> settingsBadge
             else -> 0
@@ -918,7 +957,7 @@ private fun FloatingTabLabel(tab: RootTab, chosen: Boolean, badge: Int) {
         label = "tab colour",
     )
     val (glyph, label) = when (tab) {
-        RootTab.NOTIFICATIONS -> IosGlyph.BELL_BADGE to "Alerts"
+        RootTab.TRAILS -> IosGlyph.TRAILS to "Trails"
         RootTab.SOCIAL -> IosGlyph.PERSON_2 to "Social"
         RootTab.PLAY -> IosGlyph.PLAY_CIRCLE to "Play"
         RootTab.SKIN -> IosGlyph.HEXAGON_GRID to "Skin"
@@ -984,8 +1023,8 @@ fun RootTabs(
             .padding(top = 9.dp, bottom = insetBottom.coerceAtLeast(8.dp) + 8.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        TabItem("Notifications", R.drawable.ic_tab_notifications, selected == RootTab.NOTIFICATIONS,
-            badge = unreadNotifications, onClick = onNotifications)
+        TabItem("Trails", R.drawable.ic_tab_notifications, selected == RootTab.TRAILS,
+            onClick = onNotifications)
         TabItem("Social", R.drawable.ic_tab_social, selected == RootTab.SOCIAL, onClick = onSocial)
         TabItem("Play", R.drawable.ic_tab_play_outline, selected == RootTab.PLAY,
             prominent = true, onClick = onPlay)

@@ -88,6 +88,8 @@ fun SocialScreen(
     /** Pull to refresh: everything Social shows, and every page behind it. */
     onRefresh: (done: () -> Unit) -> Unit = { onAppear(); it() },
     onOpenGlobalChat: (Rect) -> Unit = onOpenMessages,
+    /** New global messages from others since you last read the room. */
+    unreadGlobal: Int = 0,
     /** Trails at the top of Social (`TrailsTeaser`). */
     trailsTeaser: (@Composable () -> Unit)? = null,
     onTabNotifications: (Rect) -> Unit,
@@ -132,9 +134,10 @@ fun SocialScreen(
                 ) { onOpenMessages(Rect.Zero) }
                 IosListRow(
                     title = "Global chat",
-                    detail = "Everyone in Wyrm · last 24 hours",
+                    detail = if (unreadGlobal > 0) "$unreadGlobal new · last 24 hours" else "Everyone in Wyrm · last 24 hours",
                     glyph = IosGlyph.BUBBLES,
                     tint = Wyrm.Link,
+                    badge = unreadGlobal,
                 ) { onOpenGlobalChat(Rect.Zero) }
                 IosListRow(
                     title = "Voice rooms",

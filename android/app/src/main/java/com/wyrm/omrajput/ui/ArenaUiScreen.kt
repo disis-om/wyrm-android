@@ -87,9 +87,7 @@ fun ArenaUiScreen(
         SettingsCaption("These are the same saved values shown in Settings › Display. Changes stay synchronized.")
 
         Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 22.dp)) {
-            androidx.compose.foundation.layout.Box(Modifier.tourAnchor("controls.arrange")) {
-                PaperPrimaryButton(label = "Arrange arena UI", onClick = onEditLayout)
-            }
+            PaperPrimaryButton(label = "Arrange arena UI", onClick = onEditLayout)
             Spacer(Modifier.height(9.dp))
             PaperOutlineButton(label = "Reset arena positions", onClick = onResetLayout)
         }

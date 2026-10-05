@@ -62,16 +62,21 @@ static void draw_last_death(tenv* env, float left, float top, float diameter) {
   }
   float half = diameter * 0.5f;
   ImVec2 point = {left + half + nx * half * 0.9f, top + half + ny * half * 0.9f};
-  float radius = diameter * 0.024f;
-  if (radius < 3.5f) radius = 3.5f;
-  if (radius > 6.5f) radius = 6.5f;
+  /* A red dot with a red ring round it, a few pixels apart (OM, 2026-10-06:
+     circle in circle), each over a dark edge so it survives a pale patch
+     of map. Wyrm's death red (the app's Blood, #FF4D4D), never the white
+     of you or a teammate's green. */
+  float core = diameter * 0.016f;
+  if (core < 2.4f) core = 2.4f;
+  if (core > 4.0f) core = 4.0f;
+  float ring = core + 3.2f;
   ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
-  /* A dark ring so it survives a pale patch of map, then Wyrm's death red
-     (the app's Blood, #FF4D4D), never the white of you or a teammate's green. */
-  ImDrawList_AddCircleFilled(draw, point, radius + 2.0f,
-                             igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.70f}), 20);
-  ImDrawList_AddCircleFilled(draw, point, radius,
-                             igColorConvertFloat4ToU32((ImVec4){1.0f, 0.302f, 0.302f, 1.0f}), 20);
+  ImU32 shade = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.60f});
+  ImU32 red = igColorConvertFloat4ToU32((ImVec4){1.0f, 0.302f, 0.302f, 1.0f});
+  ImDrawList_AddCircle(draw, point, ring, shade, 28, 3.4f);
+  ImDrawList_AddCircleFilled(draw, point, core + 1.2f, shade, 20);
+  ImDrawList_AddCircle(draw, point, ring, red, 28, 1.6f);
+  ImDrawList_AddCircleFilled(draw, point, core, red, 20);
 }
 
 static ImVec2 hud_top_left(tenv* env, float nx, float ny, float width,
@@ -763,8 +768,9 @@ static void wyrm_draw_minimap(tenv* env, ImDrawList* draw, float left,
       if (reach > 1.0f) { nx /= reach; ny /= reach; }
       ImVec2 p = {c.x + nx * R * 0.9f, c.y + ny * R * 0.9f};
       float dx = cosf(me->ehang), dy = sinf(me->ehang);
-      float s = R * 0.085f;
-      if (s < 4.0f) s = 4.0f;
+      /* Half the size it was (OM, 2026-10-06). */
+      float s = R * 0.0425f;
+      if (s < 2.5f) s = 2.5f;
       for (int pass = 0; pass < 2; ++pass) {
         float k = pass == 0 ? s * 1.45f : s;
         ImVec2 tip = {p.x + dx * k * 1.25f, p.y + dy * k * 1.25f};

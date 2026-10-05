@@ -219,7 +219,7 @@ fun ControlsScreen(
         },
         contentOnly = contentOnly,
     ) {
-        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp).tourAnchor("controls.preview")) {
+        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
             ControlsPreview(
                 showJoystick = !arrowSteering,
                 showArrow = arrowSteering,

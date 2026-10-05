@@ -159,6 +159,9 @@ private const val STATS_RETRY_MS = 15L * 60L * 1000L
 /** How long an armed Play waits for the engine to report the port busy. */
 private const val ARENA_GATE_ACK_MS = 4_000L
 
+/** How long the tour lets a page slide in or out before the next move (OM, 2026-10-06). */
+private const val TOUR_PAGE_MS = 430L
+
 class WyrmOverlay(private val activity: Activity) :
     LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
 
@@ -1941,7 +1944,7 @@ class WyrmOverlay(private val activity: Activity) :
                             onSkip = { WyrmTour.finish(activity) },
                         )
                         // Finished or skipped: back to Home, the tour's first place.
-                        DisposableEffect(Unit) { onDispose { if (!WyrmTour.active) applyTourPlace(TourPlace.HOME) } }
+                        DisposableEffect(Unit) { onDispose { if (!WyrmTour.active) scope.launch { applyTourPlace(TourPlace.HOME) } } }
                     }
                 }
             }
@@ -5343,6 +5346,7 @@ class WyrmOverlay(private val activity: Activity) :
     fun consumeSystemBack(): Boolean {
         // The tour: back is its Back; on the welcome card it is Skip.
         if (WyrmTour.active) {
+            if (WyrmTour.closing) return true
             if (WyrmTour.step == 0) WyrmTour.finish(activity) else WyrmTour.back()
             return true
         }
@@ -5350,17 +5354,24 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     /**
-     * Opens a tour step's place (OM, 2026-10-05): Home, the Controls workspace
-     * (from Home, on the step's tab) or the Settings tab. Nothing is opened
-     * again when it is already there, so a step on the same page only moves
-     * the light.
+     * Opens a tour step's place (OM, 2026-10-05) with the app's own page
+     * animations, one after the other (OM, 2026-10-06: smooth, no jumps): an
+     * open page slides back first, then the tab changes, then a page slides
+     * in. Home, the Controls workspace (from Home, on the step's tab) or the
+     * Settings tab. Nothing is opened again when it is already there, so a
+     * step on the same page only moves the light.
      */
-    private fun applyTourPlace(place: TourPlace) {
+    private suspend fun applyTourPlace(place: TourPlace) {
         when (place) {
-            TourPlace.HOME -> if (tabRoot != Route.HOME || route != Route.HOME || panelOpen) {
-                panelOpen = false
-                tabRoot = Route.HOME
-                route = Route.HOME
+            TourPlace.HOME -> {
+                if (panelOpen) {
+                    panelOpen = false
+                    delay(TOUR_PAGE_MS)
+                }
+                if (tabRoot != Route.HOME || route != Route.HOME) {
+                    tabRoot = Route.HOME
+                    route = Route.HOME
+                }
             }
             TourPlace.CONTROLS, TourPlace.BUTTONS, TourPlace.ARENA_UI -> {
                 val tab = when (place) {
@@ -5368,18 +5379,33 @@ class WyrmOverlay(private val activity: Activity) :
                     TourPlace.ARENA_UI -> ControlsWorkspaceTab.ARENA_UI
                     else -> ControlsWorkspaceTab.CONTROLS
                 }
-                if (tabRoot != Route.HOME || route != Route.SETTINGS_CONTROLS || !panelOpen) {
-                    tabRoot = Route.HOME
-                    refreshSettings()
-                    panelOrigin = Rect.Zero
-                    panelOpen = true
-                    route = Route.SETTINGS_CONTROLS
+                if (tabRoot == Route.HOME && route == Route.SETTINGS_CONTROLS && panelOpen) {
+                    // Already there: the workspace slides to the step's tab.
+                    controlsWorkspaceTab = tab
+                    return
                 }
+                if (panelOpen) {
+                    panelOpen = false
+                    delay(TOUR_PAGE_MS)
+                }
+                if (tabRoot != Route.HOME || route != Route.HOME) {
+                    tabRoot = Route.HOME
+                    route = Route.HOME
+                    delay(TOUR_PAGE_MS)
+                }
+                refreshSettings()
                 controlsWorkspaceTab = tab
+                panelOrigin = TourAnchors.bounds["home.controls"] ?: Rect.Zero
+                panelOpen = true
+                route = Route.SETTINGS_CONTROLS
             }
             TourPlace.SETTINGS -> {
                 SettingsFocus.query = ""
-                if (tabRoot != Route.SETTINGS || route != Route.SETTINGS || panelOpen) openSettingsTab()
+                if (panelOpen) {
+                    panelOpen = false
+                    delay(TOUR_PAGE_MS)
+                }
+                if (tabRoot != Route.SETTINGS || route != Route.SETTINGS) openSettingsTab()
             }
         }
     }

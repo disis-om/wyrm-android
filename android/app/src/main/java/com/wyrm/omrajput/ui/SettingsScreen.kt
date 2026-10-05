@@ -273,10 +273,21 @@ fun SettingsScreen(
                 Spacer(Modifier.height(24.dp))
             } else {
             groups.forEach { group ->
-                SettingsSectionLabel(group.title, top = 0.dp)
-                SettingsCard {
-                    group.rows.forEachIndexed { index, row ->
-                        SettingsHubLine(row = row, first = index == 0)
+                // The app tour lights these groups (OM, 2026-10-05).
+                val tourId = when (group.title) {
+                    "Arena" -> "settings.arena"
+                    "Playing help" -> "settings.help"
+                    "Performance" -> "settings.performance"
+                    "Account" -> "settings.account"
+                    "Help & feedback" -> "settings.support"
+                    else -> null
+                }
+                Column(if (tourId != null) Modifier.tourAnchor(tourId) else Modifier) {
+                    SettingsSectionLabel(group.title, top = 0.dp)
+                    SettingsCard {
+                        group.rows.forEachIndexed { index, row ->
+                            SettingsHubLine(row = row, first = index == 0)
+                        }
                     }
                 }
                 Spacer(Modifier.height(22.dp))

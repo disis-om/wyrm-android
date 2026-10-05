@@ -24,7 +24,7 @@ internal fun ControlsWorkspaceTabs(
     selected: ControlsWorkspaceTab,
     onSelect: (ControlsWorkspaceTab) -> Unit,
 ) {
-    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).tourAnchor("controls.tabs")) {
         PaperSegmented(
             options = ControlsWorkspaceTab.entries.map { it.label },
             selected = selected.ordinal,
@@ -87,7 +87,9 @@ fun ArenaUiScreen(
         SettingsCaption("These are the same saved values shown in Settings › Display. Changes stay synchronized.")
 
         Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 22.dp)) {
-            PaperPrimaryButton(label = "Arrange arena UI", onClick = onEditLayout)
+            androidx.compose.foundation.layout.Box(Modifier.tourAnchor("controls.arrange")) {
+                PaperPrimaryButton(label = "Arrange arena UI", onClick = onEditLayout)
+            }
             Spacer(Modifier.height(9.dp))
             PaperOutlineButton(label = "Reset arena positions", onClick = onResetLayout)
         }

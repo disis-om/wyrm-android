@@ -18,10 +18,17 @@ import org.json.JSONObject
  * (`TrailsComingSoonScreen`). `true` brings everything back.
  * Java reads it as `com.wyrm.omrajput.data.TrailsApiKt.TRAILS_ENABLED`.
  */
-// ON for test builds only (OM, 2026-10-04). Set back to false before any
-// beta or stable release: releases ship the coming-soon placeholder until
-// Trails is final. iOS: WyrmTrailsFeature.enabled.
+// ON, and released ON (OM, 2026-10-05: "abhi ke liye trails chalu krte hai",
+// photos and everything else, videos not yet). iOS: WyrmTrailsFeature.enabled.
 const val TRAILS_ENABLED = true
+
+/**
+ * Video trails (OM, 2026-10-05): off for now, so nobody can post a video.
+ * `false` takes the Video page out of the studio's mode bar; the video code,
+ * the backend route and playback of any video trail stay. `true` brings the
+ * Video page back. iOS: WyrmTrailsFeature.videoEnabled.
+ */
+const val TRAIL_VIDEO_ENABLED = false
 
 /** Badges that only make sense with Trails on; hidden from the strip and its count while paused. */
 val TRAIL_BADGE_IDS = setOf("trailblazer", "crowd-favourite")

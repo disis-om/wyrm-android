@@ -743,6 +743,8 @@ fun HelpCenterScreen(
     onBack: () -> Unit,
     onCompose: (SupportKind) -> Unit,
     onReports: () -> Unit,
+    /** Replays the app tour from its welcome (OM, 2026-10-05). */
+    onReplayTour: () -> Unit = {},
 ) {
     LaunchedEffect(Unit) { SupportStore.refresh() }
     var expanded by remember { mutableStateOf(-1) }
@@ -775,6 +777,11 @@ fun HelpCenterScreen(
             }
             SettingsValueRow(title = "Your reports", value = summary, first = true, onOpen = { onReports() },
                 badge = SupportStore.unseenReplies)
+        }
+
+        SettingsSectionLabel("Getting started")
+        SettingsCard {
+            SettingsValueRow(title = "Replay the app tour", value = "", first = true, onOpen = { onReplayTour() })
         }
 
         // OM, 2026-10-01: the "Always send" switches live here only (moved

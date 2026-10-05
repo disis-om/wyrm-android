@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "source": "github",
+  "productName": "Wyrm",
+  "packageName": "com.wyrm.omrajput",
+  "versionCode": 700,
+  "versionName": "7.0.0",
+  "minimumVersionCode": 0,
+  "mandatory": false,
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v7.0.0/Wyrm-v7.0.0.apk",
+  "apkSize": 64868828,
+  "sha256": "77a0cf531eaf9addf245330633f0b6ab81cc471641cdcaa70bc72e41388aa75a",
+  "publishedAt": "2026-10-05T21:51:50Z",
+  "headline": "A new version of Wyrm",
+  "author": "OM Rajput",
+  "releaseNotes": ["A welcome tour shows you where everything is.", "Trails is open: post photos, text or a canvas.", "Photo editor: swipe looks, Adjust, emoji stickers, Glow and Line text.", "Near Original: slither's own HUD and controls, one switch on Home.", "Team Mode is back, with roster and chat in the arena.", "NTL tags show to everyone and swing like NTL.", "Skinless and Spine snake looks, in normal and assist.", "Play feel: original arrow, Look ahead, spring zoom bar.", "Auto restart button and leaderboard search.", "Fixed: HUD resize crashes and the flickering tag."]
+}

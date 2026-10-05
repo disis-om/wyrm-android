@@ -32,7 +32,7 @@ import com.wyrm.omrajput.data.Setting
 
 /* These are the actions that make sense as named touch buttons. Native keeps
  * the same allowlist so an old backup cannot bring a retired button back. */
-private val OnScreenButtonOrder = listOf(1, 2, 3, 4, 6, 7, 8, 9)
+private val OnScreenButtonOrder = listOf(1, 2, 3, 4, 6, 7, 8, 9, 14) // 14 = Auto restart (OM, 2026-10-05)
 
 @Composable
 fun OnScreenButtonsContent(

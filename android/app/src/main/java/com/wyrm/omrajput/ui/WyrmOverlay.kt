@@ -1292,7 +1292,6 @@ class WyrmOverlay(private val activity: Activity) :
                             onBack = { panelOpen = false },
                             onChange = ::writeSetting,
                             onAdjustBackground = { openBackgroundSizeEditor(route) },
-                            onOpenSnakeLook = { assist -> openSnakeLookPreview(route, assist) },
                         )
 
                         Route.BACKGROUND_SIZE_EDITOR -> ArenaBackgroundSizeEditor(
@@ -3935,23 +3934,8 @@ class WyrmOverlay(private val activity: Activity) :
                 onOpen = { openBackgroundSizeEditor(Route.SETTINGS_ASSIST) },
             )
         }
-        out += SettingsSearchEntry(
-            id = "app.snake-preview",
-            title = "See it in the arena",
-            detail = "Skinless draws every snake as a clear strip. Spine is a thin white line.",
-            page = "Modes",
-            keywords = "snake look skinless spine render texture solid flat hide tag accessories preview arena",
-            open = { openSnakeLookPreview(Route.SETTINGS_ASSIST, false) },
-        ) {
-            SettingsValueRow(
-                title = "See it in the arena",
-                value = "",
-                first = true,
-                onOpen = { openSnakeLookPreview(Route.SETTINGS_ASSIST, false) },
-            )
-        }
         val byAction = hotkeys.associateBy { it.action }
-        listOf(1, 2, 3, 4, 6, 7, 8, 9).mapNotNull(byAction::get).forEach { key ->
+        listOf(1, 2, 3, 4, 6, 7, 8, 9, 14).mapNotNull(byAction::get).forEach { key ->
             out += SettingsSearchEntry(
                 id = "hotkey.${key.action}",
                 title = "${key.name} button",
@@ -4000,6 +3984,22 @@ class WyrmOverlay(private val activity: Activity) :
                     onChange = { ArrowSkinStore.updateBrightness(it) },
                 )
             }
+        }
+        out += SettingsSearchEntry(
+            id = "app.look-ahead",
+            title = "Look ahead",
+            detail = "Like slither: the view moves ahead of your snake, toward where it is going, and a little further while boosting.",
+            page = "Display",
+            keywords = "look ahead camera view follow slither boost",
+            open = { openSettingsPage(Route.SETTINGS_GENERAL) },
+        ) {
+            SettingsBoolRow(
+                title = "Look ahead",
+                detail = "Like slither: the view moves ahead of your snake, toward where it is going, and a little further while boosting.",
+                on = PlayFeelStore.lookAhead,
+                first = true,
+                onToggle = { PlayFeelStore.applyLookAhead(it) },
+            )
         }
         out += SettingsSearchEntry(
             id = "app.play-orientation",

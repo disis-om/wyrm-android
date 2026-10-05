@@ -691,7 +691,7 @@ private data class SupportFaq(val question: String, val answer: String)
 private val supportFaqs = listOf(
     SupportFaq(
         "My snake spawned and then dropped out of the arena",
-        "Another slither app on the same Wi-Fi (on a PC or another phone) can make the arena drop you. Close it, or switch to mobile data, and pick the arena again. Joining the same arena many times a minute also gets a short timeout; wait a minute and try once.",
+        "Another slither app on the same Wi-Fi (on a PC or another phone) can make the arena drop you. Close it, or turn off Wi-Fi and try to play at least once on mobile data, then pick the arena again. Joining the same arena many times a minute also gets a short timeout; wait a minute and try once.",
     ),
     SupportFaq(
         "How do I change my username or photo?",

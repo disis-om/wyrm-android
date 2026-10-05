@@ -13,6 +13,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -43,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +74,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wyrm.omrajput.data.Setting
 import com.composables.icons.lucide.R as LucideR
+import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 internal data class ArrowOption(val label: String, val points: List<Offset>)
 
@@ -393,18 +399,6 @@ fun ControlsScreen(
             )
         }
 
-        // Look ahead (OM, 2026-10-05): slither's own; Near Original and Wyrm alike.
-        SettingsSectionLabel("Camera")
-        SettingsCard {
-            Box(Modifier.settingAnchor("app.look-ahead")) { SettingsBoolRow(
-                title = "Look ahead",
-                detail = "Like slither: the view moves ahead of your snake, toward where it is going, and a little further while boosting.",
-                on = PlayFeelStore.lookAhead,
-                first = true,
-                onToggle = { PlayFeelStore.applyLookAhead(it) },
-            ) }
-        }
-
         if (zoomRows.isNotEmpty()) {
             AdvancedFold(label = "Advanced · zoom bar", open = zoomOpen, onToggle = { zoomOpen = !zoomOpen })
             if (zoomOpen) {
@@ -416,6 +410,9 @@ fun ControlsScreen(
                     // whose knob rests in the middle and springs back.
                     SettingsHairline()
                     Column(Modifier.padding(14.dp).settingAnchor("app.zoom-style")) {
+                        // The bar itself, so Slider and Spring can be felt here (OM, 2026-10-05).
+                        ZoomBarActionPreview(vertical = zoomVertical, springStyle = PlayFeelStore.zoomSpring)
+                        Spacer(Modifier.height(12.dp))
                         Text("Zoom bar style", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
                         Spacer(Modifier.height(8.dp))
                         PaperSegmented(
@@ -440,6 +437,133 @@ fun ControlsScreen(
             PaperOutlineButton(label = "Reset positions", onClick = onResetLayout)
         }
         SettingsCaption("Opens sideways, the way you hold the phone in a match.")
+    }
+}
+
+/** Slider stays where you leave it. Spring returns to the middle, as in a match. */
+@Composable
+private fun ZoomBarActionPreview(vertical: Boolean, springStyle: Boolean) {
+    val length = if (vertical) 156.dp else 220.dp
+    val thickness = 26.dp
+    var held by remember { mutableFloatStateOf(0.45f) }
+    var pull by remember { mutableFloatStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    // Same return as the arena bar: each frame multiplies the pull by 0.72.
+    LaunchedEffect(dragging, springStyle) {
+        if (!springStyle || dragging) return@LaunchedEffect
+        while (abs(pull) > 0.01f) {
+            pull *= 0.72f
+            delay(16)
+        }
+        pull = 0f
+    }
+    val shown = if (springStyle) (0.5f + pull * 0.5f).coerceIn(0f, 1f) else held
+    Column {
+        Text("Preview", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet)
+        Spacer(Modifier.height(8.dp))
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Wyrm.Well, wyrmRounded(12.dp))
+                .border(1.dp, Wyrm.Rule, wyrmRounded(12.dp))
+                .padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                Modifier
+                    .then(if (vertical) Modifier.width(48.dp).height(length) else Modifier.width(length).height(48.dp))
+                    .pointerInput(vertical, springStyle) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            dragging = true
+                            fun apply(x: Float, y: Float) {
+                                val span = if (vertical) size.height.toFloat() else size.width.toFloat()
+                                if (span <= 1f) return
+                                val pos = if (vertical) y else x
+                                val t = if (vertical) 1f - pos / span else pos / span
+                                if (springStyle) pull = ((t - 0.5f) * 2f).coerceIn(-1f, 1f)
+                                else held = t.coerceIn(0f, 1f)
+                            }
+                            apply(down.position.x, down.position.y)
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    change.consume()
+                                    apply(change.position.x, change.position.y)
+                                }
+                            } finally {
+                                dragging = false
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(
+                    Modifier
+                        .then(if (vertical) Modifier.width(thickness).height(length) else Modifier.width(length).height(thickness))
+                        .clip(wyrmRounded(999.dp))
+                        .background(Wyrm.Card)
+                        .border(1.dp, Wyrm.Ink, wyrmRounded(999.dp)),
+                ) {
+                    val along = if (vertical) 1f - shown else shown
+                    val travel = (if (vertical) size.height else size.width) - size.let {
+                        if (vertical) it.width else it.height
+                    }
+                    val knobAt = (if (vertical) size.width else size.height) / 2f + travel * along
+                    val mid = (if (vertical) size.height else size.width) / 2f
+                    val cross = if (vertical) size.width else size.height
+                    if (springStyle) {
+                        val from = min(mid, knobAt)
+                        val span = abs(knobAt - mid).coerceAtLeast(1f)
+                        if (vertical) {
+                            drawRect(Wyrm.Track, topLeft = Offset(0f, from), size = androidx.compose.ui.geometry.Size(cross, span))
+                        } else {
+                            drawRect(Wyrm.Track, topLeft = Offset(from, 0f), size = androidx.compose.ui.geometry.Size(span, cross))
+                        }
+                        val mark = cross * 0.22f
+                        val inset = cross * 1.1f
+                        if (vertical) {
+                            val x = size.width / 2f
+                            val plus = inset
+                            val minus = size.height - inset
+                            drawLine(Wyrm.Ink, Offset(x - mark, plus), Offset(x + mark, plus), 2.5f)
+                            drawLine(Wyrm.Ink, Offset(x, plus - mark), Offset(x, plus + mark), 2.5f)
+                            drawLine(Wyrm.Ink, Offset(x - mark, minus), Offset(x + mark, minus), 2.5f)
+                        } else {
+                            val y = size.height / 2f
+                            val minus = inset
+                            val plus = size.width - inset
+                            drawLine(Wyrm.Ink, Offset(minus - mark, y), Offset(minus + mark, y), 2.5f)
+                            drawLine(Wyrm.Ink, Offset(plus - mark, y), Offset(plus + mark, y), 2.5f)
+                            drawLine(Wyrm.Ink, Offset(plus, y - mark), Offset(plus, y + mark), 2.5f)
+                        }
+                    } else if (vertical) {
+                        drawRect(
+                            Wyrm.Track,
+                            topLeft = Offset(0f, knobAt),
+                            size = androidx.compose.ui.geometry.Size(cross, size.height - knobAt),
+                        )
+                    } else {
+                        drawRect(Wyrm.Track, size = androidx.compose.ui.geometry.Size(knobAt, cross))
+                    }
+                    val knobR = 9.dp.toPx()
+                    val center = if (vertical) Offset(size.width / 2f, knobAt) else Offset(knobAt, size.height / 2f)
+                    drawCircle(Wyrm.Ink, knobR, center)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Move the zoom bar to see its action.",
+                fontFamily = Wyrm.Body,
+                fontSize = 12.5.sp,
+                color = Wyrm.Quiet,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        }
     }
 }
 

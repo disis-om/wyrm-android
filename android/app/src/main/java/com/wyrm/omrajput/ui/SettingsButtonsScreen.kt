@@ -24,7 +24,7 @@ import com.wyrm.omrajput.data.Hotkey
 import com.wyrm.omrajput.data.Setting
 
 /** Same allowlist as the dark keys page and the engine. */
-private val OnScreenButtonOrder = listOf(1, 2, 3, 4, 6, 7, 8, 9)
+private val OnScreenButtonOrder = listOf(1, 2, 3, 4, 6, 7, 8, 9, 14) // 14 = Auto restart (OM, 2026-10-05)
 
 /**
  * Spec page 11 — Settings › On-screen buttons.

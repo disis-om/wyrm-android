@@ -53,10 +53,9 @@ static bool normalize_on_screen_buttons(user_settings* settings) {
       changed = true;
     }
   }
-  if (settings->rope_mode_visible) {
-    settings->rope_mode_visible = false;
-    changed = true;
-  }
+  /* Slot 14 is the Auto restart key now (OM, 2026-10-05). It used to be
+     forced hidden here for the old rope mode, which hid Auto restart on every
+     save; its visibility is the player's choice. */
   return changed;
 }
 

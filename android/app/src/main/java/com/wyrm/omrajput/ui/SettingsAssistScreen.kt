@@ -28,11 +28,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wyrm.omrajput.data.Setting
+import kotlin.math.sin
 import com.wyrm.omrajput.data.SettingType
 
 /**
@@ -51,8 +56,6 @@ fun SettingsAssistScreen(
     onChange: (Setting, List<Float>) -> Unit,
     /** Opens the live background-size editor (the slider moved there, OM 2026-10-01). */
     onAdjustBackground: () -> Unit = {},
-    /** Opens the real snake in the arena. True when this page's mode is assist (OM, 2026-10-05). */
-    onOpenSnakeLook: (Boolean) -> Unit = {},
 ) {
     // Settings search picks the tab that holds the row it opened.
     var mode by remember { mutableIntStateOf(if (SettingsFocus.target?.startsWith("normal.") == true) 0 else 1) }
@@ -141,15 +144,10 @@ fun SettingsAssistScreen(
                 // Snake look (OM, 2026-10-05): follows the visible mode tab.
                 SettingsSectionLabel("Snake")
                 SettingsCard {
-                    Box(Modifier.settingAnchor("app.snake-preview")) {
-                        SettingsValueRow(
-                            title = "See it in the arena",
-                            value = "",
-                            first = true,
-                            onOpen = { onOpenSnakeLook(visibleMode == 1) },
-                        )
-                    }
-                    modeSettings.firstOrNull { it.id.substringAfter('.') == "render_mode" }?.let { setting ->
+                    val render = modeSettings.firstOrNull { it.id.substringAfter('.') == "render_mode" }
+                    val spineOn = modeSettings.firstOrNull { it.id.substringAfter('.') == "spine" }
+                    SnakeBodyPreview(mode = render?.index ?: 0, spine = spineOn?.enabled == true)
+                    render?.let { setting ->
                         SettingTypedRow(setting = setting, first = false, onChange = onChange)
                     }
                     modeSettings.firstOrNull { it.id.substringAfter('.') == "spine" }?.let { setting ->
@@ -161,7 +159,7 @@ fun SettingsAssistScreen(
                         }
                     }
                 }
-                SettingsCaption("Skinless draws every snake as a clear strip in its own colour. Spine is a thin white line down every snake.")
+                SettingsCaption("Skinless keeps the plain snake's width and length. Only the skin turns see-through. Spine is a thin white line down every snake.")
 
                 SettingsSectionLabel("Arena colours")
                 SettingsCard {
@@ -258,6 +256,68 @@ fun SettingsAssistScreen(
                             SettingTypedRow(setting = setting, first = first, onChange = onChange)
                             first = false
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The snake as it will draw: same body in every mode, Skinless only fades it. */
+@Composable
+private fun SnakeBodyPreview(mode: Int, spine: Boolean) {
+    val body = Color(0.20f, 0.78f, 0.36f)
+    val alt = Color(0.10f, 0.55f, 0.24f)
+    val stripe = Color(0.55f, 0.95f, 0.62f)
+    Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Text("Preview", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(88.dp)
+                .background(Wyrm.Well, wyrmRounded(12.dp))
+                .border(1.dp, Wyrm.Rule, wyrmRounded(12.dp)),
+        ) {
+            Canvas(Modifier.fillMaxWidth().height(88.dp)) {
+                val radius = 11.dp.toPx()
+                val count = 14
+                val pts = List(count) { i ->
+                    val t = i / (count - 1f)
+                    Offset(
+                        18.dp.toPx() + t * (size.width - 36.dp.toPx()),
+                        size.height * 0.5f + sin(t * 3.4f) * 10.dp.toPx(),
+                    )
+                }
+                if (mode == 3 && pts.size >= 2) {
+                    val path = Path()
+                    path.moveTo(pts[0].x, pts[0].y)
+                    for (i in 1 until pts.lastIndex) {
+                        path.quadraticBezierTo(
+                            pts[i].x, pts[i].y,
+                            (pts[i].x + pts[i + 1].x) * 0.5f,
+                            (pts[i].y + pts[i + 1].y) * 0.5f,
+                        )
+                    }
+                    path.lineTo(pts.last().x, pts.last().y)
+                    drawPath(
+                        path,
+                        body.copy(alpha = 0.8f),
+                        style = Stroke(width = radius * 2f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    )
+                } else {
+                    pts.forEachIndexed { i, p ->
+                        val fill = when (mode) {
+                            0 -> if (i % 3 == 1) stripe else if (i % 2 == 0) body else alt
+                            2 -> body
+                            else -> if (i % 2 == 0) body else alt
+                        }
+                        drawCircle(fill, radius, p)
+                    }
+                }
+                if (spine && pts.size >= 2) {
+                    for (i in 0 until pts.lastIndex) {
+                        drawLine(Color.White, pts[i], pts[i + 1], strokeWidth = 2.dp.toPx())
                     }
                 }
             }

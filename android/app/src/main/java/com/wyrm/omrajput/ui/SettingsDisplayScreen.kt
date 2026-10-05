@@ -1,10 +1,12 @@
 package com.wyrm.omrajput.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.wyrm.omrajput.data.Setting
@@ -51,6 +53,17 @@ fun SettingsDisplayScreen(
             basic.forEachIndexed { index, setting ->
                 SettingTypedRow(setting = setting, first = index == 0, onChange = onChange)
             }
+        }
+        // Look ahead (OM, 2026-10-05): moved off Controls. Same switch, both modes.
+        SettingsSectionLabel("Camera")
+        SettingsCard {
+            Box(Modifier.settingAnchor("app.look-ahead")) { SettingsBoolRow(
+                title = "Look ahead",
+                detail = "Like slither: the view moves ahead of your snake, toward where it is going, and a little further while boosting.",
+                on = PlayFeelStore.lookAhead,
+                first = true,
+                onToggle = { PlayFeelStore.applyLookAhead(it) },
+            ) }
         }
         if (advancedRows.isNotEmpty()) {
             AdvancedFold(label = "Advanced", open = advanced, onToggle = { advanced = !advanced })

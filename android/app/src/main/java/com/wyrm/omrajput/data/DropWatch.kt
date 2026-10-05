@@ -303,7 +303,7 @@ object DropWatch {
         prespawn -> "join_refused" to
             "The arena turned the join down before your snake appeared. Try another arena; sending the report helps us see why."
         lifeSec < 15 -> "same_wifi" to
-            "Another slither app on the same Wi-Fi (on a PC or another phone) can make the arena drop you. Close it, or switch to mobile data."
+            "Another slither app on the same Wi-Fi (on a PC or another phone) can make the arena drop you. Close it, or turn off Wi-Fi and try to play at least once on mobile data."
         else -> "arena_closed" to
             "The arena closed the connection. Sending the report helps us find out why."
     }

@@ -93,6 +93,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -143,6 +144,12 @@ import kotlinx.coroutines.withContext
  * The editor draws with the same code it exports with (`StudioInk`,
  * `StudioText.draw`, `StudioDraft.photoRect`), so the posted image is what the
  * player saw. Wyrm's own brush is Beads: a stroke laid down as a snake.
+ *
+ * Snapchat-style tools (OM, 2026-10-05): looks (`TrailLooks`) swiped across
+ * the picture or picked in the Looks panel with Adjust sliders, emoji
+ * stickers, and text in Clean / Serif, Fill, Glow and Outline. The Video page
+ * (`TrailVideo.kt`) edits a clip with this same editor over the playing clip:
+ * the canvas is then transparent and exported as one overlay bitmap.
  */
 
 // ------------------------------------------------------------------ model
@@ -173,11 +180,44 @@ internal data class StudioText(
     val center: Offset,
     val scale: Float = 1f,
     val rotation: Float = 0f,
+    /** Snapchat-style looks for words (OM, 2026-10-05): a neon glow, and a dark outline. */
+    val glow: Boolean = false,
+    val outline: Boolean = false,
 )
+
+/** An emoji sticker (OM, 2026-10-05): dragged, pinched, turned and binned like text. */
+internal data class StudioEmoji(
+    val id: String = UUID.randomUUID().toString(),
+    val emoji: String,
+    val center: Offset,
+    val scale: Float = 1f,
+    val rotation: Float = 0f,
+)
+
+/** The sticker sheet: Wyrm's moments first. */
+internal val STUDIO_EMOJIS = listOf(
+    "🐍", "🔥", "👑", "🏆", "💀", "⚡", "💯", "🎯", "😂", "😍", "😎", "🤯",
+    "😈", "😭", "🥶", "🥇", "✨", "💥", "❤️", "⭐", "🌈", "🎮", "🕹️", "👀",
+    "🙌", "🤝", "🫡", "🙏", "💪", "🎉", "🍕", "🌙",
+)
+
+internal object StudioEmojiPainter {
+    fun size(type: StudioType) = 72f * type.density
+
+    /** Paints the sticker centred on the canvas origin. */
+    fun draw(canvas: android.graphics.Canvas, item: StudioEmoji, type: StudioType) {
+        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            textSize = size(type)
+        }
+        val metrics = paint.fontMetrics
+        canvas.drawText(item.emoji, 0f, -(metrics.ascent + metrics.descent) / 2f, paint)
+    }
+}
 
 internal enum class StudioAspect(val label: String) { ORIGINAL("Original"), FREE("Free"), SQUARE("1:1"), PORTRAIT("4:5"), WIDE("16:9") }
 
-internal enum class StudioMode(val label: String) { PHOTO("Photo"), TEXT("Text"), CANVAS("Canvas") }
+internal enum class StudioMode(val label: String) { PHOTO("Photo"), VIDEO("Video"), TEXT("Text"), CANVAS("Canvas") }
 
 /*
  * "Share this run" (OM, 2026-09-30): the lobby's Share run opens this studio
@@ -266,12 +306,23 @@ internal class StudioType(context: Context, val density: Float) {
 }
 
 internal object StudioTextPainter {
-    private fun layout(item: StudioText, type: StudioType): StaticLayout {
+    /** [stroke]: the outline pass, drawn under the letters. */
+    private fun layout(item: StudioText, type: StudioType, stroke: Boolean = false): StaticLayout {
+        val ink = StudioPalette.argb(if (item.filled) StudioPalette.contrast(item.rgb) else item.rgb)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = type.face(item.serif)
             textSize = type.baseSize
-            color = StudioPalette.argb(if (item.filled) StudioPalette.contrast(item.rgb) else item.rgb)
-            if (!item.filled) setShadowLayer(4f, 0f, 1f, android.graphics.Color.argb(90, 0, 0, 0))
+            color = ink
+            when {
+                stroke -> {
+                    style = Paint.Style.STROKE
+                    strokeWidth = 5f * type.density
+                    strokeJoin = Paint.Join.ROUND
+                    color = StudioPalette.argb(StudioPalette.contrast(item.rgb))
+                }
+                item.glow -> setShadowLayer(14f * type.density, 0f, 0f, ink)
+                !item.filled -> setShadowLayer(4f, 0f, 1f, android.graphics.Color.argb(90, 0, 0, 0))
+            }
         }
         val widest = item.text.split('\n').maxOfOrNull { paint.measureText(it) } ?: 0f
         val width = min(type.maxWidth, ceil(widest).toInt().coerceAtLeast(1))
@@ -297,15 +348,18 @@ internal object StudioTextPainter {
         }
         canvas.save()
         canvas.translate(-l.width / 2f, -l.height / 2f)
+        if (item.outline && !item.filled) layout(item, type, stroke = true).draw(canvas)
+        if (item.glow) l.draw(canvas) // twice: a neon glow reads stronger
         l.draw(canvas)
         canvas.restore()
     }
 }
 
 internal object StudioInk {
-    fun draw(canvas: android.graphics.Canvas, strokes: List<StudioStroke>) { for (s in strokes) draw(canvas, s) }
+    /** [multiply]: the marker darkens what is under it; off on a video's transparent canvas, where it would vanish. */
+    fun draw(canvas: android.graphics.Canvas, strokes: List<StudioStroke>, multiply: Boolean = true) { for (s in strokes) draw(canvas, s, multiply) }
 
-    fun draw(canvas: android.graphics.Canvas, stroke: StudioStroke) {
+    fun draw(canvas: android.graphics.Canvas, stroke: StudioStroke, multiply: Boolean = true) {
         val points = stroke.points
         val first = points.firstOrNull() ?: return
         val colour = StudioPalette.argb(stroke.rgb)
@@ -318,7 +372,7 @@ internal object StudioInk {
                     strokeJoin = Paint.Join.ROUND
                     strokeWidth = if (marker) stroke.width * 2.6f else stroke.width
                     color = colour
-                    if (marker) { alpha = 115; xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY) }
+                    if (marker) { alpha = 115; if (multiply) xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY) }
                 }
                 val path = Path().apply {
                     moveTo(first.x, first.y)
@@ -504,6 +558,15 @@ internal class StudioDraft {
     var caption by mutableStateOf("")
     /** Bumped by every stroke change, so the canvas redraws. */
     var ink by mutableStateOf(0)
+    /** The photo's look and adjustments; on a video, the clip's (OM, 2026-10-05). */
+    var look by mutableStateOf(TrailLooks.all.first())
+    var adjust by mutableStateOf(TrailAdjust())
+    /** A small picture for the Looks panel's swatches. */
+    var lookSample by mutableStateOf<Bitmap?>(null)
+    val emojis = mutableStateListOf<StudioEmoji>()
+    /** A clip's shape while the Video page edits it; null for every other trail. */
+    var videoAspect by mutableStateOf<Float?>(null)
+    val video: Boolean get() = videoAspect != null
 
     // "Share run": null for every other trail.
     var share by mutableStateOf<ShareRunInput?>(null)
@@ -524,7 +587,7 @@ internal class StudioDraft {
         get() = share?.run?.screenshot?.takeIf { shareLayer == ShareLayer.SCREENSHOT }
 
     val ratio: Float
-        get() = when (aspect) {
+        get() = videoAspect ?: when (aspect) {
             StudioAspect.FREE -> freeRatio
             StudioAspect.SQUARE -> 1f
             StudioAspect.PORTRAIT -> 0.8f
@@ -541,6 +604,11 @@ internal class StudioDraft {
         strokes.clear()
         texts.clear()
         stickers.clear()
+        emojis.clear()
+        look = TrailLooks.all.first()
+        adjust = TrailAdjust()
+        lookSample = null
+        videoAspect = null
         ink++
     }
 
@@ -669,9 +737,14 @@ internal class StudioDraft {
     /** Everything on a canvas of [w] x [h] pixels; the editor and the export both call this. */
     fun paint(canvas: android.graphics.Canvas, w: Float, h: Float, type: StudioType, live: StudioStroke? = null) {
         val bitmap = image
-        if (bitmap != null) {
+        if (video) {
+            // The clip plays under the canvas; only what is on top is painted.
+        } else if (bitmap != null) {
             canvas.drawColor(android.graphics.Color.BLACK)
-            canvas.drawBitmap(bitmap, null, photoRect(w, h), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+            val looked = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+                if (!TrailLooks.isIdentity(look, adjust)) colorFilter = TrailLooks.colorFilter(look, adjust)
+            }
+            canvas.drawBitmap(bitmap, null, photoRect(w, h), looked)
         } else {
             canvas.drawColor(StudioPalette.argb(background))
             // A shared run's screenshot: over the colour, clipped to the canvas.
@@ -683,9 +756,17 @@ internal class StudioDraft {
             }
         }
         val layer = canvas.saveLayer(0f, 0f, w, h, null)
-        StudioInk.draw(canvas, strokes)
-        live?.let { StudioInk.draw(canvas, it) }
+        StudioInk.draw(canvas, strokes, multiply = !video)
+        live?.let { StudioInk.draw(canvas, it, multiply = !video) }
         canvas.restoreToCount(layer)
+        for (item in emojis) {
+            canvas.save()
+            canvas.translate(item.center.x, item.center.y)
+            canvas.rotate(item.rotation)
+            canvas.scale(item.scale, item.scale)
+            StudioEmojiPainter.draw(canvas, item, type)
+            canvas.restore()
+        }
         paintStickers(canvas, w, h, type)
         for (item in texts) {
             canvas.save()
@@ -695,6 +776,20 @@ internal class StudioDraft {
             StudioTextPainter.draw(canvas, item, type)
             canvas.restore()
         }
+    }
+
+    /**
+     * A video's overlay (OM, 2026-10-05): everything drawn on top, on a clear
+     * bitmap the size of the exported frame; null when nothing is on top.
+     */
+    fun renderOverlay(outW: Int, outH: Int, w: Float, h: Float, type: StudioType): Bitmap? {
+        if (strokes.isEmpty() && texts.isEmpty() && emojis.isEmpty() && stickers.isEmpty()) return null
+        if (w <= 0f || h <= 0f) return null
+        val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        canvas.scale(outW / w, outH / h)
+        paint(canvas, w, h, type)
+        return out
     }
 
     /** The finished picture, 1440 px wide. */
@@ -790,7 +885,7 @@ private fun ImageProxy.upright(front: Boolean): Bitmap {
 private enum class StudioStep { PICK, EDIT, CAPTION }
 
 /** What the editor is doing: nothing (move and pinch), writing, drawing or cropping. */
-private enum class EditorTool { NONE, TEXT, DRAW, CROP }
+private enum class EditorTool { NONE, TEXT, DRAW, CROP, EMOJI, LOOKS }
 
 /**
  * The studio. With [share] it is the Share editor for the last run: it opens
@@ -822,6 +917,18 @@ internal fun TrailStudioScreen(
     val textures by rememberSkinTextures()
     val sharing = share != null
     val skinOnly = share != null && share.run == null
+    /** The clip being edited on the Video page (OM, 2026-10-05). */
+    var videoSession by remember { mutableStateOf<TrailVideoSession?>(null) }
+    var openingClip by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { videoSession?.release() } }
+    // The player previews the look the export will burn in.
+    LaunchedEffect(videoSession, draft.look, draft.adjust) {
+        videoSession?.applyEffects(TrailLooks.videoEffects(draft.look, draft.adjust))
+    }
+    // It plays while being edited and rests on the caption.
+    LaunchedEffect(step, videoSession) {
+        videoSession?.player?.let { if (step == StudioStep.EDIT) it.play() else it.pause() }
+    }
 
     LaunchedEffect(Unit) { TrailsStore.resetPosting() }
     // The worn skin can arrive after the editor opens; the sticker follows it.
@@ -840,6 +947,57 @@ internal fun TrailStudioScreen(
             withContext(Dispatchers.IO) { loadPhoto(context, uri) }?.let { open(it) }
             loadingPhoto = false
         }
+    }
+
+    /** A recorded or picked clip into the editor; longer than 30 s, it starts trimmed to its first 30. */
+    fun openClip(uri: Uri) {
+        if (openingClip) return
+        openingClip = true
+        scope.launch {
+            val clip = withContext(Dispatchers.IO) { TrailClips.probe(context, uri) }
+            if (clip == null) {
+                openingClip = false
+                TrailsStore.toast = "That video could not be read."
+                return@launch
+            }
+            val sample = withContext(Dispatchers.IO) { TrailClips.frame(context, clip, 0L, 240) }
+            videoSession?.release()
+            val session = TrailVideoSession(context, clip)
+            draft.reset(StudioMode.VIDEO)
+            draft.videoAspect = clip.aspect
+            draft.lookSample = sample
+            session.load()
+            videoSession = session
+            openingClip = false
+            step = StudioStep.EDIT
+        }
+    }
+
+    /** The video's poster: the cover frame with the look and everything drawn on top. */
+    fun videoPoster(): Bitmap? {
+        val session = videoSession ?: return null
+        val (w, h) = canvasPx
+        val filter = if (TrailLooks.isIdentity(draft.look, draft.adjust)) null else TrailLooks.colorFilter(draft.look, draft.adjust)
+        return TrailVideoExport.poster(context, session.clip, session.coverMs, filter) { ow, oh -> draft.renderOverlay(ow, oh, w, h, type) }
+    }
+
+    fun postVideo() {
+        val session = videoSession ?: return
+        if (TrailsStore.posting.busy) return
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        val (w, h) = canvasPx
+        TrailsStore.postVideo(
+            context = context.applicationContext,
+            clip = session.clip,
+            startMs = session.trimStart,
+            endMs = session.trimEnd,
+            muted = session.muted,
+            effects = TrailLooks.videoEffects(draft.look, draft.adjust),
+            overlay = { ow, oh -> draft.renderOverlay(ow, oh, w, h, type) },
+            poster = rendered ?: videoPoster(),
+            caption = draft.caption,
+        )
+        onClose()
     }
 
     val pickAll = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(::openUri) }
@@ -876,7 +1034,15 @@ internal fun TrailStudioScreen(
     fun back() {
         when (step) {
             StudioStep.PICK -> onClose()
-            StudioStep.EDIT -> if (sharing) onClose() else { step = StudioStep.PICK; if (draft.mode == StudioMode.PHOTO) draft.image = null }
+            StudioStep.EDIT -> if (sharing) onClose() else {
+                step = StudioStep.PICK
+                if (draft.mode == StudioMode.PHOTO) draft.image = null
+                if (draft.mode == StudioMode.VIDEO) {
+                    videoSession?.release()
+                    videoSession = null
+                    draft.videoAspect = null
+                }
+            }
             StudioStep.CAPTION -> step = if (sharing) StudioStep.EDIT else if (draft.mode == StudioMode.CANVAS) StudioStep.PICK else StudioStep.EDIT
         }
     }
@@ -886,10 +1052,13 @@ internal fun TrailStudioScreen(
             StudioStep.PICK -> when (draft.mode) {
                 StudioMode.TEXT -> post(null)
                 StudioMode.CANVAS -> { rendered = draft.render(canvasPx.first, canvasPx.second, type); step = StudioStep.CAPTION }
-                StudioMode.PHOTO -> Unit
+                StudioMode.PHOTO, StudioMode.VIDEO -> Unit
             }
-            StudioStep.EDIT -> { rendered = draft.render(canvasPx.first, canvasPx.second, type); step = StudioStep.CAPTION }
-            StudioStep.CAPTION -> post(rendered ?: draft.render(canvasPx.first, canvasPx.second, type))
+            StudioStep.EDIT -> {
+                rendered = if (draft.video) videoPoster() else draft.render(canvasPx.first, canvasPx.second, type)
+                step = StudioStep.CAPTION
+            }
+            StudioStep.CAPTION -> if (draft.video) postVideo() else post(rendered ?: draft.render(canvasPx.first, canvasPx.second, type))
         }
     }
 
@@ -901,7 +1070,7 @@ internal fun TrailStudioScreen(
     val actionLabel = if (step == StudioStep.CAPTION || (step == StudioStep.PICK && draft.mode == StudioMode.TEXT)) "Post" else "Next"
     val title = when (step) {
         StudioStep.PICK -> "New trail"
-        StudioStep.EDIT -> if (skinOnly) "Share skin" else if (sharing) "Share run" else "Edit"
+        StudioStep.EDIT -> if (skinOnly) "Share skin" else if (sharing) "Share run" else if (draft.video) "Edit video" else "Edit"
         StudioStep.CAPTION -> "Caption"
     }
 
@@ -962,7 +1131,7 @@ internal fun TrailStudioScreen(
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            val page = if (step == StudioStep.PICK) draft.mode.ordinal else 3 + step.ordinal
+            val page = if (step == StudioStep.PICK) draft.mode.ordinal else 10 + step.ordinal
             androidx.compose.animation.AnimatedContent(
                 targetState = page,
                 transitionSpec = {
@@ -978,9 +1147,28 @@ internal fun TrailStudioScreen(
                     StudioMode.PHOTO.ordinal -> PhotoPicker(loadingPhoto, onCaptured = { open(it) }, onPick = ::openUri,
                         onAll = { pickAll.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                         onNativeCamera = ::nativeCamera)
+                    StudioMode.VIDEO.ordinal -> Box(Modifier.fillMaxSize()) {
+                        TrailVideoPicker(onClip = ::openClip)
+                        if (openingClip) {
+                            Box(Modifier.align(Alignment.Center).size(52.dp).clip(CircleShape).background(Wyrm.Card), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Wyrm.Ink, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                            }
+                        }
+                    }
                     StudioMode.TEXT.ordinal -> TextComposer(draft)
-                    3 + StudioStep.CAPTION.ordinal -> CaptionStep(draft, rendered, shareSkin.takeIf { sharing }) { shareSkin = it }
-                    else -> StudioEditor(draft, type) { w, h -> canvasPx = w to h }
+                    10 + StudioStep.CAPTION.ordinal -> CaptionStep(draft, rendered, shareSkin.takeIf { sharing }) { shareSkin = it }
+                    else -> {
+                        val session = videoSession
+                        if (draft.video && session != null) {
+                            StudioEditor(
+                                draft, type, { w, h -> canvasPx = w to h },
+                                underlay = { TrailVideoPreview(session, Modifier.fillMaxSize()) },
+                                bottom = { TrailVideoBar(session) },
+                            )
+                        } else {
+                            StudioEditor(draft, type, { w, h -> canvasPx = w to h })
+                        }
+                    }
                 }
             }
         }
@@ -1021,6 +1209,9 @@ private fun PhotoPicker(
 
     DisposableEffect(cameraAllowed, front) {
         var provider: ProcessCameraProvider? = null
+        // Only this page's own use cases are let go: the Photo and Video pages
+        // overlap while one slides over the other (OM, 2026-10-05).
+        var bound = emptyArray<androidx.camera.core.UseCase>()
         if (cameraAllowed) {
             val future = ProcessCameraProvider.getInstance(context)
             future.addListener({
@@ -1030,11 +1221,12 @@ private fun PhotoPicker(
                         p.unbindAll()
                         p.bindToLifecycle(lifecycle, if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA,
                             preview, capture)
+                        bound = arrayOf(preview, capture)
                     }
                 }
             }, ContextCompat.getMainExecutor(context))
         }
-        onDispose { runCatching { provider?.unbindAll() } }
+        onDispose { runCatching { provider?.unbind(*bound) } }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -1202,10 +1394,21 @@ private fun CaptionStep(draft: StudioDraft, rendered: Bitmap?, shareSkin: Boolea
  * thrown into the bin at the bottom to delete it.
  */
 @Composable
-private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float, Float) -> Unit) {
+private fun StudioEditor(
+    draft: StudioDraft,
+    type: StudioType,
+    onCanvas: (Float, Float) -> Unit,
+    /** What plays under a video's transparent canvas (OM, 2026-10-05). */
+    underlay: (@Composable () -> Unit)? = null,
+    /** A video's own tools under the canvas: trim, cover, sound. */
+    bottom: (@Composable () -> Unit)? = null,
+) {
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
     var tool by remember { mutableStateOf(EditorTool.NONE) }
+    /** The look's name, shown for a moment after a swipe. */
+    var lookToast by remember { mutableStateOf("") }
+    LaunchedEffect(lookToast) { if (lookToast.isNotEmpty()) { kotlinx.coroutines.delay(900); lookToast = "" } }
     var brush by remember { mutableStateOf(StudioBrush.BEADS) }
     var inkRgb by remember { mutableStateOf(0xF2B84B) }
     var live by remember { mutableStateOf<StudioStroke?>(null) }
@@ -1217,9 +1420,11 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val sharing = draft.share != null
         val bottomBar = when {
+            tool == EditorTool.LOOKS -> 168.dp
+            bottom != null && tool == EditorTool.NONE -> 150.dp
             tool == EditorTool.CROP -> 96.dp
             sharing -> if (tool == EditorTool.NONE) 120.dp else 56.dp
-            draft.image == null -> 96.dp
+            draft.image == null && !draft.video -> 96.dp
             else -> 56.dp
         }
         val widthPx = with(density) { (maxWidth - 24.dp).toPx() }
@@ -1234,6 +1439,7 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
 
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(with(density) { w.toDp() }, with(density) { h.toDp() })) {
+                underlay?.let { playing -> Box(Modifier.fillMaxSize().clip(wyrmRounded(20.dp))) { playing() } }
                 Canvas(
                     Modifier.fillMaxSize().clip(wyrmRounded(20.dp))
                         .pointerInput(tool, brush, inkRgb, w, h) {
@@ -1274,12 +1480,17 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                                         abs(down.position.x - item.center.x) < tw * item.scale / 2 + 16 &&
                                             abs(down.position.y - item.center.y) < th * item.scale / 2 + 16
                                     }
-                                    val stickerHit = if (hit >= 0) -1 else draft.stickers.indexOfLast { item ->
+                                    val emojiHit = if (hit >= 0) -1 else draft.emojis.indexOfLast { item ->
+                                        val half = StudioEmojiPainter.size(type) * item.scale / 2 + 16
+                                        abs(down.position.x - item.center.x) < half && abs(down.position.y - item.center.y) < half
+                                    }
+                                    val stickerHit = if (hit >= 0 || emojiHit >= 0) -1 else draft.stickers.indexOfLast { item ->
                                         val (sw, sh) = draft.stickerSize(item, type)
                                         abs(down.position.x - item.center.x) < sw * item.scale / 2 + 16 &&
                                             abs(down.position.y - item.center.y) < sh * item.scale / 2 + 16
                                     }
                                     var moved = 0f
+                                    var sweep = Offset.Zero
                                     var last = down.position
                                     val start = System.currentTimeMillis()
                                     fun towardBin() {
@@ -1293,12 +1504,21 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                                         val event = awaitPointerEvent()
                                         val pan = event.calculatePan()
                                         moved += pan.getDistance()
+                                        sweep += pan
                                         event.changes.firstOrNull()?.let { last = it.position }
                                         if (hit >= 0 && hit < draft.texts.size) {
                                             val item = draft.texts[hit]
                                             draft.texts[hit] = item.copy(
                                                 center = Offset((item.center.x + pan.x).coerceIn(0f, w), (item.center.y + pan.y).coerceIn(0f, h)),
                                                 scale = (item.scale * event.calculateZoom()).coerceIn(0.4f, 5f),
+                                                rotation = item.rotation + event.calculateRotation(),
+                                            )
+                                            towardBin()
+                                        } else if (emojiHit >= 0 && emojiHit < draft.emojis.size) {
+                                            val item = draft.emojis[emojiHit]
+                                            draft.emojis[emojiHit] = item.copy(
+                                                center = Offset((item.center.x + pan.x).coerceIn(0f, w), (item.center.y + pan.y).coerceIn(0f, h)),
+                                                scale = (item.scale * event.calculateZoom()).coerceIn(0.3f, 6f),
                                                 rotation = item.rotation + event.calculateRotation(),
                                             )
                                             towardBin()
@@ -1325,6 +1545,8 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                                             dragging && overBin -> draft.texts.removeAt(hit)
                                             tapped -> { editing = draft.texts[hit]; tool = EditorTool.TEXT }
                                         }
+                                    } else if (emojiHit >= 0 && emojiHit < draft.emojis.size) {
+                                        if (dragging && overBin) draft.emojis.removeAt(emojiHit)
                                     } else if (stickerHit >= 0 && stickerHit < draft.stickers.size) {
                                         val item = draft.stickers[stickerHit]
                                         when {
@@ -1336,13 +1558,26 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                                             }
                                         }
                                     }
+                                    // Snapchat's swipe: across an empty picture, the next or the last look.
+                                    val swiped = hit < 0 && emojiHit < 0 && stickerHit < 0 &&
+                                        abs(sweep.x) > 72 * density.density && abs(sweep.y) < abs(sweep.x) * 0.6f &&
+                                        (draft.video || draft.image != null) && draft.photoScale <= 1.01f
+                                    if (swiped) {
+                                        val looks = TrailLooks.all
+                                        val i = looks.indexOf(draft.look).coerceAtLeast(0)
+                                        val next = (i + if (sweep.x < 0) 1 else looks.size - 1) % looks.size
+                                        draft.look = looks[next]
+                                        lookToast = looks[next].name
+                                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    }
                                     dragging = false
                                     overBin = false
                                 }
                             }
                         },
                 ) {
-                    @Suppress("UNUSED_VARIABLE") val redraw = liveTick + draft.ink + draft.texts.size + draft.stickers.size
+                    @Suppress("UNUSED_VARIABLE") val redraw = liveTick + draft.ink + draft.texts.size + draft.stickers.size +
+                        draft.emojis.size + draft.look.hashCode() + draft.adjust.hashCode()
                     drawIntoCanvas { draft.paint(it.nativeCanvas, w, h, type, live) }
                     if (tool == EditorTool.CROP) {
                         // The rule of thirds while cropping.
@@ -1365,6 +1600,13 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                     ) { Text("🗑", fontSize = 20.sp) }
                 }
 
+                // The look's name after a swipe, as Snapchat shows it.
+                if (lookToast.isNotEmpty()) {
+                    Text(lookToast, fontFamily = Wyrm.Display, fontSize = 30.sp, color = Color.White,
+                        style = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.5f), Offset(0f, 2f), 12f)),
+                        modifier = Modifier.align(Alignment.Center))
+                }
+
                 // The tool rail.
                 if (tool == EditorTool.NONE && !dragging) {
                     Column(Modifier.align(Alignment.TopEnd).padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1374,6 +1616,8 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                             tool = EditorTool.TEXT
                         }
                         StudioRoundButton("✎", Modifier) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tool = EditorTool.DRAW }
+                        StudioRoundButton("☺", Modifier) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tool = EditorTool.EMOJI }
+                        if (draft.image != null || draft.video) StudioRoundButton("◐", Modifier) { tool = EditorTool.LOOKS }
                         if (draft.image != null || sharing) StudioRoundButton("⌗", Modifier) { tool = EditorTool.CROP }
                         if (draft.strokes.isNotEmpty()) StudioRoundButton("↶", Modifier) { draft.strokes.removeAt(draft.strokes.lastIndex); draft.ink++ }
                     }
@@ -1400,6 +1644,8 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
             // Under the picture: crop shapes, the canvas colour, or a hint.
             Box(Modifier.fillMaxWidth().height(bottomBar), contentAlignment = Alignment.Center) {
                 when {
+                    tool == EditorTool.LOOKS -> LooksPanel(draft) { tool = EditorTool.NONE }
+                    bottom != null && tool == EditorTool.NONE -> bottom()
                     tool == EditorTool.CROP -> Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             StudioAspect.entries.forEach { aspect ->
@@ -1416,7 +1662,7 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                         StudioChip("Done", true) { tool = EditorTool.NONE }
                     }
                     sharing && tool == EditorTool.NONE -> ShareBar(draft, w, h, type)
-                    draft.image == null && tool == EditorTool.NONE -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    draft.image == null && !draft.video && tool == EditorTool.NONE -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(StudioAspect.PORTRAIT, StudioAspect.SQUARE, StudioAspect.WIDE).forEach { aspect ->
                                 StudioChip(aspect.label, draft.aspect == aspect) { draft.aspect = aspect }
@@ -1424,10 +1670,21 @@ private fun StudioEditor(draft: StudioDraft, type: StudioType, onCanvas: (Float,
                         }
                         StudioSwatches(draft.background) { draft.background = it }
                     }
-                    tool == EditorTool.NONE -> Text("Aa to write · ✎ to draw · pinch to zoom", fontFamily = Wyrm.Body,
+                    tool == EditorTool.NONE -> Text("Swipe for looks · Aa write · ☺ stickers · ✎ draw", fontFamily = Wyrm.Body,
                         fontSize = 12.sp, color = Wyrm.Quiet)
                 }
             }
+        }
+
+        if (tool == EditorTool.EMOJI) {
+            EmojiSheet(
+                onPick = { emoji ->
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    draft.emojis += StudioEmoji(emoji = emoji, center = Offset(w / 2, h / 2))
+                    tool = EditorTool.NONE
+                },
+                onClose = { tool = EditorTool.NONE },
+            )
         }
 
         editing?.let { current ->
@@ -1561,6 +1818,102 @@ private fun ShareBar(draft: StudioDraft, w: Float, h: Float, type: StudioType) {
     }
 }
 
+/**
+ * Looks and Adjust (OM, 2026-10-05): the filter strip, each swatch the picture
+ * itself in that look, and four sliders. A video takes the same look.
+ */
+@Composable
+private fun LooksPanel(draft: StudioDraft, onDone: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    var adjusting by remember { mutableStateOf(false) }
+    val sample = draft.lookSample ?: draft.image
+    val thumb = remember(sample) {
+        sample?.let { s ->
+            val k = 120f / max(s.width, s.height).coerceAtLeast(1)
+            Bitmap.createScaledBitmap(s, max(1, (s.width * k).roundToInt()), max(1, (s.height * k).roundToInt()), true).asImageBitmap()
+        }
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StudioChip("Looks", !adjusting) { adjusting = false }
+            StudioChip("Adjust", adjusting) { adjusting = true }
+            Spacer(Modifier.weight(1f))
+            if (!TrailLooks.isIdentity(draft.look, draft.adjust)) {
+                StudioChip("Reset", false) { draft.look = TrailLooks.all.first(); draft.adjust = TrailAdjust() }
+            }
+            StudioChip("Done", true, onClick = onDone)
+        }
+        if (!adjusting) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TrailLooks.all.forEach { look ->
+                    val selected = draft.look == look
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            draft.look = look
+                        },
+                    ) {
+                        Box(Modifier.size(58.dp).clip(wyrmRounded(12.dp)).background(Wyrm.Well)
+                            .border(if (selected) 2.5.dp else 0.dp, Wyrm.Ink, wyrmRounded(12.dp))) {
+                            thumb?.let {
+                                Image(it, null, contentScale = ContentScale.Crop,
+                                    colorFilter = if (look.name == "Normal") null else TrailLooks.composeFilter(look),
+                                    modifier = Modifier.fillMaxSize().clip(wyrmRounded(12.dp)))
+                            }
+                        }
+                        Text(look.name, fontFamily = Wyrm.Body, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 10.5.sp, color = if (selected) Wyrm.Ink else Wyrm.Mute, modifier = Modifier.padding(top = 3.dp))
+                    }
+                }
+            }
+        } else {
+            Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                AdjustRow("Brightness", draft.adjust.brightness) { draft.adjust = draft.adjust.copy(brightness = it) }
+                AdjustRow("Contrast", draft.adjust.contrast) { draft.adjust = draft.adjust.copy(contrast = it) }
+                AdjustRow("Saturation", draft.adjust.saturation) { draft.adjust = draft.adjust.copy(saturation = it) }
+                AdjustRow("Warmth", draft.adjust.warmth) { draft.adjust = draft.adjust.copy(warmth = it) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdjustRow(label: String, value: Float, onChange: (Float) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(28.dp)) {
+        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = Wyrm.Mute,
+            modifier = Modifier.width(78.dp))
+        WyrmSlider(value, -1f, 1f, Modifier.weight(1f)) { onChange((it * 20f).roundToInt() / 20f) }
+        Text("${(value * 100).roundToInt()}", fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet,
+            textAlign = TextAlign.End, modifier = Modifier.width(34.dp))
+    }
+}
+
+/** Stickers, Snapchat-style: a sheet of emoji; one tap places it in the middle. */
+@Composable
+private fun EmojiSheet(onPick: (String) -> Unit, onClose: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+    ) {
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().clip(wyrmRounded(24.dp)).background(Wyrm.Card)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .padding(16.dp),
+        ) {
+            Text("Stickers", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+            LazyVerticalGrid(columns = GridCells.Fixed(6), modifier = Modifier.fillMaxWidth().height(250.dp).padding(top = 10.dp)) {
+                items(STUDIO_EMOJIS) { emoji ->
+                    Box(Modifier.aspectRatio(1f).clickable { onPick(emoji) }, contentAlignment = Alignment.Center) {
+                        Text(emoji, fontSize = 30.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun StudioSwatches(
     selected: Int,
@@ -1604,6 +1957,8 @@ private fun TextEditOverlay(item: StudioText, onChange: (StudioText) -> Unit, on
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StudioChip(if (item.serif) "Serif" else "Clean", true, dark = true) { onChange(item.copy(serif = !item.serif)) }
             StudioChip(if (item.filled) "Fill" else "Plain", item.filled, dark = true) { onChange(item.copy(filled = !item.filled)) }
+            StudioChip("Glow", item.glow, dark = true) { onChange(item.copy(glow = !item.glow)) }
+            StudioChip("Line", item.outline, dark = true) { onChange(item.copy(outline = !item.outline)) }
             Spacer(Modifier.weight(1f))
             StudioChip("Done", true, dark = true) { onDone(item) }
         }
@@ -1612,7 +1967,12 @@ private fun TextEditOverlay(item: StudioText, onChange: (StudioText) -> Unit, on
                 value = item.text,
                 onValueChange = { onChange(item.copy(text = it.take(160))) },
                 textStyle = TextStyle(fontFamily = if (item.serif) Wyrm.Display else Wyrm.Body, fontWeight = FontWeight.Bold,
-                    fontSize = 32.sp, lineHeight = 38.sp, color = shown, textAlign = TextAlign.Center),
+                    fontSize = 32.sp, lineHeight = 38.sp, color = shown, textAlign = TextAlign.Center,
+                    shadow = when {
+                        item.glow -> Shadow(shown, Offset.Zero, 24f)
+                        item.outline && !item.filled -> Shadow(StudioPalette.color(StudioPalette.contrast(item.rgb)), Offset.Zero, 6f)
+                        else -> null
+                    }),
                 cursorBrush = SolidColor(Color.White),
                 modifier = Modifier
                     .then(if (item.filled) Modifier.clip(wyrmRounded(16.dp)).background(StudioPalette.color(item.rgb)).padding(horizontal = 14.dp, vertical = 8.dp) else Modifier)

@@ -335,7 +335,8 @@ class WyrmRepository(context: Context, baseUrl: String) {
 
     suspend fun trails(cursor: String?, author: String? = null): TrailPage = withContext(Dispatchers.IO) {
         val query = buildString {
-            append("/v1/trails?limit=20")
+            // Ten a page (OM, 2026-10-05: Instagram-light): videos cost more than photos.
+            append(if (author == null) "/v1/trails?limit=10" else "/v1/trails?limit=20")
             cursor?.let { append("&cursor=").append(java.net.URLEncoder.encode(it, "UTF-8")) }
             author?.let { append("&author=").append(it) }
         }
@@ -357,7 +358,17 @@ class WyrmRepository(context: Context, baseUrl: String) {
     }
 
     /**
-     * A photo trail with both ids, or a text trail with neither. A shared run
+     * One trail video (OM, 2026-10-05): the MP4 the app already trimmed and
+     * compressed (at most 30 s, 720p, 16 MB), sent as itself. The server checks
+     * its boxes and moves its index to the front for streaming.
+     */
+    suspend fun uploadTrailVideo(file: java.io.File, progress: (Float) -> Unit): String = withContext(Dispatchers.IO) {
+        callBinary("/v1/trails/video", "PUT", "video/mp4", file.readBytes(), progress).getString("id")
+    }
+
+    /**
+     * A photo trail with both ids, or a text trail with neither. A video trail
+     * also carries [videoId], its photo and thumb being the poster. A shared run
      * also says whether the poster's skin goes with it ([shareSkin]); the skin
      * itself is sent only when it does. Other posts send neither field.
      */
@@ -367,9 +378,11 @@ class WyrmRepository(context: Context, baseUrl: String) {
         thumbId: String?,
         skin: TrailSkin? = null,
         shareSkin: Boolean? = null,
+        videoId: String? = null,
     ): Trail = withContext(Dispatchers.IO) {
         val body = JSONObject().put("caption", caption)
         if (photoId != null && thumbId != null) body.put("photoId", photoId).put("thumbId", thumbId)
+        if (videoId != null) body.put("videoId", videoId)
         if (shareSkin != null) body.put("shareSkin", shareSkin)
         if (shareSkin == true && skin != null) body.put("skin", skin.toJson())
         call("/v1/trails", method = "POST", body = body).getJSONObject("trail").toTrail(api)

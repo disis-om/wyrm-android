@@ -40,6 +40,9 @@ data class TrailAuthor(
 
 data class TrailPhoto(val url: String, val width: Int, val height: Int)
 
+/** A video trail's clip (OM, 2026-10-05): H.264 MP4, at most 30 s and 720p; the trail's photo is its poster. */
+data class TrailVideo(val url: String, val width: Int, val height: Int, val durationMs: Long)
+
 /** The Wyrm look in a shared skin: -1 is "none"; the hair colour is the slider's 0..1 position. */
 data class TrailSkinLook(val hair: Int = -1, val hairTone: Float = 0.22f, val ears: Int = -1, val glasses: Int = -1)
 
@@ -122,10 +125,16 @@ data class Trail(
     val author: TrailAuthor,
     /** The poster's look, only when they shared it ("Try this skin"). */
     val skin: TrailSkin? = null,
+    /** A video trail's clip; [photo] is then its poster frame. */
+    val video: TrailVideo? = null,
 ) {
-    /** Width over height, held between a tall 4:5 and a wide 1.91:1. */
+    /**
+     * Width over height, held between a tall 4:5 and a wide 1.91:1. A video
+     * may stand a little taller, 9:16 shown as 4:5 like a reel in a feed.
+     */
     val aspect: Float
-        get() = photo?.takeIf { it.width > 0 && it.height > 0 }
+        get() = (video?.let { TrailPhoto(it.url, it.width, it.height) } ?: photo)
+            ?.takeIf { it.width > 0 && it.height > 0 }
             ?.let { (it.width.toFloat() / it.height).coerceIn(0.8f, 1.91f) } ?: 1f
 }
 
@@ -177,6 +186,11 @@ internal fun JSONObject.toTrail(base: String): Trail {
         createdAt = optString("createdAt"),
         author = getJSONObject("author").toTrailAuthor(base),
         skin = TrailSkin.from(optJSONObject("skin")),
+        video = optJSONObject("video")?.let {
+            val url = it.optString("url")
+            if (url.isBlank() || url == "null") null
+            else TrailVideo(url.absolute(base), it.optInt("width"), it.optInt("height"), it.optLong("durationMs"))
+        },
     )
 }
 
@@ -199,6 +213,9 @@ internal fun Trail.toJson(): JSONObject = JSONObject()
         .put("avatarUrl", author.avatarUrl)
         .put("avatarKey", author.avatarKey))
     .put("skin", skin?.toJson() ?: JSONObject.NULL)
+    .put("video", video?.let {
+        JSONObject().put("url", it.url).put("width", it.width).put("height", it.height).put("durationMs", it.durationMs)
+    } ?: JSONObject.NULL)
 
 internal fun JSONObject.toTrailComment(base: String) = TrailComment(
     id = getString("id"),

@@ -46,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,7 +84,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wyrm.omrajput.data.Setting
-import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.ceil
@@ -858,7 +858,7 @@ internal fun MiniSnake(textures: SkinTextures?, groups: List<Int>, modifier: Mod
 
 /* ------------------------------------------------------------- drawing */
 
-private fun DrawScope.drawImageInto(image: ImageBitmap, left: Float, top: Float, width: Float, height: Float, tint: Color? = null, alpha: Float = 1f) {
+internal fun DrawScope.drawImageInto(image: ImageBitmap, left: Float, top: Float, width: Float, height: Float, tint: Color? = null, alpha: Float = 1f) {
     drawImage(
         image = image,
         srcOffset = IntOffset.Zero,
@@ -982,7 +982,7 @@ private fun skinBead(t: SkinTextures, group: Int, argb: Int): Pair<ImageBitmap, 
  * colours included), the accessory and the Wyrm look (hair at rest). [draw]
  * paints one image into a rectangle, tinted or not.
  */
-private fun DrawScope.drawSkinHead(
+internal fun DrawScope.drawSkinHead(
     t: SkinTextures,
     head: Offset,
     scale: Float,
@@ -1248,7 +1248,98 @@ internal fun DrawScope.drawSkinSticker(t: SkinTextures, skin: SkinState, look: W
     }
 }
 
-/** `WyrmSwingTag`: a preview-only rope at 30 Hz; the arena keeps its own physics. */
+/**
+ * NTL 9.68's tag rope as its skin chooser runs it (N5 with `Ce`; OM,
+ * 2026-10-05: "same to same original NTL"), the same numbers as the engine's
+ * `tags.c`: one step per drawn frame on NTL's default path (mb = 6.94: push
+ * .2 mb, stiffness .005 mb, damping .05 mb, advance mb/17), before it a pull
+ * of .3 back and a sway of .14 cos(frame/23 - 7 i/9), angles from NTL's `Zu`
+ * table, sums in doubles stored as floats, and the bobble turning .15 of the
+ * way to the last link each frame. Units are preview pixels: [unit] is one
+ * snake-width (the head is 29).
+ */
+internal class NtlPreviewRope {
+    val x = FloatArray(10)
+    val y = FloatArray(10)
+    private val vx = FloatArray(10)
+    private val vy = FloatArray(10)
+    /** The bobble's turn (NTL's `EA`). */
+    var angle = 0.0
+        private set
+    private var seeded = false
+    private var frame = 0
+
+    private fun ntlAngle(dx: Double, dy: Double): Double {
+        val s = when {
+            dx >= -4.0 && dy >= -4.0 && dx < 4.0 && dy < 4.0 -> 32.0
+            dx >= -8.0 && dy >= -8.0 && dx < 8.0 && dy < 8.0 -> 16.0
+            dx >= -16.0 && dy >= -16.0 && dx < 16.0 && dy < 16.0 -> 8.0
+            dx >= -127.0 && dy >= -127.0 && dx < 127.0 && dy < 127.0 -> 1.0
+            else -> return atan2(dy, dx).toFloat().toDouble()
+        }
+        val qx = (s * dx + 128.0).toInt() - 128
+        val qy = (s * dy + 128.0).toInt() - 128
+        return atan2(qy.toDouble(), qx.toDouble()).toFloat().toDouble()
+    }
+
+    fun step(anchorX: Float, anchorY: Float, unit: Float, chain: Double) {
+        val links = max(1.0, chain)
+        val segment = 4.0 * links * unit
+        if (!seeded || x.any { !it.isFinite() } || y.any { !it.isFinite() }) {
+            // NTL (`Y3`): every point starts on the head, and the chooser never
+            // lays the rope out, so it falls out of the head and hangs.
+            for (i in 0 until 10) {
+                x[i] = anchorX + 8f * unit
+                y[i] = anchorY
+                vx[i] = 0f
+                vy[i] = 0f
+            }
+            angle = 0.0
+            seeded = true
+        }
+        x[0] = anchorX
+        y[0] = anchorY
+        frame += 1
+        for (i in 1 until 10) {
+            vx[i] = (vx[i] - 0.3 * unit).toFloat()
+            vy[i] = (vy[i] + 0.14 * unit * cos(frame / 23.0 - 7.0 * i / 9.0)).toFloat()
+        }
+        val mb = 6.94
+        val push = 0.2 * mb * links
+        val stiffness = 0.005 * mb
+        val advance = mb / 17.0
+        val damping = 0.05 * mb
+        for (i in 1 until 10) {
+            val px = x[i - 1].toDouble()
+            val py = y[i - 1].toDouble()
+            var dx = x[i] - px
+            var dy = y[i] - py
+            val a = if (dx == 0.0 && dy == 0.0) 0.0 else ntlAngle(dx, dy)
+            val tx = px + push * cos(a) * unit
+            val ty = py + push * sin(a) * unit
+            vx[i] = (vx[i] + stiffness * (tx - x[i])).toFloat()
+            vy[i] = (vy[i] + stiffness * (ty - y[i])).toFloat()
+            x[i] = (x[i] + advance * vx[i]).toFloat()
+            y[i] = (y[i] + advance * vy[i]).toFloat()
+            vx[i] = (vx[i] * damping).toFloat()
+            vy[i] = (vy[i] * damping).toFloat()
+            dx = x[i].toDouble() - x[i - 1]
+            dy = y[i].toDouble() - y[i - 1]
+            if (sqrt(dx * dx + dy * dy) > segment) {
+                val b = atan2(dy, dx)
+                x[i] = (x[i - 1] + segment * cos(b)).toFloat()
+                y[i] = (y[i - 1] + segment * sin(b)).toFloat()
+            }
+        }
+        val he = 2.0 * PI
+        var d = atan2(y[9].toDouble() - y[8], x[9].toDouble() - x[8]) - angle
+        if (d < 0.0 || d >= he) d %= he
+        if (d < -PI) d += he else if (d > PI) d -= he
+        angle = (angle + 0.15 * d) % he
+    }
+}
+
+/** `WyrmSwingTag`: the Skin preview's tag on NTL's own chooser rope ([NtlPreviewRope]), stepped every frame. */
 @Composable
 private fun SwingTag(
     item: SkinTagAsset,
@@ -1258,65 +1349,28 @@ private fun SwingTag(
     boundsW: Float,
     boundsH: Float,
     chain: Double,
-    swing: Double,
+    @Suppress("UNUSED_PARAMETER") swing: Double, // NTL's chooser always takes the default path
     tagScale: Double,
 ) {
     val unit = headSize / 29f
     val anchor = Offset(head.x - 8 * unit, head.y)
-    val segment = 4f * max(1.0, chain).toFloat() * unit
-    val points = remember { Array(10) { Offset.Zero } }
-    val velocity = remember { Array(10) { Offset.Zero } }
+    val rope = remember { NtlPreviewRope() }
     var tick by remember { mutableIntStateOf(0) }
-    var elapsed by remember { mutableDoubleStateOf(0.0) }
-    val initial = remember(anchor, segment) {
-        for (i in 0 until 10) {
-            points[i] = Offset(anchor.x - i * segment, anchor.y)
-            velocity[i] = Offset.Zero
-        }
-        true
-    }
-    LaunchedEffect(anchor, segment, swing) {
+    val latestAnchor by rememberUpdatedState(anchor)
+    val latestUnit by rememberUpdatedState(unit)
+    val latestChain by rememberUpdatedState(chain)
+    LaunchedEffect(Unit) {
         while (true) {
-            delay(33)
-            elapsed += 1.0 / 30.0
-            val amplitude = (max(0.0, min(2.0, swing - 1)) * unit * 1.1).toFloat()
-            val stiffness = (0.08333 + 0.01667 * (swing - 1)).toFloat()
-            val damping = min(0.985, 0.838 + 0.145 * (swing - 1)).toFloat()
-            points[0] = anchor
-            for (index in 1 until 10) {
-                val prior = points[index - 1]
-                val dx = points[index].x - prior.x
-                val dy = points[index].y - prior.y
-                val direction = if (dx == 0f && dy == 0f) PI.toFloat() else atan2(dy, dx)
-                val targetX = prior.x + segment * cos(direction)
-                val targetY = prior.y + segment * sin(direction)
-                val sway = (sin(elapsed * 2.1 - index * 0.32) * amplitude * index / 9).toFloat()
-                val vx = (velocity[index].x + stiffness * (targetX - points[index].x) - 0.10f * unit) * damping
-                val vy = (velocity[index].y + stiffness * (targetY + sway - points[index].y)) * damping
-                velocity[index] = Offset(vx, vy)
-                var px = points[index].x + vx
-                var py = points[index].y + vy
-                val deltaX = px - prior.x
-                val deltaY = py - prior.y
-                val distance = hypot(deltaX, deltaY)
-                if (distance > segment) {
-                    px = prior.x + segment * deltaX / distance
-                    py = prior.y + segment * deltaY / distance
-                }
-                px = px.coerceIn(0f, anchor.x - segment * 0.25f)
-                py = py.coerceIn(0f, boundsH)
-                points[index] = Offset(px, py)
-            }
+            withFrameNanos { }
+            rope.step(latestAnchor.x, latestAnchor.y, latestUnit, latestChain)
             tick++
         }
     }
     Canvas(Modifier.fillMaxSize()) {
         @Suppress("UNUSED_EXPRESSION") tick
-        if (!initial) return@Canvas
-        val rope = points.toList()
-        val end = rope.last()
-        val before = rope[rope.size - 2]
-        val angle = atan2(end.y - before.y, end.x - before.x)
+        val px = rope.x
+        val py = rope.y
+        val last = 9
         val rawWidth = item.width * 0.285f * unit * tagScale.toFloat()
         val rawHeight = item.height * 0.285f * unit * tagScale.toFloat()
         val fit = min(1f, 108.dp.toPx() / max(1f, max(rawWidth, rawHeight)))
@@ -1324,28 +1378,27 @@ private fun SwingTag(
         val height = rawHeight * fit
         val attachX = item.anchorX * 0.285f * unit * tagScale.toFloat() * fit
         val attachY = item.anchorY * 0.285f * unit * tagScale.toFloat() * fit
-        val localX = attachX + width * 0.5f
-        val localY = attachY + height * 0.5f
-        val proposedX = end.x + cos(angle) * localX - sin(angle) * localY
-        val proposedY = end.y + sin(angle) * localX + cos(angle) * localY
-        val centreX = min(max(width * 0.5f, proposedX), min(head.x - headSize * 0.1f, boundsW - width * 0.5f))
-        val centreY = min(max(height * 0.5f, proposedY), boundsH - height * 0.5f)
         fun ropePath(to: Int, close: Boolean): Path = Path().apply {
-            moveTo(end.x, end.y)
-            for (index in rope.size - 2 downTo to) {
-                quadraticTo(rope[index].x, rope[index].y, (rope[index].x + rope[index - 1].x) * 0.5f, (rope[index].y + rope[index - 1].y) * 0.5f)
+            moveTo(px[last], py[last])
+            for (index in last - 1 downTo to) {
+                quadraticTo(px[index], py[index], (px[index] + px[index - 1]) * 0.5f, (py[index] + py[index - 1]) * 0.5f)
             }
-            if (close) quadraticTo(rope[1].x, rope[1].y, rope[0].x, rope[0].y)
+            if (close) quadraticTo(px[1], py[1], px[0], py[0])
         }
         drawPath(ropePath(1, false), item.accentA.rgbColor(), style = Stroke(5 * unit, cap = StrokeCap.Round, join = StrokeJoin.Round))
         for (lineWidth in listOf(4f, 3f, 2f)) {
             drawPath(ropePath(2, true), item.accentB.rgbColor().copy(alpha = 0.5f), style = Stroke(lineWidth * unit, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
-        withTransform({ rotateRad(angle, pivot = Offset(centreX, centreY)) }) {
+        // NTL: translate to the rope's end, turn by the bobble's angle, draw the
+        // box at its anchor offset.
+        withTransform({
+            translate(px[last], py[last])
+            rotateRad(rope.angle.toFloat(), pivot = Offset.Zero)
+        }) {
             val fitScale = min(width / image.width, height / image.height)
             val dw = image.width * fitScale
             val dh = image.height * fitScale
-            drawImageInto(image, centreX - dw / 2, centreY - dh / 2, dw, dh)
+            drawImageInto(image, attachX + (width - dw) / 2, attachY + (height - dh) / 2, dw, dh)
         }
     }
 }

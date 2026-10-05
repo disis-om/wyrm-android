@@ -1,18 +1,16 @@
 package com.wyrm.omrajput.ui
 
 import android.content.Context
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -21,16 +19,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
@@ -41,8 +40,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -58,16 +59,20 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -83,10 +88,18 @@ import kotlin.math.roundToInt
  *
  * The tour walks the real app, not pictures of it: each step names a place
  * (Home, the Controls workspace on one of its tabs, the Settings tab) that
- * `WyrmOverlay.applyTourPlace` opens, and an anchor id that the real control
- * carries (`Modifier.tourAnchor`). The anchor reports its bounds and scrolls
- * itself into view when its step comes up. Taps on the dimmed app are held
- * while the tour runs, so it can never be pulled somewhere it did not expect.
+ * `WyrmOverlay.applyTourPlace` opens with the app's own page animations, and
+ * an anchor id that the real control carries (`Modifier.tourAnchor`). The
+ * anchor reports its bounds and scrolls itself well into view (clear of the
+ * tab bar) when its step comes up.
+ *
+ * Smoothness (OM, 2026-10-06: the card flickered, jumping from top to bottom):
+ * on Next the card fades away, the lit window glides from where it was to the
+ * new control (it stays on the old one until the new one has been laid out),
+ * and the new card only appears once that control has stopped moving, already
+ * in its final place. The tour arrives and leaves cinematically: the dim
+ * fades, the W draws itself, the card rises in; at the end everything eases
+ * out together.
  *
  * Wyrm iOS has the same steps, words and order: `WyrmTour.swift`.
  */
@@ -115,15 +128,13 @@ internal object WyrmTour {
         TourStep(TourPlace.HOME, "home.near", "Near Original",
             "Play like the original slither.io: its minimap, leaderboard, joystick, boost and arrow. Turn it off for Wyrm's own."),
         TourStep(TourPlace.HOME, "home.controls", "Controls",
-            "How you play: steering, on-screen buttons and where everything sits in the arena."),
-        TourStep(TourPlace.CONTROLS, "controls.preview", "Steering",
-            "Choose Arrow or Joystick, how you boost, sizes, the arrow's look and movement, and the zoom bar. The preview shows it live."),
+            "How you play. Three tabs inside: Controls, On-screen buttons and Arena UI."),
+        TourStep(TourPlace.CONTROLS, "controls.tabs", "Controls",
+            "Steer with the Arrow or the Joystick, choose how you boost, and set sizes, the arrow's look and movement, and the zoom bar."),
         TourStep(TourPlace.BUTTONS, "controls.tabs", "On-screen buttons",
             "Pick which buttons appear in the arena, like zoom, auto restart and chat, and how each one fires."),
         TourStep(TourPlace.ARENA_UI, "controls.tabs", "Arena UI",
-            "Set the size of the minimap, the leaderboard and the stats text."),
-        TourStep(TourPlace.ARENA_UI, "controls.arrange", "Arrange the layout",
-            "Opens the arena editor, sideways like a match. Drag the joystick, boost, buttons, minimap, leaderboard, stats, team roster and chat where you want them, then Save."),
+            "Size the minimap, the leaderboard and the stats text. Arrange arena UI moves them, the team roster and chat anywhere."),
         TourStep(TourPlace.SETTINGS, "settings.arena", "Arena",
             "Display: scores, names, minimap and text sizes. Controls: steering, boost and the zoom bar. On-screen buttons: which ones show and how they fire."),
         TourStep(TourPlace.SETTINGS, "settings.help", "Playing help",
@@ -142,6 +153,10 @@ internal object WyrmTour {
     var step by mutableIntStateOf(-1)
         private set
 
+    /** Finishing: the tour is easing out; it ends when the overlay is gone. */
+    var closing by mutableStateOf(false)
+        private set
+
     val active: Boolean get() = step >= 0
     val current: TourStep? get() = steps.getOrNull(step)
     /** The anchor that should scroll into view now. */
@@ -153,22 +168,44 @@ internal object WyrmTour {
     fun pending(context: Context): Boolean = prefs(context).getInt(SEEN, 0) < VERSION
 
     fun start() {
-        TourAnchors.bounds.clear()
+        closing = false
         step = 0
     }
 
     fun next(context: Context) {
+        if (closing) return
         if (step >= steps.lastIndex) finish(context) else step += 1
     }
 
     fun back() {
+        if (closing) return
         if (step > 0) step -= 1
     }
 
-    /** Finished or skipped: seen on this phone for this tour version. */
+    /** Finished or skipped: seen on this phone for this tour version; the overlay eases out, then [end]. */
     fun finish(context: Context) {
         prefs(context).edit().putInt(SEEN, VERSION).apply()
+        if (active) closing = true
+    }
+
+    /** Called by the overlay once it has eased out. */
+    fun end() {
         step = -1
+        closing = false
+    }
+
+    /**
+     * The window for step [index]: its own control once laid out; until then
+     * the last lit control before it, so the window glides instead of blinking.
+     */
+    fun holeFor(index: Int): Rect? {
+        val anchor = steps.getOrNull(index)?.anchor ?: return null
+        TourAnchors.bounds[anchor]?.let { return it }
+        for (i in index - 1 downTo 0) {
+            val earlier = steps[i].anchor ?: continue
+            TourAnchors.bounds[earlier]?.let { return it }
+        }
+        return null
     }
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -181,22 +218,36 @@ internal object TourAnchors {
 
 /**
  * Marks a control the tour can light. It reports its bounds and, when its step
- * comes up, scrolls itself into view inside whatever scrolls around it.
+ * comes up, scrolls itself well into view: clear of the top and of the tab bar
+ * at the bottom, centred when the page can scroll that far, at the bottom when
+ * it cannot.
  */
 @OptIn(ExperimentalFoundationApi::class)
 internal fun Modifier.tourAnchor(id: String): Modifier = composed {
     val requester = remember { BringIntoViewRequester() }
-    val wanted = WyrmTour.active && WyrmTour.target == id
+    val density = LocalDensity.current
+    val screen = LocalConfiguration.current.screenHeightDp.dp
+    var size by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+    val wanted = WyrmTour.active && !WyrmTour.closing && WyrmTour.target == id
     LaunchedEffect(wanted) {
         if (!wanted) return@LaunchedEffect
-        // Let a page that just slid in settle before scrolling it.
-        delay(380)
-        runCatching { requester.bringIntoView() }
+        delay(160)
+        // A rect reaching well above and below the control: bringing it into
+        // view leaves the control near the middle of what is visible.
+        val reach = with(density) { (screen * 0.3f).toPx() }
+        runCatching {
+            requester.bringIntoView(Rect(0f, -reach, size.width, size.height + reach))
+        }
     }
-    DisposableEffect(id) { onDispose { TourAnchors.bounds.remove(id) } }
+    // While the tour runs a control that left keeps its last bounds, so the
+    // window can glide from it; outside the tour it is forgotten.
+    DisposableEffect(id) { onDispose { if (!WyrmTour.active) TourAnchors.bounds.remove(id) } }
     this
         .bringIntoViewRequester(requester)
-        .onGloballyPositioned { TourAnchors.bounds[id] = it.boundsInRoot() }
+        .onGloballyPositioned {
+            size = androidx.compose.ui.geometry.Size(it.size.width.toFloat(), it.size.height.toFloat())
+            TourAnchors.bounds[id] = it.boundsInRoot()
+        }
 }
 
 /**
@@ -211,24 +262,59 @@ internal fun WyrmTourOverlay(
     onBack: () -> Unit,
     onSkip: () -> Unit,
 ) {
-    val step = WyrmTour.current ?: return
     val index = WyrmTour.step
+    if (index < 0) return
     val density = LocalDensity.current
-    val anchor = step.anchor?.let { TourAnchors.bounds[it] }
-    val pad = with(density) { 8.dp.toPx() }
-    // The window glides from step to step; with nothing to light it closes to the middle.
-    val hasHole = anchor != null && anchor.width > 1f && anchor.height > 1f
-    val glide = tween<Float>(320, easing = FastOutSlowInEasing)
-    val left by animateFloatAsState(if (hasHole) anchor!!.left - pad else 0f, glide, label = "tour-left")
-    val top by animateFloatAsState(if (hasHole) anchor!!.top - pad else 0f, glide, label = "tour-top")
-    val right by animateFloatAsState(if (hasHole) anchor!!.right + pad else 0f, glide, label = "tour-right")
-    val bottom by animateFloatAsState(if (hasHole) anchor!!.bottom + pad else 0f, glide, label = "tour-bottom")
-    val holeAlpha by animateFloatAsState(if (hasHole) 1f else 0f, tween(220), label = "tour-hole")
-    val pulse = rememberInfiniteTransition(label = "tour-pulse")
-    val ring by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(1400), RepeatMode.Restart), label = "tour-ring")
-    val dim = Color.Black.copy(alpha = if (step.anchor == null) 0.55f else 0.62f)
 
-    Box(
+    // Cinematic arrival and leaving: the whole tour fades and settles in, and out.
+    val presence = remember { Animatable(0f) }
+    LaunchedEffect(WyrmTour.closing) {
+        if (WyrmTour.closing) {
+            presence.animateTo(0f, tween(520, easing = FastOutSlowInEasing))
+            WyrmTour.end()
+        } else {
+            presence.animateTo(1f, tween(560, easing = FastOutSlowInEasing))
+        }
+    }
+
+    // The card on screen, and how far it has come in. A new step's card only
+    // appears once its control has stopped moving (page changes and scrolls).
+    var shownIndex by remember { mutableIntStateOf(index) }
+    val cardIn = remember { Animatable(0f) }
+    LaunchedEffect(index) {
+        if (cardIn.value > 0f && shownIndex != index) cardIn.animateTo(0f, tween(150))
+        val before = WyrmTour.steps.getOrNull(shownIndex)?.place
+        val step = WyrmTour.steps[index]
+        val minWait = when {
+            index == 0 -> 420L
+            before != step.place -> 720L
+            else -> 260L
+        }
+        val started = System.currentTimeMillis()
+        var last: Rect? = null
+        var still = 0
+        while (true) {
+            val now = step.anchor?.let { TourAnchors.bounds[it] }
+            val settled = step.anchor == null || (now != null && last != null &&
+                abs(now.left - last.left) < 0.5f && abs(now.top - last.top) < 0.5f &&
+                abs(now.width - last.width) < 0.5f && abs(now.height - last.height) < 0.5f)
+            still = if (settled) still + 1 else 0
+            last = now
+            val waited = System.currentTimeMillis() - started
+            if ((waited >= minWait && still >= 4) || waited > 2600) break
+            delay(50)
+        }
+        shownIndex = index
+        // Two frames for the new card to be measured and placed before it shows.
+        withFrameNanos { }
+        withFrameNanos { }
+        cardIn.animateTo(1f, spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow))
+    }
+
+    val pad = with(density) { 8.dp.toPx() }
+    val glide = spring<Float>(dampingRatio = 0.9f, stiffness = Spring.StiffnessLow)
+
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
             // Hold every touch on the app beneath while the tour runs.
@@ -238,77 +324,98 @@ internal fun WyrmTourOverlay(
                 }
             },
     ) {
+        val width = constraints.maxWidth.toFloat()
+        val height = constraints.maxHeight.toFloat()
+        val hole = WyrmTour.holeFor(index)
+        val hasHole = hole != null && hole.width > 1f && hole.height > 1f
+        // Nothing lit: the window closes to the middle of the screen.
+        val left by animateFloatAsState(if (hasHole) hole!!.left - pad else width / 2f, glide, label = "tour-left")
+        val top by animateFloatAsState(if (hasHole) hole!!.top - pad else height / 2f, glide, label = "tour-top")
+        val right by animateFloatAsState(if (hasHole) hole!!.right + pad else width / 2f, glide, label = "tour-right")
+        val bottom by animateFloatAsState(if (hasHole) hole!!.bottom + pad else height / 2f, glide, label = "tour-bottom")
+        val ringAlpha by animateFloatAsState(if (hasHole) 1f else 0f, tween(260), label = "tour-ring-alpha")
+        val dimLevel by animateFloatAsState(if (WyrmTour.steps[index].anchor == null) 0.58f else 0.64f, tween(300), label = "tour-dim")
+        val pulse = rememberInfiniteTransition(label = "tour-pulse")
+        val ring by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(1500), RepeatMode.Restart), label = "tour-ring")
+        val p = presence.value
+
         Canvas(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
-            drawRect(dim)
-            if (holeAlpha > 0.01f && right > left && bottom > top) {
+            drawRect(Color.Black.copy(alpha = dimLevel * p))
+            if (right - left > 1f && bottom - top > 1f) {
                 val corner = CornerRadius(16.dp.toPx())
                 val origin = Offset(left, top)
                 val box = Size(right - left, bottom - top)
-                drawRoundRect(Color.Black.copy(alpha = holeAlpha), origin, box, corner, blendMode = BlendMode.Clear)
-                drawRoundRect(Color.White.copy(alpha = 0.9f * holeAlpha), origin, box, corner, style = Stroke(2.dp.toPx()))
-                // A soft ring breathing out of the window: "this one".
-                val grow = 10.dp.toPx() * ring
-                drawRoundRect(
-                    Color.White.copy(alpha = 0.45f * (1f - ring) * holeAlpha),
-                    Offset(left - grow, top - grow), Size(box.width + grow * 2, box.height + grow * 2),
-                    CornerRadius(16.dp.toPx() + grow), style = Stroke(2.dp.toPx()),
-                )
+                drawRoundRect(Color.Black, origin, box, corner, blendMode = BlendMode.Clear)
+                val edge = ringAlpha * p
+                if (edge > 0.01f) {
+                    drawRoundRect(Color.White.copy(alpha = 0.9f * edge), origin, box, corner, style = Stroke(2.dp.toPx()))
+                    // A soft ring breathing out of the window: "this one".
+                    val grow = 10.dp.toPx() * ring
+                    drawRoundRect(
+                        Color.White.copy(alpha = 0.45f * (1f - ring) * edge),
+                        Offset(left - grow, top - grow), Size(box.width + grow * 2, box.height + grow * 2),
+                        CornerRadius(16.dp.toPx() + grow), style = Stroke(2.dp.toPx()),
+                    )
+                }
             }
         }
-        val hole = if (hasHole) Rect(left, top, right, bottom) else null
-        TourCardPlacement(hole = hole, insetTop = insetTop, insetBottom = insetBottom) {
-            AnimatedContent(
-                targetState = index,
-                transitionSpec = {
-                    (fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 10 }) togetherWith fadeOut(tween(140))
+
+        // The card: placed for the step it shows, never over its window.
+        val shownHole = WyrmTour.holeFor(shownIndex)?.let { Rect(it.left - pad, it.top - pad, it.right + pad, it.bottom + pad) }
+            ?.takeIf { WyrmTour.steps.getOrNull(shownIndex)?.anchor != null }
+        var cardHeight by remember { mutableIntStateOf(0) }
+        val side = with(density) { 16.dp.toPx() }
+        val cardWidth = min(width - side * 2, with(density) { 420.dp.toPx() })
+        val topLimit = with(density) { (insetTop + 12.dp).toPx() }
+        val bottomLimit = height - with(density) { (insetBottom + 12.dp).toPx() }
+        val targetY = cardY(shownHole, cardHeight.toFloat(), height, topLimit, bottomLimit, with(density) { 14.dp.toPx() })
+        val y = remember { Animatable(targetY) }
+        LaunchedEffect(targetY) {
+            // Hidden: jump; showing: glide (a control that still nudges a little).
+            if (cardIn.value < 0.05f) y.snapTo(targetY) else y.animateTo(targetY, spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow))
+        }
+        val c = cardIn.value
+        val shownStep = WyrmTour.steps.getOrNull(shownIndex) ?: return@BoxWithConstraints
+        val intro = shownIndex == 0
+        Box(
+            Modifier
+                .offset { IntOffset(((width - cardWidth) / 2f).roundToInt(), y.value.roundToInt()) }
+                .width(with(density) { cardWidth.toDp() })
+                .onSizeChanged { cardHeight = it.height }
+                .graphicsLayer {
+                    alpha = c * p
+                    // The welcome rises bigger and slower; every card settles from a little below.
+                    val s = if (intro) 0.86f + 0.14f * c else 0.96f + 0.04f * c
+                    scaleX = s * (0.94f + 0.06f * p)
+                    scaleY = s * (0.94f + 0.06f * p)
+                    translationY = (1f - c) * 18.dp.toPx() + (1f - p) * 14.dp.toPx()
                 },
-                label = "tour-card",
-            ) { shown ->
-                val shownStep = WyrmTour.steps.getOrNull(shown) ?: return@AnimatedContent
-                when (shown) {
-                    0 -> TourWelcomeCard(shownStep, onStart = onNext, onSkip = onSkip)
-                    WyrmTour.steps.lastIndex -> TourDoneCard(shownStep, onDone = onNext, onBack = onBack)
-                    else -> TourStepCard(shownStep, number = shown, total = WyrmTour.spotlightCount,
-                        onNext = onNext, onBack = onBack, onSkip = onSkip)
-                }
+        ) {
+            when (shownIndex) {
+                0 -> TourWelcomeCard(shownStep, drawn = c, onStart = onNext, onSkip = onSkip)
+                WyrmTour.steps.lastIndex -> TourDoneCard(shownStep, onDone = onNext, onBack = onBack)
+                else -> TourStepCard(shownStep, number = shownIndex, total = WyrmTour.spotlightCount,
+                    onNext = onNext, onBack = onBack, onSkip = onSkip)
             }
         }
     }
 }
 
-/**
- * Puts the card where it never covers the lit window: under it when the window
- * is in the top half, over it otherwise, in the middle when nothing is lit.
- */
-@Composable
-private fun TourCardPlacement(hole: Rect?, insetTop: Dp, insetBottom: Dp, card: @Composable () -> Unit) {
-    val density = LocalDensity.current
-    Layout(content = { Box(Modifier.widthIn(max = 420.dp)) { card() } }, modifier = Modifier.fillMaxSize()) { measurables, constraints ->
-        val side = 16.dp.roundToPx()
-        val gap = 14.dp.roundToPx()
-        val topLimit = with(density) { insetTop.roundToPx() } + 12.dp.roundToPx()
-        val bottomLimit = constraints.maxHeight - with(density) { insetBottom.roundToPx() } - 12.dp.roundToPx()
-        val width = min(constraints.maxWidth - side * 2, 420.dp.roundToPx()).coerceAtLeast(0)
-        val placeable = measurables.first().measure(constraints.copy(minWidth = width, maxWidth = width, minHeight = 0))
-        val x = (constraints.maxWidth - placeable.width) / 2
-        val y = if (hole == null) {
-            (constraints.maxHeight - placeable.height) / 2
-        } else {
-            val below = hole.bottom.roundToInt() + gap
-            val above = hole.top.roundToInt() - gap - placeable.height
-            val roomBelow = bottomLimit - below - placeable.height
-            val roomAbove = above - topLimit
-            when {
-                hole.center.y < constraints.maxHeight / 2f && roomBelow >= 0 -> below
-                roomAbove >= 0 -> above
-                roomBelow >= 0 -> below
-                // A window taller than the screen allows: the card sits at the bottom over its edge.
-                else -> bottomLimit - placeable.height
-            }
-        }
-        val clamped = y.coerceIn(topLimit, max(topLimit, bottomLimit - placeable.height))
-        layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(x, clamped) }
+/** Under the window when it is in the top half, over it otherwise, centred when nothing is lit. */
+private fun cardY(hole: Rect?, cardHeight: Float, height: Float, topLimit: Float, bottomLimit: Float, gap: Float): Float {
+    val h = max(cardHeight, 1f)
+    if (hole == null) return (height - h) / 2f
+    val below = hole.bottom + gap
+    val above = hole.top - gap - h
+    val roomBelow = bottomLimit - below - h
+    val roomAbove = above - topLimit
+    val y = when {
+        hole.center.y < height / 2f && roomBelow >= 0f -> below
+        roomAbove >= 0f -> above
+        roomBelow >= 0f -> below
+        else -> bottomLimit - h
     }
+    return y.coerceIn(topLimit, max(topLimit, bottomLimit - h))
 }
 
 @Composable
@@ -327,10 +434,12 @@ private fun TourCardSurface(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun TourWelcomeCard(step: TourStep, onStart: () -> Unit, onSkip: () -> Unit) {
+private fun TourWelcomeCard(step: TourStep, drawn: Float, onStart: () -> Unit, onSkip: () -> Unit) {
+    // The W draws itself as the welcome arrives.
+    val fill by animateFloatAsState(if (drawn > 0.5f) 1f else 0f, tween(1100, easing = FastOutSlowInEasing), label = "tour-mark")
     TourCardSurface {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            WyrmMark(size = 64.dp)
+            WyrmMark(size = 64.dp, fill = fill)
             Spacer(Modifier.height(14.dp))
             Text(step.title, fontFamily = Wyrm.Display, fontWeight = FontWeight.SemiBold, fontSize = 30.sp,
                 color = Wyrm.Ink, textAlign = TextAlign.Center)

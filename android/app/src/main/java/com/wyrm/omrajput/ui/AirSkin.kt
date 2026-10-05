@@ -135,6 +135,13 @@ object AirSkin {
         doubleArrayOf(0.40625, 0.15625, 0.6640625), doubleArrayOf(1.0, 1.0, 1.0), doubleArrayOf(0.5, 0.5, 0.99609375),
     )
 
+    /** A colour group's engine colour as 0xRRGGBB (Modes snake preview, OM 2026-10-05). */
+    fun groupRgb(group: Int): Int {
+        val c = palette.getOrNull(group) ?: return 0x808080
+        fun byte(v: Double) = (v * 255.0).toInt().coerceIn(0, 255)
+        return (byte(c[0]) shl 16) or (byte(c[1]) shl 8) or byte(c[2])
+    }
+
     /** Android Wyrm's `nearestGroup`: green-weighted, dead groups excluded. */
     fun nearestGroup(rgb: Int): Int {
         val r = ((rgb shr 16) and 0xFF) / 255.0

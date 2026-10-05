@@ -1292,6 +1292,7 @@ class WyrmOverlay(private val activity: Activity) :
                             onBack = { panelOpen = false },
                             onChange = ::writeSetting,
                             onAdjustBackground = { openBackgroundSizeEditor(route) },
+                            skin = skinState,
                         )
 
                         Route.BACKGROUND_SIZE_EDITOR -> ArenaBackgroundSizeEditor(

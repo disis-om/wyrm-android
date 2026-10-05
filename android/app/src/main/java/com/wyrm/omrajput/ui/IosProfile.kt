@@ -271,14 +271,8 @@ fun IosProfileScreen(
                                 onMessage = onMessage,
                             )
                         }
-                        item(key = "badges") {
-                            // Trails paused: its two badges leave the strip and the count.
-                            val badges = if (TRAILS_ENABLED) book?.badges else book?.badges?.filter { it.id !in TRAIL_BADGE_IDS }
-                            ProfileBadgeStrip(badges) { badge ->
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                badgeShown = badge
-                            }
-                        }
+                        // Badges are off the profile (OM, 2026-10-05: "badges hata de", a new
+                        // concept comes later). The strip and its sheet are kept below, unused.
                         if (TRAILS_ENABLED) item(key = "grid-header") { ProfileGridHeader() }
                         if (TRAILS_ENABLED) when {
                             grid != null && grid.loaded && grid.trails.isNotEmpty() -> {
@@ -441,11 +435,7 @@ private fun ProfileHeader(
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onEdit),
             )
         }
-        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ProfileChip(LucideR.drawable.lucide_ic_trophy, "Best", profileNumber(score))
-            ProfileChip(LucideR.drawable.lucide_ic_zap, "Kills", profileNumber(kills))
-            if (beads > 0) ProfileChip(LucideR.drawable.lucide_ic_hexagon, "Beads", profileNumber(beads.toLong()))
-        }
+        // Best / Kills / Beads chips are off the profile (OM, 2026-10-05).
         Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (own) {
                 ProfileButton("Edit profile", filled = false, onClick = onEdit)
@@ -667,7 +657,16 @@ private fun ProfileGridRow(row: List<Trail>, onOpen: (String) -> Unit) {
                         .weight(1f)
                         .scale(pressScale(pressed))
                         .clickable(interactionSource = interaction, indication = null) { onOpen(trail.id) },
-                ) { ProfileTrailTile(trail) }
+                ) {
+                    ProfileTrailTile(trail)
+                    // A video trail shows its length, Instagram-style (OM, 2026-10-05).
+                    trail.video?.let { clip ->
+                        Text("▶ " + clipTime(clip.durationMs), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+                            color = Color.White,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(5.dp).clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f)).padding(horizontal = 5.dp, vertical = 1.dp))
+                    }
+                }
             }
         }
     }

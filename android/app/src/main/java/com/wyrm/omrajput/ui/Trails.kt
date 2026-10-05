@@ -53,6 +53,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -179,6 +180,8 @@ object TrailsStore {
     var pendingCaption by mutableStateOf(""); private set
     /** A shared run's skin choice, kept so "Try again" posts the same thing. */
     private var pendingSkin: com.wyrm.omrajput.data.TrailSkin? = null
+    /** A video post's "Try again": the whole export and upload once more. */
+    private var pendingVideoRetry: (() -> Unit)? = null
     private var pendingShareSkin: Boolean? = null
     val comments = mutableStateMapOf<String, List<TrailComment>>()
     var toast by mutableStateOf("")
@@ -213,6 +216,7 @@ object TrailsStore {
         loaded = false
         error = ""
         liking.clear()
+        TrailFeedPlayer.stop()
     }
 
     /**
@@ -252,7 +256,9 @@ object TrailsStore {
     fun loadMoreIfNeeded(id: String) {
         val repo = repository ?: return
         val next = cursor ?: return
-        if (id != trails.lastOrNull()?.id || reachedEnd || loadingMore || loading) return
+        // Three cards before the end, so the next page is there when the thumb gets there.
+        val at = trails.indexOfFirst { it.id == id }
+        if (at < 0 || at < trails.size - 3 || reachedEnd || loadingMore || loading) return
         loadingMore = true
         scope.launch {
             try {
@@ -355,6 +361,71 @@ object TrailsStore {
     }
 
     /**
+     * A video trail (OM, 2026-10-05). Returns at once; then, on the phone, the
+     * clip is trimmed and compressed (`TrailVideoExport`), sent, its poster
+     * sent as a photo and thumbnail, and the trail made. The pending card shows
+     * the poster and one progress for the whole way: the export is the first
+     * 45%, the clip the next 45%, the poster the rest.
+     */
+    internal fun postVideo(
+        context: android.content.Context,
+        clip: TrailClip,
+        startMs: Long,
+        endMs: Long,
+        muted: Boolean,
+        effects: List<androidx.media3.common.Effect>,
+        overlay: (Int, Int) -> Bitmap?,
+        poster: Bitmap?,
+        caption: String,
+    ) {
+        val repo = repository ?: return
+        if (posting.busy) return
+        val words = caption.trim()
+        pendingImage = poster
+        pendingCaption = words
+        pendingSkin = null
+        pendingShareSkin = null
+        pendingVideoRetry = { postVideo(context, clip, startMs, endMs, muted, effects, overlay, poster, caption) }
+        pendingActive = true
+        posting = TrailPostPhase.Uploading(0f)
+        scope.launch {
+            var file: File? = null
+            try {
+                file = TrailVideoExport.export(context, clip, startMs, endMs, muted, effects, overlay) { done ->
+                    posting = TrailPostPhase.Uploading(done.coerceIn(0f, 1f) * 0.45f)
+                }
+                val still = poster ?: withContext(Dispatchers.IO) { TrailVideoExport.poster(context, clip, startMs, null, overlay) }
+                    ?: throw java.io.IOException("No poster")
+                val files = withContext(Dispatchers.Default) { TrailEncoder.prepare(still) }
+                val videoId = repo.uploadTrailVideo(file) { value ->
+                    scope.launch { posting = TrailPostPhase.Uploading(0.45f + value * 0.45f) }
+                }
+                val thumbId = repo.uploadTrailMedia(files.second) { value ->
+                    scope.launch { posting = TrailPostPhase.Uploading(0.9f + value * 0.03f) }
+                }
+                val photoId = repo.uploadTrailMedia(files.first) { value ->
+                    scope.launch { posting = TrailPostPhase.Uploading(0.93f + value * 0.04f) }
+                }
+                val trail = repo.createTrail(words, photoId, thumbId, videoId = videoId)
+                trails.add(0, trail)
+                authors[trail.author.playerId]?.let { authors[trail.author.playerId] = it.copy(trails = listOf(trail) + it.trails) }
+                persistFeed()
+                pendingImage = null
+                pendingVideoRetry = null
+                pendingActive = false
+                posting = TrailPostPhase.Posted
+                toast = "Trail posted"
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (failure: Exception) {
+                posting = TrailPostPhase.Failed(message(failure))
+            } finally {
+                file?.delete()
+            }
+        }
+    }
+
+    /**
      * A photo trail, or a text trail when [image] is null. Returns at once.
      * A shared run ("Share this run") also carries [shareSkin] and, when that
      * is on, the poster's [skin]; other posts leave both null.
@@ -408,6 +479,11 @@ object TrailsStore {
 
     fun retryPending() {
         if (!pendingActive || posting.busy) return
+        pendingVideoRetry?.let { again ->
+            posting = TrailPostPhase.Idle
+            again()
+            return
+        }
         val image = pendingImage
         val caption = pendingCaption
         posting = TrailPostPhase.Idle
@@ -416,6 +492,7 @@ object TrailsStore {
 
     fun discardPending() {
         if (posting.busy) return
+        pendingVideoRetry = null
         pendingImage = null
         pendingSkin = null
         pendingShareSkin = null
@@ -495,12 +572,16 @@ object TrailsStore {
         failure is ApiException -> when (failure.message) {
             "IMAGE_TOO_LARGE" -> "That photo is too large."
             "UNSUPPORTED_IMAGE" -> "That photo could not be read."
+            "VIDEO_TOO_LONG" -> "Videos can be up to 30 seconds."
+            "VIDEO_TOO_LARGE" -> "That video is too large."
+            "UNSUPPORTED_VIDEO", "EMPTY_VIDEO" -> "That video could not be read."
             "STORAGE_FULL" -> "Trails is full right now. Try again later."
             "NOT_FOUND" -> "This trail is no longer here."
             "BLOCKED" -> "You can't reply to this trail."
             "HTTP_429" -> "Slow down a little and try again soon."
             else -> "Something went wrong. Try again."
         }
+        failure is androidx.media3.transformer.ExportException -> "This phone could not prepare that video."
         failure is java.io.IOException -> "Could not reach Wyrm. Check your connection."
         else -> "Something went wrong. Try again."
     }
@@ -973,7 +1054,12 @@ internal fun TrailCard(
                 contentAlignment = Alignment.Center,
             ) {
                 val photo = trail.photo
-                if (photo != null) {
+                val clip = trail.video
+                if (clip != null && photo != null) {
+                    // A video: only the card most in view plays (the open trail always does).
+                    TrailVideoView(trail.id, clip, photo.url, trail.thumbUrl ?: photo.url, trail.aspect,
+                        active = expanded || TrailFeedPlayer.activeId == trail.id, modifier = Modifier.clip(wyrmRounded(16.dp)))
+                } else if (photo != null) {
                     TrailImage(photo.url, trail.thumbUrl ?: photo.url, trail.aspect, Modifier.clip(wyrmRounded(16.dp)))
                 } else {
                     Box(Modifier.padding(horizontal = 0.dp)) { TrailTextBody(trail.caption) }
@@ -1125,6 +1211,33 @@ fun TrailsFeedScreen(
     LaunchedEffect(list) {
         snapshotFlow { list.layoutInfo.visibleItemsInfo.lastOrNull()?.key as? String }.collect { key ->
             key?.let { TrailsStore.loadMoreIfNeeded(it) }
+        }
+    }
+    // One clip plays: the video card whose middle is nearest the middle of the screen (OM, 2026-10-05).
+    LaunchedEffect(list) {
+        snapshotFlow {
+            val info = list.layoutInfo
+            val middle = (info.viewportStartOffset + info.viewportEndOffset) / 2
+            info.visibleItemsInfo
+                .filter { item -> (item.key as? String)?.let { TrailsStore.trail(it)?.video } != null }
+                .minByOrNull { item -> kotlin.math.abs(item.offset + item.size / 2 - middle) }
+                ?.key as? String
+        }.collect { TrailFeedPlayer.activeId = it }
+    }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> TrailFeedPlayer.pause()
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> TrailFeedPlayer.resume()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            TrailFeedPlayer.pause()
+            TrailFeedPlayer.activeId = null
         }
     }
     val hasTrails = TrailsStore.trails.isNotEmpty() || TrailsStore.pendingActive

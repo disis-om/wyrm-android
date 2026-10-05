@@ -99,6 +99,7 @@ object AccountSync {
         // Which build's "What's new" this phone has seen (OM, 2026-10-02): a log
         // out must not bring the sheet back on the next launch.
         PrefFile("wyrm_release_notes", Scope.KEEP),
+        PrefFile("wyrm_tour", Scope.KEEP),                     // the app tour was seen on this phone (OM, 2026-10-05)
     )
 
     /** Old preference key → new, per file, for documents saved by older builds. */

@@ -705,8 +705,22 @@ class WyrmOverlay(private val activity: Activity) :
                         gameModeEligible = eligible
                         host?.onGameModeEligible(eligible)
                     }
-                    LaunchedEffect(sessionReady, route) {
-                        if (sessionReady && route == Route.HOME) maybeShowAutomaticWhatsNew()
+                    // The app tour (OM, 2026-10-05): once after an install or an
+                    // update, on the first quiet Home; "What's new" waits for it.
+                    LaunchedEffect(sessionReady, route, updatePromptVisible, whatsNewState == null,
+                        com.wyrm.omrajput.data.CrashWatch.prompt == null, WyrmTour.active, profile.username.isNotBlank()) {
+                        if (sessionReady && route == Route.HOME && !panelOpen && !updatePromptVisible &&
+                            whatsNewState == null && com.wyrm.omrajput.data.CrashWatch.prompt == null &&
+                            !WyrmTour.active && WyrmTour.pending(activity) && profile.username.isNotBlank()
+                        ) {
+                            delay(700)
+                            if (route == Route.HOME && !panelOpen && !updatePromptVisible && whatsNewState == null) WyrmTour.start()
+                        }
+                    }
+                    // Each step opens its place in the real app.
+                    LaunchedEffect(WyrmTour.step) { WyrmTour.current?.let { applyTourPlace(it.place) } }
+                    LaunchedEffect(sessionReady, route, WyrmTour.active) {
+                        if (sessionReady && route == Route.HOME && !WyrmTour.active && !WyrmTour.pending(activity)) maybeShowAutomaticWhatsNew()
                     }
                     val backgroundBlur by animateDpAsState(
                         targetValue = if (whatsNewBackdropVisible) 11.dp else 0.dp,
@@ -1512,6 +1526,7 @@ class WyrmOverlay(private val activity: Activity) :
                                 supportReportsReturn = Route.HELP
                                 route = Route.SUPPORT_REPORTS
                             },
+                            onReplayTour = { WyrmTour.start() },
                         )
 
                         Route.SUPPORT_COMPOSE -> SupportComposeScreen(
@@ -1821,6 +1836,7 @@ class WyrmOverlay(private val activity: Activity) :
 
                     if (
                         route == Route.HOME &&
+                        !WyrmTour.active &&
                         pendingAchievements.isNotEmpty() &&
                         !updatePromptVisible &&
                         whatsNewState == null &&
@@ -1913,6 +1929,19 @@ class WyrmOverlay(private val activity: Activity) :
                             onSound = { VoiceCallService.toggleDeafen(activity) },
                             onLeave = ::leaveVoiceCall,
                         )
+                    }
+
+                    // The app tour, over everything (OM, 2026-10-05).
+                    if (WyrmTour.active) {
+                        WyrmTourOverlay(
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onNext = { WyrmTour.next(activity) },
+                            onBack = { WyrmTour.back() },
+                            onSkip = { WyrmTour.finish(activity) },
+                        )
+                        // Finished or skipped: back to Home, the tour's first place.
+                        DisposableEffect(Unit) { onDispose { if (!WyrmTour.active) applyTourPlace(TourPlace.HOME) } }
                     }
                 }
             }
@@ -5311,7 +5340,49 @@ class WyrmOverlay(private val activity: Activity) :
      * therefore guards Android Back here, at the host boundary, and keeps its
      * promised single exit: the acknowledgement button at the bottom.
      */
-    fun consumeSystemBack(): Boolean = whatsNewState != null
+    fun consumeSystemBack(): Boolean {
+        // The tour: back is its Back; on the welcome card it is Skip.
+        if (WyrmTour.active) {
+            if (WyrmTour.step == 0) WyrmTour.finish(activity) else WyrmTour.back()
+            return true
+        }
+        return whatsNewState != null
+    }
+
+    /**
+     * Opens a tour step's place (OM, 2026-10-05): Home, the Controls workspace
+     * (from Home, on the step's tab) or the Settings tab. Nothing is opened
+     * again when it is already there, so a step on the same page only moves
+     * the light.
+     */
+    private fun applyTourPlace(place: TourPlace) {
+        when (place) {
+            TourPlace.HOME -> if (tabRoot != Route.HOME || route != Route.HOME || panelOpen) {
+                panelOpen = false
+                tabRoot = Route.HOME
+                route = Route.HOME
+            }
+            TourPlace.CONTROLS, TourPlace.BUTTONS, TourPlace.ARENA_UI -> {
+                val tab = when (place) {
+                    TourPlace.BUTTONS -> ControlsWorkspaceTab.BUTTONS
+                    TourPlace.ARENA_UI -> ControlsWorkspaceTab.ARENA_UI
+                    else -> ControlsWorkspaceTab.CONTROLS
+                }
+                if (tabRoot != Route.HOME || route != Route.SETTINGS_CONTROLS || !panelOpen) {
+                    tabRoot = Route.HOME
+                    refreshSettings()
+                    panelOrigin = Rect.Zero
+                    panelOpen = true
+                    route = Route.SETTINGS_CONTROLS
+                }
+                controlsWorkspaceTab = tab
+            }
+            TourPlace.SETTINGS -> {
+                SettingsFocus.query = ""
+                if (tabRoot != Route.SETTINGS || route != Route.SETTINGS || panelOpen) openSettingsTab()
+            }
+        }
+    }
 
     fun updateProfile(name: String, score: Int, kills: Int) {
         activity.runOnUiThread {

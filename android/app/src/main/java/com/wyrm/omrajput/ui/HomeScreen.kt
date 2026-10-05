@@ -215,9 +215,11 @@ fun HomeScreen(
             IosSectionLabel("Loadout")
             IosPaperCard {
                 IosLoadoutRow("Food", foodLabel, first = true, leading = { IosFoodWell() }) { onOpenFood(Rect.Zero) }
-                IosLoadoutRow("Controls", controlsLabel, leading = { IosLoadoutIcon(IosGlyph.GAMECONTROLLER) }) { onOpenControls(Rect.Zero) }
+                Box(Modifier.tourAnchor("home.controls")) {
+                    IosLoadoutRow("Controls", controlsLabel, leading = { IosLoadoutIcon(IosGlyph.GAMECONTROLLER) }) { onOpenControls(Rect.Zero) }
+                }
                 IosLoadoutRow("Mode", "", leading = { IosLoadoutIcon(IosGlyph.SCOPE) }) { onOpenMode(Rect.Zero) }
-                NearOriginalRow(on = nearOriginal, onToggle = onNearOriginal)
+                Box(Modifier.tourAnchor("home.near")) { NearOriginalRow(on = nearOriginal, onToggle = onNearOriginal) }
             }
             IosSectionLabel("Rooms & team")
             IosPaperCard {
@@ -228,13 +230,15 @@ fun HomeScreen(
                     glyph = IosGlyph.MIC,
                     tint = Wyrm.Live,
                 ) { onOpenVoice(Rect.Zero) }
-                IosListRow(
-                    title = "Team mode",
-                    detail = "Original engine team layer",
-                    value = "Open",
-                    glyph = IosGlyph.PERSON_3,
-                    tint = Wyrm.Live,
-                ) { onOpenTeam(Rect.Zero) }
+                Box(Modifier.tourAnchor("home.team")) {
+                    IosListRow(
+                        title = "Team mode",
+                        detail = "Original engine team layer",
+                        value = "Open",
+                        glyph = IosGlyph.PERSON_3,
+                        tint = Wyrm.Live,
+                    ) { onOpenTeam(Rect.Zero) }
+                }
             }
             Spacer(Modifier.height(LocalRootTabClearance.current))
         }

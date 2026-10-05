@@ -1096,14 +1096,17 @@ internal fun TrailStudioScreen(
         // The mode pill sits here, in one place, for every mode; only the page
         // under it moves.
         if (step == StudioStep.PICK) {
+            // Video stays out of the bar while `TRAIL_VIDEO_ENABLED` is off (OM, 2026-10-05).
+            val shownModes = StudioMode.entries.filter { it != StudioMode.VIDEO || com.wyrm.omrajput.data.TRAIL_VIDEO_ENABLED }
             Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
                 PaperSegmented(
-                    options = StudioMode.entries.map { it.label },
-                    selected = draft.mode.ordinal,
+                    options = shownModes.map { it.label },
+                    selected = shownModes.indexOf(draft.mode).coerceAtLeast(0),
                     onSelect = { index ->
-                        if (index != draft.mode.ordinal) {
+                        val next = shownModes[index]
+                        if (next != draft.mode) {
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            draft.reset(StudioMode.entries[index])
+                            draft.reset(next)
                         }
                     },
                 )

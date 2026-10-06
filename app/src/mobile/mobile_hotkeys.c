@@ -14,7 +14,8 @@
 static const char* ACTION_NAMES[NUM_MOBILE_ACTIONS] = {
     "HUD",         "Show names", "Big food",   "Assist",     "Bot",
     "Hotkey menu", "Restart",    "Quit",       "Zoom in",    "Zoom out",
-    "Boost",       "Turn left",  "Turn right", "Fullscreen", "Auto restart"};
+    "Boost",       "Turn left",  "Turn right", "Fullscreen", "Auto restart",
+    "Eyes back"};
 
 bool mobile_hotkey_is_on_screen_button(int action) {
   return action == HOTKEY_SHOW_NAMES || action == HOTKEY_BIG_FOOD ||
@@ -23,7 +24,9 @@ bool mobile_hotkey_is_on_screen_button(int action) {
          action == MOBILE_HOTKEY_ZOOM_IN ||
          action == MOBILE_HOTKEY_ZOOM_OUT ||
          /* Auto restart (OM, 2026-10-05) lives in the rope-mode slot. */
-         action == MOBILE_HOTKEY_ROPE_MODE;
+         action == MOBILE_HOTKEY_ROPE_MODE ||
+         /* Eyes Back (OM, 2026-10-06). */
+         action == MOBILE_HOTKEY_EYES_BACK;
 }
 
 static float clampf_local(float value, float lo, float hi) {
@@ -44,8 +47,9 @@ static void action_geometry(tenv* env, int action, float* cx, float* cy,
   mobile_hotkey_get_layout(&env->usr->usrs, action, NULL, &x, &y);
   *cx = clampf_local(x, 0.0f, 1.0f) * env->wnd->size[0];
   *cy = clampf_local(y, 0.0f, 1.0f) * env->wnd->size[1];
+  float* key_scale = user_settings_key_scale(&env->usr->usrs, action);
   float scale = button_scale(env) *
-                clampf_local(env->usr->usrs.hotkey_scale[action], 0.65f, 1.60f);
+                clampf_local(key_scale ? *key_scale : 1.0f, 0.65f, 1.60f);
   *width = 104.0f * scale;
   *height = 54.0f * scale;
 }
@@ -146,6 +150,11 @@ static bool action_active(tenv* env, int action) {
   if (action == MOBILE_HOTKEY_ROPE_MODE)
     return WYRM_EXPERIMENTAL_ROPE_MODE ? env->usr->mobile_hotkeys.rope_mode
                                        : env->usr->usrs.auto_respawn != 0;
+  /* Eyes Back: lit while it is on (the key is a toggle). */
+  if (action == MOBILE_HOTKEY_EYES_BACK) {
+    extern bool eyes_back_active(void);
+    return eyes_back_active();
+  }
   if (action >= NUM_HOTKEYS && action < NUM_MOBILE_ACTIONS)
     return mobile_hotkeys_down(env, action) ||
            twindow_key_down(env->wnd,
@@ -170,7 +179,9 @@ void mobile_hotkeys_draw_gameplay(tenv* env) {
     action_geometry(env, action, &cx, &cy, &width, &height);
     bool active = action_active(env, action);
     bool pressed = state->down[action];
-    float alpha = clampf_local(env->usr->usrs.hotkey_opacity[action], 0.05f, 1.0f);
+    float* key_opacity = user_settings_key_opacity(&env->usr->usrs, action);
+    float alpha =
+        clampf_local(key_opacity ? *key_opacity : 1.0f, 0.05f, 1.0f);
     ImVec2 min = {cx - width * 0.5f, cy - height * 0.5f};
     ImVec2 max = {cx + width * 0.5f, cy + height * 0.5f};
     float corner = height * 0.30f;
@@ -238,6 +249,9 @@ void mobile_hotkeys_begin_editor(tenv* env, int focus_action) {
   state->rope_mode_visible_backup = env->usr->usrs.rope_mode_visible;
   state->rope_mode_x_backup = env->usr->usrs.rope_mode_x;
   state->rope_mode_y_backup = env->usr->usrs.rope_mode_y;
+  state->eyes_back_visible_backup = env->usr->usrs.ext.eyes_back_visible;
+  state->eyes_back_x_backup = env->usr->usrs.ext.eyes_back_x;
+  state->eyes_back_y_backup = env->usr->usrs.ext.eyes_back_y;
   state->editor_focus = focus_action >= 0 && focus_action < NUM_MOBILE_ACTIONS
                             ? focus_action
                             : -1;
@@ -253,6 +267,9 @@ void mobile_hotkeys_finish_editor(tenv* env, bool save) {
     env->usr->usrs.rope_mode_visible = state->rope_mode_visible_backup;
     env->usr->usrs.rope_mode_x = state->rope_mode_x_backup;
     env->usr->usrs.rope_mode_y = state->rope_mode_y_backup;
+    env->usr->usrs.ext.eyes_back_visible = state->eyes_back_visible_backup;
+    env->usr->usrs.ext.eyes_back_x = state->eyes_back_x_backup;
+    env->usr->usrs.ext.eyes_back_y = state->eyes_back_y_backup;
   }
   state->editor_active = false;
   state->editor_focus = -1;
@@ -269,6 +286,8 @@ void mobile_hotkeys_reset_layout(tenv* env) {
   }
   env->usr->usrs.rope_mode_x = 0.50f;
   env->usr->usrs.rope_mode_y = 0.22f;
+  env->usr->usrs.ext.eyes_back_x = 0.50f;
+  env->usr->usrs.ext.eyes_back_y = 0.33f;
 }
 
 void mobile_hotkeys_set_position(tenv* env, int action, float x, float y) {
@@ -357,6 +376,10 @@ void mobile_hotkey_get_layout(const user_settings* settings, int action,
     if (visible) *visible = settings->rope_mode_visible;
     if (x) *x = settings->rope_mode_x;
     if (y) *y = settings->rope_mode_y;
+  } else if (action == MOBILE_HOTKEY_EYES_BACK) {
+    if (visible) *visible = settings->ext.eyes_back_visible;
+    if (x) *x = settings->ext.eyes_back_x;
+    if (y) *y = settings->ext.eyes_back_y;
   }
 }
 
@@ -372,5 +395,9 @@ void mobile_hotkey_set_layout(user_settings* settings, int action, bool visible,
     settings->rope_mode_visible = visible;
     settings->rope_mode_x = x;
     settings->rope_mode_y = y;
+  } else if (action == MOBILE_HOTKEY_EYES_BACK) {
+    settings->ext.eyes_back_visible = visible;
+    settings->ext.eyes_back_x = x;
+    settings->ext.eyes_back_y = y;
   }
 }

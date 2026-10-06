@@ -254,6 +254,12 @@ static const setting_desc GLOBAL_FIELDS[] = {
     KEY_APPEARANCE(8),
     KEY_APPEARANCE(9),
 #undef KEY_APPEARANCE
+    /* Eyes Back (OM, 2026-10-06): action 15's size and opacity live in the
+       ext block, under the same ids the layout editor builds for any key. */
+    {"layout.key_15_scale", "layout", "", "", SETTING_FLOAT, 0.65f, 1.60f,
+     NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.eyes_back_scale)},
+    {"layout.key_15_opacity", "layout", "", "", SETTING_FLOAT, 0.05f, 1.0f,
+     NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.eyes_back_opacity)},
     /* Auto restart (OM, 2026-10-05): the on-screen toggle's state, so it goes
        to the account. Never listed as a row. */
     {"general.auto_respawn", "layout", "", "", SETTING_INT, 0, 1, NULL,
@@ -572,10 +578,12 @@ static void write_field(tenv* env, const char* id, const float* values,
     settings->zoom_opacity = settings->mobile_controls.opacity;
   } else if (strcmp(id, "keys.key_scale") == 0) {
     for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action)
-      settings->hotkey_scale[action] = settings->mobile_hotkeys.key_scale;
+      *user_settings_key_scale(settings, action) =
+          settings->mobile_hotkeys.key_scale;
   } else if (strcmp(id, "keys.opacity") == 0) {
     for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action)
-      settings->hotkey_opacity[action] = settings->mobile_hotkeys.opacity;
+      *user_settings_key_opacity(settings, action) =
+          settings->mobile_hotkeys.opacity;
   }
 
   if (strcmp(id, "general.vsync") == 0) {

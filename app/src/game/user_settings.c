@@ -136,8 +136,10 @@ static void user_settings_default_layout_appearance(user_settings* settings) {
   settings->boost_opacity = settings->mobile_controls.opacity;
   settings->zoom_opacity = settings->mobile_controls.opacity;
   for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action) {
-    settings->hotkey_scale[action] = settings->mobile_hotkeys.key_scale;
-    settings->hotkey_opacity[action] = settings->mobile_hotkeys.opacity;
+    *user_settings_key_scale(settings, action) =
+        settings->mobile_hotkeys.key_scale;
+    *user_settings_key_opacity(settings, action) =
+        settings->mobile_hotkeys.opacity;
   }
   settings->hud_stats_scale = 1.0f;
   settings->hud_stats_opacity = 1.0f;
@@ -152,6 +154,34 @@ void user_settings_ext_default(user_settings_ext* x) {
   x->spine[0] = false;
   x->spine[1] = false;
   x->assist_hide_cosmetics = false;
+  x->eyes_back_x = 0.50f;
+  x->eyes_back_y = 0.33f;
+  x->eyes_back_scale = 1.0f;
+  x->eyes_back_opacity = 0.82f;
+  x->eyes_back_visible = false;
+}
+
+float* user_settings_key_scale(user_settings* settings, int action) {
+  if (action >= 0 && action < NUM_STORED_MOBILE_ACTIONS)
+    return &settings->hotkey_scale[action];
+  if (action == MOBILE_HOTKEY_EYES_BACK) return &settings->ext.eyes_back_scale;
+  return NULL;
+}
+
+float* user_settings_key_opacity(user_settings* settings, int action) {
+  if (action >= 0 && action < NUM_STORED_MOBILE_ACTIONS)
+    return &settings->hotkey_opacity[action];
+  if (action == MOBILE_HOTKEY_EYES_BACK)
+    return &settings->ext.eyes_back_opacity;
+  return NULL;
+}
+
+/* A float this build did not find, or found out of range, takes the fallback. */
+static bool ext_take_float(float* field, int present, float lo, float hi,
+                           float fallback) {
+  if (present && isfinite(*field) && *field >= lo && *field <= hi) return false;
+  *field = fallback;
+  return true;
 }
 
 /* A bool is one byte. A value other than 0 or 1 is not a bool this build wrote. */
@@ -171,6 +201,11 @@ bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
   size_t ext_at = offsetof(user_settings, ext);
   size_t spine0 = offsetof(user_settings_ext, spine);
   size_t hide_at = offsetof(user_settings_ext, assist_hide_cosmetics);
+  size_t eb_x_at = offsetof(user_settings_ext, eyes_back_x);
+  size_t eb_y_at = offsetof(user_settings_ext, eyes_back_y);
+  size_t eb_scale_at = offsetof(user_settings_ext, eyes_back_scale);
+  size_t eb_opacity_at = offsetof(user_settings_ext, eyes_back_opacity);
+  size_t eb_visible_at = offsetof(user_settings_ext, eyes_back_visible);
   int fixed;
   uint32_t written;
   if (bytes_read < ext_at + 8 || ext->magic != USER_SETTINGS_EXT_MAGIC ||
@@ -183,6 +218,17 @@ bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
   fixed |= ext_take_bool(&ext->spine[0], written >= spine0 + 1);
   fixed |= ext_take_bool(&ext->spine[1], written >= spine0 + 2);
   fixed |= ext_take_bool(&ext->assist_hide_cosmetics, written >= hide_at + 1);
+  fixed |= ext_take_float(&ext->eyes_back_x, written >= eb_x_at + 4, 0.0f,
+                          1.0f, 0.50f);
+  fixed |= ext_take_float(&ext->eyes_back_y, written >= eb_y_at + 4, 0.0f,
+                          1.0f, 0.33f);
+  fixed |= ext_take_float(&ext->eyes_back_scale, written >= eb_scale_at + 4,
+                          0.65f, 1.60f, settings->mobile_hotkeys.key_scale);
+  fixed |= ext_take_float(&ext->eyes_back_opacity,
+                          written >= eb_opacity_at + 4, 0.05f, 1.0f,
+                          settings->mobile_hotkeys.opacity);
+  fixed |= ext_take_bool(&ext->eyes_back_visible,
+                         written >= eb_visible_at + 1);
   /* A longer tail belongs to a newer build. Do not shrink it just to rewrite
      the size we already understood. A shorter one is missing fields, so save. */
   if (written < (uint32_t)sizeof(user_settings_ext)) fixed = 1;
@@ -760,9 +806,11 @@ void read_user_settings(user_settings* usr_settings) {
   REPAIR_APPEARANCE(usr_settings->zoom_opacity, 0.05f, 1.0f,
                     usr_settings->mobile_controls.opacity);
   for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action) {
-    REPAIR_APPEARANCE(usr_settings->hotkey_scale[action], 0.65f, 1.60f,
+    float* key_scale = user_settings_key_scale(usr_settings, action);
+    float* key_opacity = user_settings_key_opacity(usr_settings, action);
+    REPAIR_APPEARANCE(*key_scale, 0.65f, 1.60f,
                       usr_settings->mobile_hotkeys.key_scale);
-    REPAIR_APPEARANCE(usr_settings->hotkey_opacity[action], 0.05f, 1.0f,
+    REPAIR_APPEARANCE(*key_opacity, 0.05f, 1.0f,
                       usr_settings->mobile_hotkeys.opacity);
   }
   REPAIR_APPEARANCE(usr_settings->hud_stats_scale, 0.65f, 1.60f, 1.0f);

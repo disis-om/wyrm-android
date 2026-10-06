@@ -74,7 +74,14 @@
 #define MOBILE_HOTKEY_ROPE_MODE 14
 #define WYRM_EXPERIMENTAL_ROPE_MODE 0
 #define NUM_MOBILE_HOTKEYS 14
-#define NUM_MOBILE_ACTIONS 15
+/* Eyes Back (OM, 2026-10-06): NTL VANCED's eye flick on an on-screen key. Its
+   layout and look live in user_settings_ext, so no stored array grows. */
+#define MOBILE_HOTKEY_EYES_BACK 15
+#define NUM_MOBILE_ACTIONS 16
+/* hotkey_scale / hotkey_opacity in user.dat hold the first 15 actions only.
+   That size is part of the file layout and never changes; reach a key's size
+   and opacity through user_settings_key_scale / _opacity. */
+#define NUM_STORED_MOBILE_ACTIONS 15
 #define NUM_MOBILE_DIRECT_HOTKEYS 6
 
 typedef enum conn_status {

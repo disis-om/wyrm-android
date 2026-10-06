@@ -307,7 +307,14 @@ static bool layout_appearance_valid(const user_settings* settings) {
       !isfinite(settings->hud_chat_scale) ||
       settings->hud_chat_scale < 0.65f || settings->hud_chat_scale > 1.60f)
     return false;
-  for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action)
+  if (!isfinite(settings->ext.eyes_back_scale) ||
+      settings->ext.eyes_back_scale < 0.65f ||
+      settings->ext.eyes_back_scale > 1.60f ||
+      !isfinite(settings->ext.eyes_back_opacity) ||
+      settings->ext.eyes_back_opacity < 0.05f ||
+      settings->ext.eyes_back_opacity > 1.0f)
+    return false;
+  for (int action = 0; action < NUM_STORED_MOBILE_ACTIONS; ++action)
     if (!isfinite(settings->hotkey_scale[action]) ||
         settings->hotkey_scale[action] < 0.65f ||
         settings->hotkey_scale[action] > 1.60f ||

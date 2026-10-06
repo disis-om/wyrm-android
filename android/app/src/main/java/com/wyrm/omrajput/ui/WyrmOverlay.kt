@@ -3968,7 +3968,7 @@ class WyrmOverlay(private val activity: Activity) :
             )
         }
         val byAction = hotkeys.associateBy { it.action }
-        listOf(1, 2, 3, 4, 6, 7, 8, 9, 14).mapNotNull(byAction::get).forEach { key ->
+        listOf(1, 2, 3, 4, 6, 7, 8, 9, 14, 15).mapNotNull(byAction::get).forEach { key ->
             out += SettingsSearchEntry(
                 id = "hotkey.${key.action}",
                 title = "${key.name} button",

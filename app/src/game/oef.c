@@ -243,8 +243,17 @@ void oef(tenv* env) {
         }
       }
     }
-    float wx = cosf(o->eang) * 2.3f;  // o.pma = 2.3
-    float wy = sinf(o->eang) * 2.3f;  // o.pma = 2.3
+    /* Eyes Back (OM, 2026-10-06): your own pupils follow the byte that went
+       out, so you see what every other player sees (NTL sets snake.J the
+       same way). Everyone else's eyes already follow what they sent. */
+    float eye_ang = o->eang;
+    if (o->id == gdata->data.snake_id) {
+      extern bool eyes_back_eye_angle(float* out);
+      float sent_ang;
+      if (eyes_back_eye_angle(&sent_ang)) eye_ang = sent_ang;
+    }
+    float wx = cosf(eye_ang) * 2.3f;  // o.pma = 2.3
+    float wy = sinf(eye_ang) * 2.3f;  // o.pma = 2.3
     if (o->rex < wx) {
       o->rex += gdata->data.vfr / 6.0f;
       if (o->rex >= wx) o->rex = wx;

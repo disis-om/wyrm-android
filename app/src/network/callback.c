@@ -1074,6 +1074,11 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
         }
         o->fatg = GD_AFC;
         o->ang = ang;
+        /* Eyes Back re-anchors its model on every heading the server reports. */
+        if (is_my_snake) {
+          extern void eyes_back_heading(float ang, float now);
+          eyes_back_heading(ang, gdata->data.ctm);
+        }
       }
       if (wang != -1) {
         o->wang = wang;

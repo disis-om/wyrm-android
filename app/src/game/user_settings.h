@@ -127,6 +127,14 @@ typedef struct user_settings_ext {
   uint32_t size; /* sizeof(user_settings_ext) of the build that wrote it */
   bool spine[2];              /* normal, assist (OM, 2026-10-05) */
   bool assist_hide_cosmetics; /* assist only (OM, 2026-10-05) */
+  /* Eyes Back key (OM, 2026-10-06), on-screen action 15. The floats come
+     first so they start at offset 12: byte 11 was padding in every file
+     written before, and must never be read as a setting. */
+  float eyes_back_x;
+  float eyes_back_y;
+  float eyes_back_scale;
+  float eyes_back_opacity;
+  bool eyes_back_visible;
 } user_settings_ext;
 
 typedef struct user_settings {
@@ -263,8 +271,8 @@ typedef struct user_settings {
   float joystick_opacity;
   float boost_opacity;
   float zoom_opacity;
-  float hotkey_scale[NUM_MOBILE_ACTIONS];
-  float hotkey_opacity[NUM_MOBILE_ACTIONS];
+  float hotkey_scale[NUM_STORED_MOBILE_ACTIONS];
+  float hotkey_opacity[NUM_STORED_MOBILE_ACTIONS];
   float hud_stats_scale;
   float hud_stats_opacity;
   float hud_chat_scale;
@@ -277,6 +285,10 @@ typedef struct user_settings {
 void user_settings_ext_default(user_settings_ext* ext);
 /* True when a missing or damaged ext field was put back, so the caller saves. */
 bool user_settings_ext_fix(user_settings* settings, size_t bytes_read);
+/* A key's own size and opacity: actions 0-14 in the stored arrays, Eyes Back
+   (15) in the ext block. NULL for an action that has none. */
+float* user_settings_key_scale(user_settings* settings, int action);
+float* user_settings_key_opacity(user_settings* settings, int action);
 
 void user_settings_default(user_settings* usr_settings);
 void user_settings_reset_hud_layout(user_settings* usr_settings);

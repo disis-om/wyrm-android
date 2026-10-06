@@ -20,6 +20,9 @@ typedef struct mobile_hotkeys_state {
   bool rope_mode_visible_backup;
   float rope_mode_x_backup;
   float rope_mode_y_backup;
+  bool eyes_back_visible_backup;
+  float eyes_back_x_backup;
+  float eyes_back_y_backup;
 } mobile_hotkeys_state;
 
 void mobile_hotkeys_init(tenv* env);

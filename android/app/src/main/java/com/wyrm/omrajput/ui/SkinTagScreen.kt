@@ -69,7 +69,7 @@ fun SkinTagScreen(
         SkinCard {
             Column(Modifier.padding(14.dp)) {
                 val columns = 4
-                val cells = TAG_ART.size + 1
+                val cells = TagPickerOrder.size + 1
                 val rows = (cells + columns - 1) / columns
                 for (row in 0 until rows) {
                     Row(modifier = Modifier.fillMaxWidth()) {
@@ -79,7 +79,7 @@ fun SkinTagScreen(
                                 Spacer(Modifier.weight(1f))
                                 continue
                             }
-                            val index = cell - 1
+                            val index = if (cell == 0) -1 else TagPickerOrder[cell - 1]
                             TagPickCell(
                                 atlas = atlas,
                                 index = index,
@@ -243,7 +243,7 @@ internal fun TagPickCell(
             )
         } else if (atlas != null && index < TAG_ART.size) {
             Canvas(Modifier.fillMaxSize().padding(8.dp)) {
-                drawTag(atlas, TAG_ART[index])
+                drawTag(atlas, TAG_ART[index], turned = isWyrmTagIndex(index))
             }
         }
     }

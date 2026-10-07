@@ -249,7 +249,7 @@ internal fun IosSkinScreen(
                             IosListRow(SkinSection.PRESETS.title, value = "${SkinCatalog.presets.size}") { enter(SkinSection.PRESETS) }
                             IosListRow(SkinSection.PATTERN.title, value = if (customEnabled) "Custom" else "Preset") { enter(SkinSection.PATTERN) }
                             IosListRow(SkinSection.ACCESSORIES.title, value = if (accessory < 0) "None" else "%02d".format(accessory + 1)) { enter(SkinSection.ACCESSORIES) }
-                            IosListRow(SkinSection.TAGS.title, value = if (TAGS_DISABLED) "Coming soon" else SkinCatalog.tags.getOrNull(tag)?.let { "#${it.ntlId}" } ?: "None") { if (!TAGS_DISABLED) enter(SkinSection.TAGS) }
+                            IosListRow(SkinSection.TAGS.title, value = if (TAGS_DISABLED) "Coming soon" else SkinCatalog.tags.getOrNull(tag)?.let { if (isWyrmTag(it.ntlId)) "On" else "#${it.ntlId}" } ?: "None") { if (!TAGS_DISABLED) enter(SkinSection.TAGS) }
                             IosListRow(SkinSection.BACKGROUND.title, value = SkinCatalog.backgrounds.getOrNull(backgroundId)?.label ?: "Wyrm") { enter(SkinSection.BACKGROUND) }
                         }
                         // Wyrm's own looks (hair, ears, glasses): only this phone sees them.
@@ -437,13 +437,14 @@ internal fun IosSkinScreen(
                             swingSetting?.let { SkinSlider("Swing", it, 1f..2f, onSettingChange) }
                             scaleSetting?.let { SkinSlider("Size", it, 0.4f..2f, onSettingChange) }
                         }
-                        IosSectionLabel("All original tags")
-                        TileGrid(minimum = 76.dp, count = SkinCatalog.tags.size + 1) { index ->
+                        IosSectionLabel("All tags")
+                        TileGrid(minimum = 76.dp, count = TagPickerOrder.size + 1) { index ->
                             if (index == 0) {
                                 SelectionTile(tag < 0, "None") { tag = -1; tagSetting?.let { onSettingChange(it, listOf(-1f)) } }
                             } else {
-                                val item = SkinCatalog.tags[index - 1]
-                                ImageTile(tag == item.id, textures?.tagThumbnails?.get(item.id), 7.dp, badge = "${item.ntlId}") {
+                                val item = SkinCatalog.tags[TagPickerOrder[index - 1]]
+                                ImageTile(tag == item.id, textures?.tagThumbnails?.get(item.id), 7.dp,
+                                    badge = if (isWyrmTag(item.ntlId)) null else "${item.ntlId}") {
                                     tag = item.id
                                     tagSetting?.let { onSettingChange(it, listOf(item.id.toFloat())) }
                                 }

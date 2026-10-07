@@ -154,7 +154,13 @@ class SkinTextures(
                     (tag.maxU - tag.minU).toDouble(), (tag.maxV - tag.minV).toDouble(),
                 ) ?: continue
                 tags[tag.id] = cell.asImageBitmap()
-                tagThumbs[tag.id] = removingSoftShadow(cell).asImageBitmap()
+                // Wyrm's own tags are stored turned to hang like pendants: the
+                // picker shows them upright (WyrmTags.kt).
+                val upright = if (isWyrmTag(tag.ntlId)) {
+                    android.graphics.Bitmap.createBitmap(cell, 0, 0, cell.width, cell.height,
+                        android.graphics.Matrix().apply { postRotate(90f) }, true)
+                } else cell
+                tagThumbs[tag.id] = removingSoftShadow(upright).asImageBitmap()
             }
             val backgrounds = SkinCatalog.backgrounds.mapNotNull { background ->
                 val path = background.asset ?: return@mapNotNull null

@@ -23,9 +23,9 @@ def between(text, start, end, include_end=True):
 helpers = between(cb, "#define NTL_TAG_FREE_MARK 254", "/*\n * The snake this player is steering", include_end=False)
 join_alloc = between(cb, "    /* NTL's tag corner (see ntl_tag_corner). A preset",
                      "    ba = malloc(8 + 20 + nick_len + (skin_compressed ? 8 + skin_compressed_len : 0));\n")
-header = between(cb, "    if (skin_compressed) {\n      int corner = m;\n", "                worn_ntl, preset_block ? \"preset\" : \"custom\", skin_compressed_len);\n      }\n")
+header = between(cb, "    if (skin_compressed) {\n      int corner = m;\n", "                preset_block ? \"preset\" : \"custom\", skin_compressed_len);\n      }\n")
 reader = between(cb, "      int corner_tag = -1;\n", "          corner_preset = a[m + 2];\n      }\n")
-assign = between(cb, "      if (corner_preset >= 0) {\n", "      o.skin_tag = corner_tag >= 0 ? tags_from_ntl_id(corner_tag) + 1 : 0;\n")
+assign = between(cb, "      if (corner_preset >= 0) {\n", "                                     : 0;\n")
 
 # Wyrm's tag sheet, in sheet order, as NTL numbers.
 tags_c = (W / "Wyrm Android/app/src/game/tags.c").read_text(encoding="utf-8")
@@ -51,9 +51,13 @@ static uint8_t heap[1024];
 static void* malloc(size_t n) { (void)n; return heap; }
 static const int NTL_IDS[] = {''' + ",".join(map(str, ntl_ids)) + r'''};
 #define TAGS (int)(sizeof(NTL_IDS) / sizeof(NTL_IDS[0]))
-static bool tags_valid(int i) { return i >= 0 && i < TAGS; }
-static int tags_ntl_id(int i) { return tags_valid(i) ? NTL_IDS[i] : -1; }
+/* Wyrm's own tags follow NTL's: indices TAGS .. TAGS + WYRM_TAG_COUNT - 1. */
+#define WYRM_TAG_COUNT 77
+static bool tags_valid(int i) { return i >= 0 && i < TAGS + WYRM_TAG_COUNT; }
+static int tags_ntl_id(int i) { return i >= 0 && i < TAGS ? NTL_IDS[i] : -1; }
 static int tags_from_ntl_id(int n) { for (int i = 0; i < TAGS; i++) if (NTL_IDS[i] == n) return i; return -1; }
+static int tags_wyrm_id(int i) { return i >= TAGS && i < TAGS + WYRM_TAG_COUNT ? i - TAGS : -1; }
+static int tags_from_wyrm_id(int w) { return w >= 0 && w < WYRM_TAG_COUNT ? TAGS + w : -1; }
 typedef struct { int tag_index; uint8_t default_skin; } settings;
 typedef struct { int cv; bool cusk; int cusk_len; int skin_tag; } fake_snake;
 ''' + helpers + r'''
@@ -81,15 +85,15 @@ int build(int tag_index, int default_skin, int custom) {
     }
   return m;
 }
-static int read_out[3];
+static int read_out[4];
 __attribute__((export_name("rd"))) int* rd(void) { return read_out; }
 __attribute__((export_name("read")))
-void read(int b0, int b1, int b2, int b6) {
-  uint8_t a[8] = {(uint8_t)b0, (uint8_t)b1, (uint8_t)b2, 0, 0, 0, (uint8_t)b6, 0};
+void read(int b0, int b1, int b2, int b6, int b7) {
+  uint8_t a[8] = {(uint8_t)b0, (uint8_t)b1, (uint8_t)b2, 0, 0, 0, (uint8_t)b6, (uint8_t)b7};
   int m = 0, skl = 8, alen = 8;
   fake_snake o = {5 % 66, true, 9, 0};
 ''' + reader + assign + r'''
-  read_out[0] = corner_tag; read_out[1] = o.cusk ? -1 : o.cv; read_out[2] = o.skin_tag;
+  read_out[0] = corner_tag; read_out[1] = o.cusk ? -1 : o.cv; read_out[2] = o.skin_tag; read_out[3] = corner_wyrm;
 }
 '''
 (HERE / "harness.c").write_text(c, encoding="utf-8")

@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -111,7 +112,7 @@ fun TagsTab(
         // "None" first, because taking a tag off should be as easy as putting
         // one on and should not mean hunting for an empty square at the end.
         val columns = 4
-        val cells = TAG_ART.size + 1
+        val cells = TagPickerOrder.size + 1
         val rows = (cells + columns - 1) / columns
         for (row in 0 until rows) {
             Row(
@@ -124,7 +125,7 @@ fun TagsTab(
                         Spacer(Modifier.weight(1f))
                         continue
                     }
-                    val index = cell - 1
+                    val index = if (cell == 0) -1 else TagPickerOrder[cell - 1]
                     TagCell(
                         atlas = atlas,
                         index = index,
@@ -246,14 +247,30 @@ private fun TagCell(
         } else if (atlas != null && index < TAG_ART.size) {
             val art = TAG_ART[index]
             Canvas(modifier = Modifier.fillMaxSize().padding(6.dp)) {
-                drawTag(atlas, art)
+                drawTag(atlas, art, turned = isWyrmTagIndex(index))
             }
         }
     }
 }
 
-/** Draws one tag scaled to fit the square it was given, keeping its shape. */
-internal fun DrawScope.drawTag(atlas: ImageBitmap, art: TagArt) {
+/** Draws one tag scaled to fit the square it was given, keeping its shape.
+ *  [turned]: one of Wyrm's own, stored turned on the sheet; drawn upright. */
+internal fun DrawScope.drawTag(atlas: ImageBitmap, art: TagArt, turned: Boolean = false) {
+    if (turned) {
+        rotate(90f) {
+            val scale = minOf(size.width / art.h, size.height / art.w)
+            val width = art.w * scale
+            val height = art.h * scale
+            drawImage(
+                image = atlas,
+                srcOffset = IntOffset(art.x, art.y),
+                srcSize = IntSize(art.w, art.h),
+                dstOffset = IntOffset(((size.width - width) / 2f).roundToInt(), ((size.height - height) / 2f).roundToInt()),
+                dstSize = IntSize(width.roundToInt(), height.roundToInt()),
+            )
+        }
+        return
+    }
     val scale = minOf(size.width / art.w, size.height / art.h)
     val width = art.w * scale
     val height = art.h * scale

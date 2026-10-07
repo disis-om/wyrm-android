@@ -296,6 +296,24 @@ static bool ntl_preset_wears(int skin, int ntl) {
   return false;
 }
 
+/* Wyrm's own tags (OM, 2026-10-07): the same corner with Wyrm's kind byte.
+   Byte 0 is NTL's free mark, byte 1 is 87 ('W', a kind NTL reads as no tag,
+   so NTL and older Wyrm builds draw the snake from its runs as before),
+   byte 2 the preset or 255, bytes 3-5 stay 0, byte 6 the Wyrm tag number and
+   byte 7 that number XOR 0xA7, so a random header can never pass for a tag.
+   The block's size is unchanged. */
+#define WYRM_TAG_MARK 254
+#define WYRM_TAG_KIND 87
+#define WYRM_TAG_CHECK 0xA7
+
+/* The Wyrm tag number a received block's corner names, or -1. */
+static int wyrm_tag_from_corner(const uint8_t* corner) {
+  if (corner[0] != WYRM_TAG_MARK || corner[1] != WYRM_TAG_KIND) return -1;
+  if (corner[3] || corner[4] || corner[5]) return -1;
+  if (corner[7] != (uint8_t)(corner[6] ^ WYRM_TAG_CHECK)) return -1;
+  return corner[6] < WYRM_TAG_COUNT ? corner[6] : -1;
+}
+
 /* The NTL tag number a received block's corner names, or -1. */
 static int ntl_tag_from_corner(const uint8_t* corner) {
   if (corner[1] == NTL_TAG_FREE_KIND)
@@ -639,9 +657,20 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
     int worn_ntl = tags_valid(usrs->tag_index) ? tags_ntl_id(usrs->tag_index) : -1;
     bool tag_corner =
         web_persona && ntl_tag_corner(worn_ntl, &tag_mark, &tag_kind, &tag_byte);
+    /* A Wyrm tag rides in the same corner with Wyrm's kind byte. A preset
+       always goes out as its runs then: no official antenna is a Wyrm tag. */
+    int worn_wyrm = tags_valid(usrs->tag_index) ? tags_wyrm_id(usrs->tag_index) : -1;
+    bool wyrm_corner = false;
+    if (!tag_corner && web_persona && worn_wyrm >= 0 && worn_wyrm < 256) {
+      tag_mark = WYRM_TAG_MARK;
+      tag_kind = WYRM_TAG_KIND;
+      tag_byte = (uint8_t)worn_wyrm;
+      tag_corner = true;
+      wyrm_corner = true;
+    }
     bool preset_block = false;
     if (tag_corner && !skin_compressed &&
-        (usrs->default_skin >= NTL_PRESET_COUNT ||
+        (wyrm_corner || usrs->default_skin >= NTL_PRESET_COUNT ||
          !ntl_preset_wears(usrs->default_skin, worn_ntl))) {
       int preset = usrs->default_skin % NTL_PRESET_COUNT;
       skin_compressed = tdarray_create(uint8_t);
@@ -695,9 +724,10 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
         ba[corner + 1] = tag_kind;
         ba[corner + 2] = preset_block ? usrs->default_skin : 255;
         ba[corner + 6] = tag_byte;
-        ba[corner + 7] = 0;
-        SDL_Log("Wyrm arena: NTL tag %d in the skin corner (%s block, %d run bytes)",
-                worn_ntl, preset_block ? "preset" : "custom", skin_compressed_len);
+        ba[corner + 7] = wyrm_corner ? (uint8_t)(tag_byte ^ WYRM_TAG_CHECK) : 0;
+        SDL_Log("Wyrm arena: %s tag %d in the skin corner (%s block, %d run bytes)",
+                wyrm_corner ? "Wyrm" : "NTL", wyrm_corner ? worn_wyrm : worn_ntl,
+                preset_block ? "preset" : "custom", skin_compressed_len);
       }
 
       for (int i = 0; i < skin_compressed_len; i++) {
@@ -810,10 +840,13 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
          and for NTL's two kinds a preset in byte 2 that NTL draws instead of
          the runs (255: the runs are the skin). */
       int corner_tag = -1;
+      int corner_wyrm = -1;
       int corner_preset = -1;
       if (skl >= 8 && m + 8 <= alen) {
         corner_tag = ntl_tag_from_corner(a + m);
-        if ((a[m + 1] == NTL_TAG_FREE_KIND || a[m + 1] == NTL_TAG_PUBLIC_KIND) &&
+        corner_wyrm = wyrm_tag_from_corner(a + m);
+        if ((a[m + 1] == NTL_TAG_FREE_KIND || a[m + 1] == NTL_TAG_PUBLIC_KIND ||
+             corner_wyrm >= 0) &&
             a[m + 2] != 255)
           corner_preset = a[m + 2];
       }
@@ -988,7 +1021,9 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
         o.cusk = false;
         o.cusk_len = 0;
       }
-      o.skin_tag = corner_tag >= 0 ? tags_from_ntl_id(corner_tag) + 1 : 0;
+      o.skin_tag = corner_wyrm >= 0  ? tags_from_wyrm_id(corner_wyrm) + 1
+                   : corner_tag >= 0 ? tags_from_ntl_id(corner_tag) + 1
+                                     : 0;
       /* Our own snake keeps the whole design we chose. The join carries at
          most one bounded repeat of it, and `cusk_data` above holds the arena's
          echo of that; drawn from the echo, our snake would show the trimmed

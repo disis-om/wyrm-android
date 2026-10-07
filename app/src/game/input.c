@@ -437,6 +437,10 @@ static void input_with_policy(tenv* env, bool team_protected,
      stays on through deaths for the session, as NTL VANCED's does. */
   if (mobile_hotkeys_pressed(env, MOBILE_HOTKEY_EYES_BACK))
     eyes_back_toggle(gdata);
+#ifdef WYRM_DESKTOP
+  /* WYRM_DESKTOP: E is Eyes Back's key (no on-screen keys on a desktop). */
+  if (tkeyboard_key_pressed(env->kb, GLFW_KEY_E)) eyes_back_toggle(gdata);
+#endif
 
   /* A restart used to be thrown away once the snake was worth more than a
      thousand — a guard against losing a good run to a stray key. On a phone

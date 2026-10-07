@@ -139,7 +139,20 @@ int tags_count(void) { return TAG_COUNT; }
 bool tags_valid(int index) { return index >= 0 && index < TAG_COUNT; }
 
 int tags_ntl_id(int index) {
-  return tags_valid(index) ? TAG_TABLE[index].ntl : -1;
+  /* Wyrm's own tags carry WYRM_TAG_BASE + their number here, not an NTL
+     number: they are never named to NTL (team poll, tag socket, corner). */
+  if (!tags_valid(index) || TAG_TABLE[index].ntl >= WYRM_TAG_BASE) return -1;
+  return TAG_TABLE[index].ntl;
+}
+
+int tags_wyrm_id(int index) {
+  if (!tags_valid(index) || TAG_TABLE[index].ntl < WYRM_TAG_BASE) return -1;
+  return TAG_TABLE[index].ntl - WYRM_TAG_BASE;
+}
+
+int tags_from_wyrm_id(int wyrm) {
+  if (wyrm < 0 || wyrm >= WYRM_TAG_COUNT) return -1;
+  return tags_from_ntl_id(WYRM_TAG_BASE + wyrm);
 }
 
 int tags_from_ntl_id(int ntl) {

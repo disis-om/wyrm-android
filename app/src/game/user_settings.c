@@ -7,8 +7,13 @@
 
 #include "../mobile/mobile_hotkeys.h"
 
+#ifdef WYRM_DESKTOP
+#define USER_SETTINGS_TEMP_FILE wyrm_desktop_user_file(".tmp")
+#define USER_SETTINGS_BACKUP_FILE wyrm_desktop_user_file(".bak")
+#else
 #define USER_SETTINGS_TEMP_FILE USER_SETTINGS_FILE ".tmp"
 #define USER_SETTINGS_BACKUP_FILE USER_SETTINGS_FILE ".bak"
+#endif
 
 static void arrow_settings_default(mobile_arrow_settings* settings) {
   *settings = (mobile_arrow_settings){.boost_glow = false,

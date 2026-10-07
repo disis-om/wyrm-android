@@ -14,41 +14,50 @@ signature before they trust a single field in it.
 | Channel | Manifest | Who is offered it |
 |---|---|---|
 | Stable | `update/latest.json` (+ `.sig`) | everyone |
-| Beta | `update/beta.json` (+ `.sig`) | players who turn on **Settings › Backup › Beta updates**; they are offered whichever of the two is newer |
+| Beta | `update/beta.json` (+ `.sig`) | players who turn on **Settings › Updates › Beta updates**; they are offered whichever of the two is newer |
 
-Every release is a tagged GitHub release with the APK attached. Betas step the
-patch number (6.2.1, 6.2.2…) and say "(beta)" in their title. The current
-release is **6.2.2 (beta)**.
+Every release is a tagged release with the APK attached. A stable release
+moves the major or minor number; betas step the patch number and say "(beta)"
+in their title. The current stable release is **7.0.0**.
 
 ## Features
 
-- **Accounts and social:** username/password accounts, profiles, follows,
-  direct messages, global chat, leaderboards, notifications and voice rooms,
-  all through the Wyrm backend.
-- **Online arenas:** slither protocol 19, a live arena directory, arena codes,
-  and recent and saved custom arenas.
+- **Account:** username/password accounts. Every setting lives in the
+  account, one copy per platform plus a shared copy (skin, look, background,
+  name and play options follow you between Android and iPhone). Settings are
+  saved on log out and restored during the log-in animation.
+- **Social:** profiles, follows, direct messages, global chat, leaderboards
+  with search, notifications, voice rooms and **Trails** (photo, text and
+  canvas posts with a story-style editor, looks, stickers and replies).
+- **Online arenas:** slither protocol 19, a live arena directory with a
+  lowest-ping pick, arena codes, and recent and saved custom arenas.
   - Latency probes run only while the arena picker is open, and each arena is
     dialled at most once a minute.
   - One arena connection per Play. A refused entry returns to the lobby with no
     automatic retry.
 - **Offline play:** Play with AI, with local bots.
-- **Skin Studio:** presets, a pattern builder with the slither.io colour wheel,
-  accessories and arena backgrounds.
-- **Controls:** joystick or arrow steering, with 5 drawn arrows and 20 image
-  arrows, and a picker with a live preview. Also on-screen buttons and a
-  draggable arena HUD layout editor.
-- **Team mode:** NTL-compatible presence, roster (FPS, ping, leaderboard place)
-  and chat, with several saved teams.
-- **Look and backup:** themes, food styles, bot mode, `.wyrm` backup and
-  restore (optionally before every update), and a signed in-app updater.
-
-NTL tags are switched off for now: announcing a tag got snakes dropped from the
-arena. Wyrm will serve its own tags later.
+- **Skin Studio:** 66 presets, a pattern builder with the slither.io colour
+  wheel and Wyrm's own beads, accessories, Wyrm looks (hair, ears, glasses),
+  30 arena floors and 241 tags. Tags show to everyone in the arena: only the
+  tag's number travels in the skin block, and each player draws the chain,
+  swing and size with their own settings.
+- **Modes:** Wyrm, assist and Near Original (slither's own HUD and
+  controls); Texture, Solid, Flat and Skinless snake rendering, and Spine.
+- **Controls:** joystick or arrow steering, drawn and image arrows, look
+  ahead, a spring zoom bar, on-screen buttons (including Auto restart and Eyes
+  back) and a draggable arena HUD layout editor; landscape or portrait play.
+- **Team mode:** NTL-compatible presence, an in-arena roster and team chat
+  window, with several saved teams.
+- **Performance:** Auto, Balanced and Performance modes with an FPS limit and
+  a thermal step-down; the engine draws only when it is on screen.
+- **Help & feedback:** crash and arena-drop reports (sent only with your
+  consent), reports to Wyrm with replies, a FAQ and an app tour.
+- **Updates:** a signed in-app updater with stable and beta channels.
 
 ## Architecture
 
 ```text
-Jetpack Compose interface (Kotlin)       Android activity, updater, backup (Java)
+Jetpack Compose interface (Kotlin)       Android activity, updater (Java)
                  │                                   │
                  └──────── JNI mailboxes and callbacks ────────┘
                                    │
@@ -57,21 +66,21 @@ Jetpack Compose interface (Kotlin)       Android activity, updater, backup (Java
                   SDL3 (window, input) · Thermite · Vulkan
 ```
 
-The app is portrait; the lobby and the arena are landscape. Compose never
-touches engine state directly: requests go through mutex-guarded mailboxes that
-are drained on the engine thread.
+Compose never touches engine state directly: requests go through
+mutex-guarded mailboxes that are drained on the engine thread.
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
 | `app/src/` | C engine: gameplay, slither protocol, renderer glue, touch controls, JNI bridges (`platform/`) |
-| `app/res/` | Fonts, textures (including the arrow atlas) and shader sources, packaged as assets |
+| `app/res/` | Fonts, textures (bead, tag and arrow atlases, floors) and shader sources, packaged as assets |
 | `android/` | The Gradle project; Kotlin/Java under `android/app/src/main/java/com/wyrm/omrajput/` |
 | `android-sdl/` | Vendored SDL3 |
 | `thermite/` | The Vulkan rendering framework |
 | `glfw/` | The desktop window/input dependency, kept for upstream compatibility |
-| `tools/`, `scripts/`, `tests/` | Asset tools, the build script, the release script and protocol tests |
+| `tools/` | Asset tools (floors, textures, the tag sheet builder in `wyrm-tags/`), the release script and checks |
+| `scripts/`, `tests/` | The build script and protocol tests |
 | `update/` | The signed update manifests read by installed apps |
 
 ## Building
@@ -90,7 +99,7 @@ Requirements:
 
    ```powershell
    cd android
-   .\gradlew.bat :app:assembleDebug "-PWYRM_VERSION_CODE=622" "-PWYRM_VERSION_NAME=6.2.2"
+   .\gradlew.bat :app:assembleDebug "-PWYRM_VERSION_CODE=702" "-PWYRM_VERSION_NAME=7.0.2"
    ```
 
 Optional Gradle properties: `WYRM_API_URL`, `GOOGLE_WEB_CLIENT_ID`,

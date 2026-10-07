@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 
+#include "tag_count.h"
+
 typedef struct tenv tenv;
 typedef struct snake snake;
 
@@ -31,6 +33,15 @@ bool tags_valid(int index);
  */
 int tags_ntl_id(int index);
 int tags_from_ntl_id(int ntl);
+
+/**
+ * Wyrm's own tags (2026-10-07): the stickers after NTL's in the table. Their
+ * number (0..WYRM_TAG_COUNT-1) is what travels in the skin block's corner;
+ * they have no NTL number (tags_ntl_id says -1), so they never reach NTL's
+ * services. -1 when the index is not a Wyrm tag / the number is unknown.
+ */
+int tags_wyrm_id(int index);
+int tags_from_wyrm_id(int wyrm);
 
 /** Sets the tag another snake is wearing. */
 void tags_set(int snake_id, int tag);

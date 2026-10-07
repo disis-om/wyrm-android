@@ -11,6 +11,18 @@
 #define TCONTEXT_LOG(...) ((void)0)
 #endif
 
+/* VK_ERROR_DEVICE_LOST (OM's iPhone, 2026-10-06, after a death on the way
+   back to the lobby): the device is gone for good, and nothing a swapchain
+   rebuild does can bring it back. Retrying every frame froze the app until it
+   was killed. Noted once; tcontext_begin then draws nothing, the window stops
+   its swapchain recovery, and the app asks the player to reopen Wyrm. */
+static void tcontext_device_lost(tcontext* context, const char* where) {
+  context->swapchain_ok = false;
+  if (context->device_lost) return;
+  context->device_lost = true;
+  TCONTEXT_LOG("Vlither: Vulkan device lost (%s); rendering stopped", where);
+}
+
 void _tcontext_create_instance(tcontext* context) {
 #ifdef VLITHER_ANDROID
   Uint32 instance_ext_count = 0;
@@ -461,6 +473,7 @@ void _tcontext_create_swapchain(tcontext* context, bool vsync) {
     char detail[96];
     snprintf(detail, sizeof(detail), "vkCreateSwapchainKHR returned %d", (int)result);
     android_startup_failure(7, "Swapchain creation failed", detail);
+    if (result == VK_ERROR_DEVICE_LOST) tcontext_device_lost(context, "swapchain");
   }
 #endif
 }
@@ -920,6 +933,7 @@ bool tcontext_recreate_surface(tcontext* context, twindow* window, bool vsync) {
 
 bool tcontext_begin(tcontext* context) {
   context->last_present_succeeded = false;
+  if (context->device_lost) return false;
   /* No swapchain right now: a rebuild failed, or the surface was torn down
      for a resume and is not back yet. Acquiring with a null swapchain is a
      null dereference inside the driver (Android 7.0.0 crash report,
@@ -930,7 +944,11 @@ bool tcontext_begin(tcontext* context) {
     return false;
   }
   tcontext_frame* fr = context->frames + context->current_frame;
-  vkWaitForFences(context->device, 1, &fr->wait_fence, VK_TRUE, UINT64_MAX);
+  if (vkWaitForFences(context->device, 1, &fr->wait_fence, VK_TRUE,
+                      UINT64_MAX) == VK_ERROR_DEVICE_LOST) {
+    tcontext_device_lost(context, "fence wait");
+    return false;
+  }
 
   VkResult r = vkAcquireNextImageKHR(context->device, context->swapchain,
                                      UINT64_MAX, fr->present_complete,
@@ -938,6 +956,10 @@ bool tcontext_begin(tcontext* context) {
 
   if (r == VK_ERROR_OUT_OF_DATE_KHR) {
     context->swapchain_ok = false;
+    return false;
+  }
+  if (r == VK_ERROR_DEVICE_LOST) {
+    tcontext_device_lost(context, "acquire");
     return false;
   }
   if (r == VK_ERROR_SURFACE_LOST_KHR) {
@@ -1114,6 +1136,8 @@ void tcontext_end(tcontext* context) {
                       .pSignalSemaphores =
                           &context->render_completes[context->current_image]},
       fr->wait_fence);
+  if (submit_result == VK_ERROR_DEVICE_LOST)
+    tcontext_device_lost(context, "submit");
   if (submit_result != VK_SUCCESS) {
 #ifdef VLITHER_ANDROID
     char detail[96];
@@ -1137,6 +1161,7 @@ void tcontext_end(tcontext* context) {
           .pImageIndices = &context->current_image,
           .pResults = NULL});
 
+  if (r == VK_ERROR_DEVICE_LOST) tcontext_device_lost(context, "present");
   if (r == VK_ERROR_SURFACE_LOST_KHR) {
     context->surface_lost = true;
     context->swapchain_ok = false;

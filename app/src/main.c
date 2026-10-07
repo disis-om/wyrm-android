@@ -229,7 +229,7 @@ void trender(tenv* env) {
   tcontext* ctx = env->ctx;
   game_data* gdata = &usr->gdata;
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(WYRM_DESKTOP)
   wyrm_apply_present_mode(env);
 #endif
   android_update_apply_pending_settings(env);
@@ -345,7 +345,7 @@ void tresize(tenv* env) {
   ui_viewport_resize(env);
   /* A new swapchain starts empty: give it the settle frames again. */
   wyrm_settle = WYRM_SETTLE_FRAMES;
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(WYRM_DESKTOP)
   /* This rebuild used the current present mode. */
   wyrm_present_pending = 0;
 #endif

@@ -32,6 +32,8 @@ typedef struct tcontext {
   int current_frame;
   bool swapchain_ok;
   bool surface_lost;
+  /* VK_ERROR_DEVICE_LOST was seen: nothing more can be drawn this run. */
+  bool device_lost;
   bool last_present_succeeded;
   /* The swapchain came out a different shape from the window it belongs to.
      Android answers "how big is this surface?" with the size it was a moment

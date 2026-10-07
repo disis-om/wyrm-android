@@ -261,6 +261,11 @@ twindow* twindow_create(tenv* env, trender_func render_func,
 
 static void apply_pending_window_change(twindow* window) {
 #ifdef VLITHER_ANDROID
+  /* A lost device cannot be rebuilt from here (tcontext_device_lost). */
+  if (window->env->ctx && window->env->ctx->device_lost) {
+    window->_refresh = false;
+    return;
+  }
   /* Android destroys and replaces the native SurfaceView while the SDL
      window object survives. Rebuild only Vulkan's surface-facing resources;
      ImGui and the raw-finger input backend remain bound to the same SDL

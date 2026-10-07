@@ -27,7 +27,14 @@
 #define PI2 6.2831853f
 #define PI 3.1415926f
 
+#ifdef WYRM_DESKTOP
+/* WYRM_DESKTOP: user.dat lives in %APPDATA%\Wyrm (desktop_bridge.c), not in
+   the engine's working folder (Wyrm Android's tree, which holds app/res). */
+const char* wyrm_desktop_user_file(const char* suffix);
+#define USER_SETTINGS_FILE wyrm_desktop_user_file("")
+#else
 #define USER_SETTINGS_FILE "user.dat"
+#endif
 
 // game data constants:
 #define PROTOCOL_VERSION 19

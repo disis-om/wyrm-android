@@ -63,8 +63,8 @@ const writer = cases;
 for (const b0 of [0, 7, 253, 254, 255]) for (const b1 of [0, 17, 18, 19, 37, 38, 39, 255])
   for (const b2 of [0, 5, 24, 65, 66, 200, 254, 255]) for (let b6 = 0; b6 < 256; b6++) {
     cases++;
-    X.read(b0, b1, b2, b6);
-    const r = new Int32Array(X.memory.buffer, X.rd(), 3);
+    X.read(b0, b1, b2, b6, 0);
+    const r = new Int32Array(X.memory.buffer, X.rd(), 4);
     const [P, preset] = ntlRead(b0, b1, b2, b6);
     const ntlSheet = P >= 0 ? sheet(P) : 0;
     const ntlCv = preset >= 0 ? preset % 66 : -1;
@@ -76,4 +76,32 @@ for (const [t, skin, custom] of [[ids.indexOf(5), 9, 0], [ids.indexOf(14), 24, 0
   const n = X.build(t, skin, custom);
   console.log(`tag ${ids[t]} skin ${skin} custom ${custom}:`, n ? Array.from(mem().slice(X.out(), X.out() + n)).join(" ") : "(no block)");
 }
+// ---- Wyrm's own tags (2026-10-07): sheet indices after NTL's ----
+const NTL_TAGS = ids.length, WYRM = 77;
+let wyrmCases = 0;
+for (let w = 0; w < WYRM; w++) for (let skin = 0; skin < 66; skin++) for (const custom of [0, 1]) {
+  wyrmCases++;
+  const n = X.build(NTL_TAGS + w, skin, custom);
+  const b = Array.from(mem().slice(X.out(), X.out() + n));
+  const want = [254, 87, custom ? 255 : skin, 0, 0, 0, w, w ^ 0xA7];
+  if (n < 10 || JSON.stringify(b.slice(0, 8)) !== JSON.stringify(want)) { fail("wyrm write", { w, skin, custom, b }); continue; }
+  if (custom && JSON.stringify(b.slice(8)) !== "[3,7,2,9]") fail("wyrm custom runs", { w, skin, b });
+  if (!custom && b.length - 8 < 2) fail("wyrm preset runs", { w, skin, b });
+  X.read(b[0], b[1], b[2], b[6], b[7]);
+  const r = new Int32Array(X.memory.buffer, X.rd(), 4);
+  if (r[3] !== w || r[2] !== NTL_TAGS + w + 1 || r[1] !== (custom ? -1 : skin % 66) || r[0] !== -1)
+    fail("wyrm read", { w, skin, custom, ours: Array.from(r) });
+  const [P, preset] = ntlRead(b[0], b[1], b[2], b[6]);
+  if (P !== -1 || preset !== -1) fail("NTL sees a Wyrm corner as", { w, skin, custom, P, preset });
+}
+// No other corner may read as a Wyrm tag.
+let falseCases = 0;
+for (let b0 = 0; b0 < 256; b0++) for (let b1 = 0; b1 < 256; b1++) for (const b6 of [0, 5, 76, 77, 200]) for (const b7 of [0, b6 ^ 0xA7, 255]) {
+  falseCases++;
+  X.read(b0, b1, 7, b6, b7);
+  const r = new Int32Array(X.memory.buffer, X.rd(), 4);
+  const expect = b0 === 254 && b1 === 87 && b7 === (b6 ^ 0xA7) && b6 < WYRM ? b6 : -1;
+  if (r[3] !== expect) fail("wyrm false read", { b0, b1, b6, b7, got: r[3] });
+}
+console.log(`wyrm write+read cases ${wyrmCases}, corner sweep ${falseCases}, total mismatches ${bad}`);
 process.exit(bad ? 1 : 0);

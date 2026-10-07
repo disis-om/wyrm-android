@@ -81,7 +81,10 @@ __attribute__((export_name("report"))) void report(double ang, double now) { eye
     return PRE + math + body + api
 
 
-CLANG = r"C:\Users\Om Rajput\AppData\Local\Android\Sdk\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe"
+# The NDK clang (set CLANG to override).
+import os
+CLANG = os.environ.get("CLANG") or str(Path(os.environ.get("ANDROID_HOME") or Path(os.environ.get("LOCALAPPDATA", "")) / "Android" / "Sdk")
+    / "ndk" / "28.2.13676358" / "toolchains" / "llvm" / "prebuilt" / "windows-x86_64" / "bin" / "clang.exe")
 for name, dbl in (("eb_double", True), ("eb_float", False)):
     (HERE / f"{name}.c").write_text(harness(dbl), encoding="utf-8")
     r = subprocess.run([CLANG, "--target=wasm32", "-O1", "-nostdlib", "-ffreestanding", "-Wall",

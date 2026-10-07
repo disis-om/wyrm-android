@@ -33,6 +33,7 @@ ntl_ids = [int(x) for x in re.findall(r"\.ntl\s*=\s*(\d+)", tags_c)]
 if not ntl_ids:
     swift = (W / "Wyrm iOS/SourcesShell/WyrmSkinCatalog.generated.swift").read_text(encoding="utf-8")
     ntl_ids = [int(x) for x in re.findall(r"ntlID: (\d+)", swift)]
+ntl_ids = [x for x in ntl_ids if x < 100000]  # NTL's only; Wyrm's own are stubbed after them
 print("tag sheet", len(ntl_ids), ntl_ids[:3], ntl_ids[-3:])
 
 c = r'''
@@ -97,7 +98,10 @@ void read(int b0, int b1, int b2, int b6, int b7) {
 }
 '''
 (HERE / "harness.c").write_text(c, encoding="utf-8")
-CLANG = r"C:\Users\Om Rajput\AppData\Local\Android\Sdk\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe"
+# The NDK clang (set CLANG to override).
+import os
+CLANG = os.environ.get("CLANG") or str(Path(os.environ.get("ANDROID_HOME") or Path(os.environ.get("LOCALAPPDATA", "")) / "Android" / "Sdk")
+    / "ndk" / "28.2.13676358" / "toolchains" / "llvm" / "prebuilt" / "windows-x86_64" / "bin" / "clang.exe")
 r = subprocess.run([CLANG, "--target=wasm32", "-O1", "-nostdlib", "-ffreestanding", "-Wall", "-Wno-unused-function",
                     "-Wl,--no-entry", "-Wl,--export-dynamic", "-o", str(HERE / "harness.wasm"), str(HERE / "harness.c")],
                    capture_output=True, text=True)

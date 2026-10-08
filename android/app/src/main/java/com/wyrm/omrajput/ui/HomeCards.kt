@@ -48,6 +48,8 @@ internal fun IosArenaCard(
     ready: Boolean,
     onEnter: () -> Unit,
     onPickServer: (Rect) -> Unit,
+    /** Beside the title (Android: the arena's country flag). */
+    titleAccessory: @Composable () -> Unit = {},
 ) {
     Column(Modifier.padding(18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -71,8 +73,10 @@ internal fun IosArenaCard(
                 color = Wyrm.Ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f, fill = false),
             )
+            titleAccessory()
+            Spacer(Modifier.weight(1f))
             if (ready) {
                 Text("$players players", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
             }

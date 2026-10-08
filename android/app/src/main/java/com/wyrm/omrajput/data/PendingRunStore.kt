@@ -32,7 +32,11 @@ class PendingRunStore(context: Context) {
             score = score.coerceAtLeast(0),
             kills = kills.coerceAtLeast(0),
         )
-        writeLocked(readLocked() + run)
+        // commit(), not apply(): the run is on disk before this returns, so
+        // even a crash or a killed process right after a death cannot lose it
+        // (2026-10-09). Removals may stay lazy: a lost removal only resends a
+        // run, and the server ignores an event id it already counted.
+        writeLocked(readLocked() + run, durable = true)
         run
     }
 
@@ -67,7 +71,7 @@ class PendingRunStore(context: Context) {
         }
     }
 
-    private fun writeLocked(runs: List<PendingRun>) {
+    private fun writeLocked(runs: List<PendingRun>, durable: Boolean = false) {
         val array = JSONArray()
         runs.forEach { run ->
             array.put(
@@ -78,7 +82,8 @@ class PendingRunStore(context: Context) {
                     .put("kills", run.kills)
             )
         }
-        preferences.edit().putString(KEY_RUNS, array.toString()).apply()
+        val edit = preferences.edit().putString(KEY_RUNS, array.toString())
+        if (durable) edit.commit() else edit.apply()
     }
 
     private companion object {

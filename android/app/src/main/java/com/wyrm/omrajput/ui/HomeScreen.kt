@@ -104,6 +104,8 @@ fun HomeScreen(
     avatarUrl: String,
     avatarKey: String,
     arenaTitle: String,
+    /** The listed arena's country code ("IN"), "" for a custom one or while unknown. */
+    arenaCountry: String = "",
     arenaPing: Int,
     arenaPlayers: Int,
     arenaOnline: Boolean,
@@ -204,6 +206,7 @@ fun HomeScreen(
                     ready = arenaReady,
                     onEnter = onEnterArena,
                     onPickServer = onPickServer,
+                    titleAccessory = { ArenaCountryBadge(arenaCountry, Modifier.padding(start = 8.dp)) },
                 )
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -324,7 +327,7 @@ private fun Header(
                 BasicTextField(
                     value = nickname,
                     onValueChange = { typed ->
-                        onNicknameChange(typed.filterNot { it.isISOControl() }.take(24))
+                        onNicknameChange(typed.filterNot { it.isISOControl() }.toArenaNickname())
                     },
                     singleLine = true,
                     textStyle = TextStyle(

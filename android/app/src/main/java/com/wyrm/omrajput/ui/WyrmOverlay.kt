@@ -1166,6 +1166,8 @@ class WyrmOverlay(private val activity: Activity) :
                                     pollChat()
                                 }
                             },
+                            peer = threadPlayer,
+                            onPeer = { threadPlayer?.let { openPlayer(it.id) } },
                         )
 
                         Route.PLAYER -> {
@@ -2063,6 +2065,7 @@ class WyrmOverlay(private val activity: Activity) :
             avatarUrl = profile.avatarUrl,
             avatarKey = profile.avatarKey,
             arenaTitle = iosArenaTitle(arena),
+            arenaCountry = arena?.takeIf { it.id >= 0 }?.let { ArenaDirectory.countryOf(it.address) }.orEmpty(),
             arenaPing = ping,
             arenaPlayers = arena?.players ?: 0,
             arenaOnline = ping > 0 || arenaOnline,
@@ -4629,6 +4632,7 @@ class WyrmOverlay(private val activity: Activity) :
             "layout.stats_scale", "layout.stats_opacity", "layout.chat_scale", "layout.chat_opacity",
             "normal.bg_scale", "assist.bg_scale",
             "normal.render_mode", "assist.render_mode", "normal.spine", "assist.spine", "assist.hide_cosmetics",
+            "normal.spine_width", "assist.spine_width", "normal.snake_shadow", "assist.snake_shadow",
         ) }.forEach { setting ->
             setting.raw.toFloatOrNull()?.let { host?.onWriteSetting(setting.id, floatArrayOf(it)) }
         }
@@ -5792,7 +5796,34 @@ class WyrmOverlay(private val activity: Activity) :
      * reading it. Cancelling the previous sweep matters: two of them writing
      * the same map would otherwise leave stale numbers behind.
      */
-    private fun refreshArenas() = beginArenaScan(reloadDirectory = true)
+    private fun refreshArenas() {
+        if (route == Route.ARENA && panelOpen) beginArenaScan(reloadDirectory = true)
+        else loadArenaDirectoryQuietly()
+    }
+
+    /*
+     * The directory without any ping (OM, 2026-10-09). Play and the lobby
+     * name the chosen arena from it ("Arena 4817"), and it used to load only
+     * inside the picker: until the picker had been opened once, every saved
+     * official arena read "Custom arena". This is one HTTPS read of slither.io's
+     * list, the same file the picker reads; no arena is dialled.
+     */
+    private var arenaDirectoryJob: Job? = null
+
+    private fun loadArenaDirectoryQuietly() {
+        if (arenaDirectoryJob?.isActive == true || arenaJob?.isActive == true) return
+        arenaDirectoryJob = scope.launch {
+            runCatching { ArenaDirectory.load() }.onSuccess { arenas ->
+                if (arenaJob?.isActive != true) {
+                    arenaState = arenaState.copy(arenas = arenas)
+                    if (lobbyArena == null) {
+                        lobbyArena = arenas.firstOrNull { it.endpoint.equals(arenaLabel, ignoreCase = true) }
+                    }
+                }
+                ArenaDirectory.loadCountries(arenas.map { it.address })
+            }
+        }
+    }
 
     /** The picker is gone: no sweep keeps running behind it. */
     private fun stopArenaProbes() {
@@ -5821,6 +5852,7 @@ class WyrmOverlay(private val activity: Activity) :
             }
                 .onSuccess { arenas ->
                     arenaState = arenaState.copy(arenas = arenas, loading = false)
+                    launch { ArenaDirectory.loadCountries(arenas.map { it.address }) }
                     ArenaDirectory.pingAll(arenas) { endpoint, milliseconds ->
                         arenaState = arenaState.copy(
                             pings = arenaState.pings + (endpoint to milliseconds),
@@ -6227,6 +6259,19 @@ class WyrmOverlay(private val activity: Activity) :
             reported.firstOrNull { it.id == "assist.hide_cosmetics" }?.let {
                 put("assistHideCosmetics", it.number >= 0.5f)
             }
+            // Spine width and snake shadow (OM, 2026-10-09), each mode apart.
+            reported.firstOrNull { it.id == "normal.spine_width" }?.let {
+                put("spineWidthNormal", it.number.coerceIn(0f, 1f).toDouble())
+            }
+            reported.firstOrNull { it.id == "assist.spine_width" }?.let {
+                put("spineWidthAssist", it.number.coerceIn(0f, 1f).toDouble())
+            }
+            reported.firstOrNull { it.id == "normal.snake_shadow" }?.let {
+                put("snakeShadowNormal", it.number >= 0.5f)
+            }
+            reported.firstOrNull { it.id == "assist.snake_shadow" }?.let {
+                put("snakeShadowAssist", it.number >= 0.5f)
+            }
         }
 
     private fun applySharedSettings(doc: org.json.JSONObject) {
@@ -6246,7 +6291,7 @@ class WyrmOverlay(private val activity: Activity) :
         }
         host?.onSkinSync(true)
         if (doc.has("nickname")) {
-            val name = doc.optString("nickname").take(24)
+            val name = doc.optString("nickname").toArenaNickname()
             nickname = name
             host?.onSetNickname(name)
             uiPreferences.edit().putBoolean("nickname_chosen", doc.optBoolean("nicknameChosen", name.isNotEmpty())).apply()
@@ -6289,6 +6334,21 @@ class WyrmOverlay(private val activity: Activity) :
         if (doc.has("assistHideCosmetics")) {
             host?.onWriteSetting("assist.hide_cosmetics",
                 floatArrayOf(if (doc.optBoolean("assistHideCosmetics", false)) 1f else 0f))
+        }
+        // Spine width and snake shadow (OM, 2026-10-09); a missing key keeps this phone's.
+        doc.optDouble("spineWidthNormal", Double.NaN).takeIf { it.isFinite() }?.let {
+            host?.onWriteSetting("normal.spine_width", floatArrayOf(it.toFloat().coerceIn(0f, 1f)))
+        }
+        doc.optDouble("spineWidthAssist", Double.NaN).takeIf { it.isFinite() }?.let {
+            host?.onWriteSetting("assist.spine_width", floatArrayOf(it.toFloat().coerceIn(0f, 1f)))
+        }
+        if (doc.has("snakeShadowNormal")) {
+            host?.onWriteSetting("normal.snake_shadow",
+                floatArrayOf(if (doc.optBoolean("snakeShadowNormal", false)) 1f else 0f))
+        }
+        if (doc.has("snakeShadowAssist")) {
+            host?.onWriteSetting("assist.snake_shadow",
+                floatArrayOf(if (doc.optBoolean("snakeShadowAssist", false)) 1f else 0f))
         }
         // Play feel (OM, 2026-10-05): each key on its own; a missing one keeps the phone's.
         activity.getSharedPreferences("wyrm_play_feel", android.content.Context.MODE_PRIVATE).edit().apply {

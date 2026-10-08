@@ -97,11 +97,20 @@ static bool skin_colour_allowed(int cg) {
 }
 
 /*
- * The run list for the join: official colours only, one repeat of the
- * pattern, at most WYRM_JOIN_SKIN_MAX_RUNS runs. The arena repeats a pattern
- * along the body, so one repeat looks the same to everyone else; iOS hands
- * over its motif repeated to 256 beads, and this folds that back. Our own
- * snake still draws the whole design (see the own-snake block in 's').
+ * Vlither's run list for the join (OM, 2026-10-09): the skin code exactly as
+ * the player typed or built it, one (count, colour) pair per run of equal
+ * beads, in order. Nothing is folded, repeated or reordered: the arena repeats
+ * what it is sent along the body, so what the player made is what goes, and
+ * no bead of it is dropped. Both apps hand over the code as made (the preview
+ * alone shows it repeated).
+ *
+ * Two guards Vlither does not have:
+ * - only the colours the official client allows (any other bead is skipped);
+ * - at most WYRM_JOIN_SKIN_MAX_RUNS runs. Only a code whose beads change
+ *   colour more than 146 times reaches it; the rest of that code is not sent
+ *   (logged), because a ~500-byte block is refused by the arena.
+ * A run longer than 255 beads is split in two: Vlither's 8-bit counter
+ * wrapped to 0 on 256 equal beads.
  * Empty when nothing valid is left: the join then goes out as a preset one.
  */
 uint8_t* get_skin_compressed(tuser_data* usr) {
@@ -116,43 +125,21 @@ uint8_t* get_skin_compressed(tuser_data* usr) {
   }
   if (!count) return reduced;
 
-  /* The smallest period p with groups[i] == groups[i - p] for every i >= p.
-     Below 256 beads p must also divide the pattern: the arena repeats what
-     it is sent, so folding "abcdefga" to "abcdefg" dropped the last bead from
-     every repeat (OM, 2026-10-04; until then any p was taken). A full 256
-     (iOS hands over its motif repeated to 256) may end part-way through a
-     repeat, so there any p is still taken. */
-  int period = count;
-  for (int p = 1; p < count; p++) {
-    if (count % p != 0 && count != MAX_SKIN_CODE_LEN) continue;
-    bool repeats = true;
-    for (int i = p; i < count; i++) {
-      if (groups[i] != groups[i - p]) {
-        repeats = false;
-        break;
-      }
-    }
-    if (repeats) {
-      period = p;
-      break;
-    }
-  }
-
   int runs = 0;
   int i = 0;
-  while (i < period && runs < WYRM_JOIN_SKIN_MAX_RUNS) {
+  while (i < count && runs < WYRM_JOIN_SKIN_MAX_RUNS) {
     uint8_t cg = groups[i];
     int n = 1;
-    while (i + n < period && groups[i + n] == cg && n < UINT8_MAX) n++;
+    while (i + n < count && groups[i + n] == cg && n < UINT8_MAX) n++;
     uint8_t run = (uint8_t)n;
     tdarray_push(&reduced, &run);
     tdarray_push(&reduced, &cg);
     runs++;
     i += n;
   }
-  if (i < period)
-    SDL_Log("Wyrm arena: custom skin trimmed for the join — %d of %d beads "
-            "in one repeat, %d stripes", i, period, runs);
+  if (i < count)
+    SDL_Log("Wyrm arena: custom skin longer than the arena takes — %d of %d "
+            "beads sent, %d runs", i, count, runs);
   return reduced;
 }
 
@@ -1024,10 +1011,11 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
       o.skin_tag = corner_wyrm >= 0  ? tags_from_wyrm_id(corner_wyrm) + 1
                    : corner_tag >= 0 ? tags_from_ntl_id(corner_tag) + 1
                                      : 0;
-      /* Our own snake keeps the whole design we chose. The join carries at
-         most one bounded repeat of it, and `cusk_data` above holds the arena's
-         echo of that; drawn from the echo, our snake would show the trimmed
-         wire copy instead of the player's own look. */
+      /* Our own snake keeps the whole design we chose. The join carries the
+         code as made (bounded, see get_skin_compressed), and `cusk_data`
+         above holds the arena's echo of that; drawn from the echo, a code
+         longer than the arena takes would show the trimmed wire copy instead
+         of the player's own look. */
       if (o.local_player && usrs->custom_skin) {
         o.cusk_len = 0;
         for (int k = 0; k < MAX_SKIN_CODE_LEN && usrs->skin_code[k]; k++) {

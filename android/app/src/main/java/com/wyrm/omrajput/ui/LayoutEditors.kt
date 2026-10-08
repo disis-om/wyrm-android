@@ -799,6 +799,8 @@ fun SnakeLookPreviewEditor(
     val group = if (assist) "assist" else "normal"
     val render = settings.named("$group.render_mode")
     val spine = settings.named("$group.spine")
+    val spineWidth = settings.named("$group.spine_width")
+    val shadow = settings.named("$group.snake_shadow")
     val hide = settings.named("assist.hide_cosmetics")
     val density = LocalDensity.current
     Box(Modifier.fillMaxSize()) {
@@ -839,6 +841,25 @@ fun SnakeLookPreviewEditor(
                 on = spine?.enabled == true,
                 first = true,
                 onToggle = { on -> spine?.let { onChange(it, listOf(if (on) 1f else 0f)) } },
+            )
+            if (spine?.enabled == true && spineWidth != null) {
+                SettingsSliderRow(
+                    title = "Spine width",
+                    valueText = spineWidthLabel(spineWidth.number),
+                    detail = "From a thin thread to as wide as the snake",
+                    value = spineWidth.number.coerceIn(0f, 1f),
+                    range = 0f..1f,
+                    steps = 0,
+                    first = false,
+                    onChange = { onChange(spineWidth, listOf(it)) },
+                )
+            }
+            SettingsBoolRow(
+                title = "Snake shadow",
+                detail = "The soft shadow the original app draws under every snake.",
+                on = shadow?.enabled == true,
+                first = false,
+                onToggle = { on -> shadow?.let { onChange(it, listOf(if (on) 1f else 0f)) } },
             )
             if (assist) {
                 SettingsBoolRow(

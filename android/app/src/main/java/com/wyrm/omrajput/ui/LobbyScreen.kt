@@ -71,6 +71,34 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
+
+/**
+ * The in-game name as the engine stores it: at most 24 UTF-8 bytes
+ * (`MAX_NICKNAME_LEN`), whole characters only. Counting 24 characters let a
+ * Hindi or emoji name reach the engine as up to ~96 bytes, which it cut at
+ * byte 24, sometimes inside a character, so the join carried a broken one
+ * (2026-10-09).
+ */
+internal fun String.toArenaNickname(maxBytes: Int = 24): String {
+    val out = StringBuilder()
+    var bytes = 0
+    var index = 0
+    while (index < length) {
+        val point = codePointAt(index)
+        val size = when {
+            point < 0x80 -> 1
+            point < 0x800 -> 2
+            point < 0x10000 -> 3
+            else -> 4
+        }
+        if (bytes + size > maxBytes) break
+        out.appendCodePoint(point)
+        bytes += size
+        index += Character.charCount(point)
+    }
+    return out.toString()
+}
+
 @Composable
 internal fun LobbyScreen(
     address: String,
@@ -539,7 +567,7 @@ private fun LobbyName(
         BasicTextField(
             value = nickname,
             onValueChange = { typed ->
-                onNicknameChange(typed.filterNot { it.isISOControl() }.take(24))
+                onNicknameChange(typed.filterNot { it.isISOControl() }.toArenaNickname())
             },
             enabled = enabled,
             singleLine = true,

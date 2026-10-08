@@ -135,6 +135,13 @@ typedef struct user_settings_ext {
   float eyes_back_scale;
   float eyes_back_opacity;
   bool eyes_back_visible;
+  /* Modes › Spine width (OM, 2026-10-09), normal and assist: 0 is the thin
+     line it always was, 1 is as wide as the snake. Starts at offset 32: bytes
+     29-31 were padding in every file written before. */
+  float spine_width[2];
+  /* Modes › Snake shadow (OM, 2026-10-09), normal and assist: the AIR
+     client's `ksmc_t` under every snake. */
+  bool snake_shadow[2];
 } user_settings_ext;
 
 typedef struct user_settings {

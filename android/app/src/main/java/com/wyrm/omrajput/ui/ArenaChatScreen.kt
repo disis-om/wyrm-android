@@ -32,6 +32,17 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wyrm.omrajput.data.TeamMessage
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import kotlinx.coroutines.launch
 
 /**
  * Writing to the team from the arena (OM, 2026-10-04).
@@ -57,11 +68,30 @@ fun ArenaChatScreen(
     onClose: () -> Unit,
 ) {
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val scope = rememberCoroutineScope()
+    /* Up from the bottom with the keys, and back down into it after Send or a
+       tap outside, before the layer goes away (OM, 2026-10-09: as on iOS). */
+    val rise = remember { Animatable(1f) }
+    var leaving by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        runCatching { focus.requestFocus() }
+        rise.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 420f))
+    }
+    val leave: () -> Unit = {
+        if (!leaving) {
+            leaving = true
+            keyboard?.hide()
+            scope.launch {
+                rise.animateTo(1f, tween(durationMillis = 220, easing = FastOutLinearInEasing))
+                onClose()
+            }
+        }
+    }
     val send = {
         if (draft.isNotBlank() && !sending) {
             onSend()
-            onClose()
+            leave()
         }
     }
     Box(
@@ -70,7 +100,7 @@ fun ArenaChatScreen(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = onClose,
+                onClick = leave,
             ),
     ) {
         Row(
@@ -79,6 +109,10 @@ fun ArenaChatScreen(
                 .padding(bottom = keyboardRoom(insetBottom + 10.dp), start = 12.dp, end = 12.dp)
                 .widthIn(max = 560.dp)
                 .fillMaxWidth()
+                .graphicsLayer {
+                    translationY = rise.value * 160.dp.toPx()
+                    alpha = 1f - rise.value
+                }
                 .clip(wyrmRounded(Wyrm.Pill))
                 .background(Wyrm.Card.copy(alpha = 0.97f))
                 .border(1.dp, Wyrm.Rule, wyrmRounded(Wyrm.Pill))

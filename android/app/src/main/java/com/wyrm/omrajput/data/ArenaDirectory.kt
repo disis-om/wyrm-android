@@ -6,11 +6,18 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URL
+import java.net.URLEncoder
+import java.util.Base64
+import kotlin.random.Random
+import androidx.compose.runtime.mutableStateMapOf
+import org.json.JSONObject
 
 /**
  * One arena, exactly as the official directory describes it.
@@ -44,29 +51,41 @@ object ArenaDirectory {
     private const val DIRECTORY_URL = "https://slither.io/i80124.txt"
     private const val MAX_RESPONSE_BYTES = 128 * 1024
 
-    /** Enough at once to sweep a few hundred arenas quickly, few enough not to
-     * look like a port scan to the phone's own network stack. */
-    private const val PING_CONCURRENCY = 24
+    /** Machines measured at once (the directory has about fifty). */
+    private const val PING_CONCURRENCY = 12
     private const val PING_TIMEOUT_MS = 1500
 
-    /* A round trip uses the same port as the arena WebSocket. Closing the
-     * coroutine does not interrupt Socket.connect on Dispatchers.IO, so every
-     * socket is registered before it connects and closed by hand.
+    /*
+     * The ping is the web client's own (OM, 2026-10-09): `ws://ip:80/ptc`,
+     * one byte 112 ('p') out, the same byte back, three round trips, the
+     * fastest kept (`game1107241958.js`, the `/ptc` sockets after `loadSos`).
+     * It needs the page's Origin; without it the server refuses the upgrade.
+     * Port 80, never the arena's game port, so a ping no longer counts towards
+     * the game port's per-IP connect limit, and arenas whose game port ignores
+     * a bare TCP dial still get a number. One machine (one IP) answers for
+     * every arena on it. A custom address with no `/ptc` falls back to the old
+     * TCP dial of its own port.
+     *
+     * The WebSocket is the minimum by hand on a plain socket (one upgrade, one
+     * byte each way), so the file needs no library and Wyrm Desktop, which
+     * shares it, compiles it as it is.
      *
      * Probes exist only while the arena picker is open: not in the lobby, not
      * in the background, never while Play owns the arena. Closing the picker
      * or pressing Play closes every probe still in flight. */
+    private const val PTC_TIMEOUT_MS = 2_500L
+    private const val PTC_ROUNDS = 3
+    private const val PTC_ORIGIN = "https://slither.io"
     private val probeLock = Any()
-    private val activeProbes = mutableSetOf<Socket>()
+    /** How to stop each probe in flight (a ptc socket or a TCP dial). */
+    private val activeProbes = mutableSetOf<() -> Unit>()
     private var playOwnsArenaPort = false
     private var pickerOpen = false
 
-    /* Measured on 2026-09-25: thirty bare TCP connects to one arena, one every
-     * two seconds, and that arena reset every connection from the same public
-     * IP for about a minute afterwards — the WebSocket never upgraded, so every
-     * Play in that minute failed. A lobby that pinged its arena every two
-     * seconds walked straight into that. So a round trip is remembered for a minute and an arena is never re-dialled
-     * inside it, however often the picker is opened or refreshed. */
+    /* A round trip is remembered for a minute (per machine for listed arenas,
+     * per address for custom ones) and not measured again inside it, however
+     * often the picker is opened or refreshed. Kept from the TCP-probe days
+     * (2026-09-25: thirty bare game-port connects a minute got the IP reset). */
     private const val PROBE_REUSE_MS = 60_000L
     private val measured = HashMap<String, Pair<Long, Int>>()
 
@@ -76,8 +95,15 @@ object ArenaDirectory {
 
     private fun closeActiveProbes() {
         val probes = synchronized(probeLock) { activeProbes.toList() }
-        probes.forEach { probe -> runCatching { probe.close() } }
+        probes.forEach { stop -> runCatching { stop() } }
     }
+
+    /** Registers a probe unless the picker is closed or Play owns the arena. */
+    private fun register(stop: () -> Unit): Boolean = synchronized(probeLock) {
+        if (playOwnsArenaPort || !pickerOpen) false else { activeProbes.add(stop); true }
+    }
+
+    private fun unregister(stop: () -> Unit) = synchronized(probeLock) { activeProbes.remove(stop) }
 
     fun openPicker() {
         synchronized(probeLock) { pickerOpen = true }
@@ -96,6 +122,64 @@ object ArenaDirectory {
     fun endArenaPlay() {
         synchronized(probeLock) { playOwnsArenaPort = false }
     }
+
+    /*
+     * The country of each arena machine (OM, 2026-10-09: its flag and "IN"
+     * beside an arena), asked the way NTL asks it: NTL's own service,
+     * `https://ntl-slither.com/ss/flags.php?ips=a,b,...` (at most 60 a call),
+     * answering `{"ok":true,"flags":{"ip":"in"}}` (NTL's `I0` also takes
+     * "in.png" or a path ending in it). Kept by IPv4, lower case, as Compose
+     * state so every arena row fills in when it lands; a machine it does not
+     * know shows no flag. Asked again only for machines still unknown, at most
+     * every five minutes.
+     */
+    val countries = mutableStateMapOf<String, String>()
+    private const val FLAGS_URL = "https://ntl-slither.com/ss/flags.php"
+    private const val FLAGS_PER_CALL = 60
+    private const val COUNTRIES_EVERY_MS = 5 * 60_000L
+    @Volatile private var countriesAt = 0L
+    private val COUNTRY = Regex("""(?:^|/)([a-z]{2})(?:\.png)?$""")
+
+    suspend fun loadCountries(addresses: Collection<String>) {
+        val missing = addresses.filter { isValidEndpoint("$it:1") && it !in countries }.distinct()
+        val now = System.currentTimeMillis()
+        if (missing.isEmpty() || now - countriesAt < COUNTRIES_EVERY_MS) return
+        countriesAt = now
+        val found = withContext(Dispatchers.IO) {
+            buildMap {
+                missing.chunked(FLAGS_PER_CALL).forEach { chunk ->
+                    runCatching {
+                        val query = URLEncoder.encode(chunk.joinToString(","), "UTF-8")
+                        val connection = (URL("$FLAGS_URL?ips=$query").openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 8_000
+                            readTimeout = 12_000
+                            setRequestProperty("Accept", "application/json")
+                        }
+                        try {
+                            check(connection.responseCode == HttpURLConnection.HTTP_OK)
+                            val body = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                            if (body.optBoolean("ok")) {
+                                val flags = body.optJSONObject("flags") ?: JSONObject()
+                                flags.keys().forEach { ip ->
+                                    COUNTRY.find(flags.optString(ip).trim().lowercase())?.let { put(ip, it.groupValues[1]) }
+                                }
+                            }
+                        } finally {
+                            connection.disconnect()
+                        }
+                    }
+                }
+            }
+        }
+        if (found.isEmpty()) countriesAt = 0L
+        withContext(Dispatchers.Main) { countries.putAll(found) }
+    }
+
+    /** The upper-case country code of the machine at [address], or "". */
+    fun countryOf(address: String): String = countries[address]?.uppercase().orEmpty()
+
+    /** A crisp flag picture for a country code (flagcdn, 160 px wide PNG). */
+    fun flagUrl(country: String): String = "https://flagcdn.com/w160/${country.lowercase()}.png"
 
     /** A ping that never came back. Sorted last, drawn as a dash. */
     const val UNREACHABLE = -1
@@ -158,32 +242,117 @@ object ArenaDirectory {
     }
 
     /**
-     * Round trip to the arena itself, in milliseconds.
-     *
-     * A TCP connection to the port the arena plays on, which is the same path
-     * the game takes, so the number means what a player thinks it means. ICMP
-     * would be cheaper and would measure something the game never uses.
+     * Round trip to the machine an arena runs on, in milliseconds: the web
+     * client's `/ptc` ping (see above). [UNREACHABLE] when nothing came back.
      */
     suspend fun ping(arena: Arena): Int = withContext(Dispatchers.IO) {
-        val socket = Socket()
-        var reused: Int? = null
-        val registered = synchronized(probeLock) {
-            val last = measured[arena.endpoint]
+        val key = if (arena.id < 0) arena.endpoint else arena.address
+        synchronized(probeLock) {
+            val last = measured[key]
             val now = System.nanoTime() / 1_000_000L
-            if (last != null && now - last.first < PROBE_REUSE_MS) {
-                reused = last.second
-                false
-            } else if (playOwnsArenaPort || !pickerOpen) false else {
-                activeProbes.add(socket)
-                true
+            if (last != null && now - last.first < PROBE_REUSE_MS) return@withContext last.second
+            if (playOwnsArenaPort || !pickerOpen) return@withContext UNREACHABLE
+        }
+        var value = ptc(arena.address)
+        if (value == UNREACHABLE && arena.id < 0) value = tcpProbe(arena)
+        /* A probe closed by Play or by the picker closing measured nothing;
+           only a completed one counts. */
+        synchronized(probeLock) {
+            if (!playOwnsArenaPort && pickerOpen)
+                measured[key] = System.nanoTime() / 1_000_000L to value
+        }
+        value
+    }
+
+    /** Three `p` round trips over `ws://address:80/ptc`; the fastest, or UNREACHABLE. */
+    private fun ptc(address: String): Int {
+        val socket = Socket()
+        val stop: () -> Unit = { runCatching { socket.close() } }
+        if (!register(stop)) {
+            runCatching { socket.close() }
+            return UNREACHABLE
+        }
+        val times = ArrayList<Long>(PTC_ROUNDS)
+        val deadline = System.nanoTime() + PTC_TIMEOUT_MS * 1_000_000L
+        try {
+            socket.tcpNoDelay = true
+            socket.soTimeout = PTC_TIMEOUT_MS.toInt()
+            socket.connect(InetSocketAddress(address, 80), PING_TIMEOUT_MS)
+            val output = socket.getOutputStream()
+            val input = BufferedInputStream(socket.getInputStream())
+            val key = Base64.getEncoder().encodeToString(Random.nextBytes(16))
+            output.write(
+                ("GET /ptc HTTP/1.1\r\nHost: $address\r\nUpgrade: websocket\r\n" +
+                    "Connection: Upgrade\r\nSec-WebSocket-Key: $key\r\n" +
+                    "Sec-WebSocket-Version: 13\r\nOrigin: $PTC_ORIGIN\r\n\r\n").toByteArray(Charsets.US_ASCII),
+            )
+            output.flush()
+            if (!readUpgrade(input)) return UNREACHABLE
+            while (times.size < PTC_ROUNDS && System.nanoTime() < deadline) {
+                // One masked binary frame carrying 'p', as a browser sends it.
+                val mask = Random.nextBytes(4)
+                val sent = System.nanoTime()
+                output.write(byteArrayOf(0x82.toByte(), 0x81.toByte(), mask[0], mask[1], mask[2], mask[3],
+                    (112 xor mask[0].toInt()).toByte()))
+                output.flush()
+                if (!readPong(input)) break
+                times += (System.nanoTime() - sent) / 1_000_000L
+            }
+            runCatching {
+                val mask = Random.nextBytes(4)
+                output.write(byteArrayOf(0x88.toByte(), 0x80.toByte(), mask[0], mask[1], mask[2], mask[3]))
+                output.flush()
+            }
+        } catch (_: Exception) {
+            // A broken socket keeps whatever round trips it already measured.
+        } finally {
+            unregister(stop)
+            runCatching { socket.close() }
+        }
+        return times.minOrNull()?.toInt()?.coerceAtLeast(1) ?: UNREACHABLE
+    }
+
+    /** The server's answer to the upgrade: true for `101 Switching Protocols`. */
+    private fun readUpgrade(input: InputStream): Boolean {
+        val head = StringBuilder()
+        while (!head.endsWith("\r\n\r\n")) {
+            val byte = input.read()
+            if (byte < 0 || head.length > 4096) return false
+            head.append(byte.toChar())
+        }
+        return head.startsWith("HTTP/1.1 101") || head.startsWith("HTTP/1.0 101")
+    }
+
+    /** Reads frames until the server's one-byte 'p' (true) or a close (false). */
+    private fun readPong(input: InputStream): Boolean {
+        while (true) {
+            val first = input.read()
+            val second = input.read()
+            if (first < 0 || second < 0) return false
+            var length = (second and 0x7F).toLong()
+            if (length == 126L) length = ((input.read() shl 8) or input.read()).toLong()
+            else if (length == 127L) { length = 0; repeat(8) { length = (length shl 8) or input.read().toLong() } }
+            val mask = if (second and 0x80 != 0) ByteArray(4) { input.read().toByte() } else null
+            if (length > 64) return false
+            val payload = ByteArray(length.toInt()) { input.read().toByte() }
+            if (mask != null) for (i in payload.indices) payload[i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
+            when (first and 0x0F) {
+                0x8 -> return false
+                0x2, 0x1 -> if (payload.size == 1 && payload[0] == 112.toByte()) return true
             }
         }
-        if (!registered) {
+    }
+
+    /** The pre-2026-10-09 probe: a TCP dial of the address's own port (custom arenas only). */
+    private fun tcpProbe(arena: Arena): Int {
+        val socket = Socket()
+        val stop: () -> Unit = { runCatching { socket.close() } }
+        if (!register(stop)) {
             runCatching { socket.close() }
-            return@withContext reused ?: UNREACHABLE
+            return UNREACHABLE
         }
         val started = System.nanoTime()
-        try {
+        return try {
             socket.use {
                 socket.tcpNoDelay = true
                 socket.connect(InetSocketAddress(arena.address, arena.port), PING_TIMEOUT_MS)
@@ -191,14 +360,8 @@ object ArenaDirectory {
             ((System.nanoTime() - started) / 1_000_000L).toInt().coerceAtLeast(1)
         } catch (_: Exception) {
             UNREACHABLE
-        }.also { value ->
-            /* A probe closed by Play or by the picker closing measured nothing;
-               only a completed dial counts against the arena. */
-            synchronized(probeLock) {
-                activeProbes.remove(socket)
-                if (!playOwnsArenaPort && pickerOpen)
-                    measured[arena.endpoint] = System.nanoTime() / 1_000_000L to value
-            }
+        } finally {
+            unregister(stop)
         }
     }
 
@@ -210,8 +373,14 @@ object ArenaDirectory {
      */
     suspend fun pingAll(arenas: List<Arena>, onResult: (String, Int) -> Unit) = coroutineScope {
         val gate = Semaphore(PING_CONCURRENCY)
-        arenas.map { arena ->
-            async { gate.withPermit { onResult(arena.endpoint, ping(arena)) } }
+        // One ping per machine; every arena on it gets the same number.
+        arenas.groupBy { if (it.id < 0) it.endpoint else it.address }.values.map { group ->
+            async {
+                gate.withPermit {
+                    val value = ping(group.first())
+                    group.forEach { onResult(it.endpoint, value) }
+                }
+            }
         }.forEach { it.await() }
     }
 

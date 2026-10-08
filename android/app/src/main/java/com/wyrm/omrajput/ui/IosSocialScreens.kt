@@ -363,6 +363,13 @@ fun IosMessagesScreen(
 
 /* ------------------------------------------------------------ chat pages */
 
+/**
+ * A direct conversation laid out like Instagram's (OM, 2026-10-09): the other
+ * player's face and name in the bar, their profile card at the head of the
+ * thread (alone when nothing has been said yet), their face beside the last
+ * bubble of each of their runs, and the time between runs far apart. Wyrm's
+ * colours, not Instagram's. Same as Wyrm iOS's `WyrmThreadDetail`.
+ */
 @Composable
 fun IosThreadScreen(
     title: String,
@@ -376,8 +383,44 @@ fun IosThreadScreen(
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     onBack: () -> Unit,
+    peer: ApiPlayer? = null,
+    onPeer: () -> Unit = {},
 ) {
-    IosPageChrome(title, insetTop, onBack) {
+    Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
+        Row(
+            Modifier.fillMaxWidth().height(58.dp).background(Wyrm.Paper).padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(width = 36.dp, height = 44.dp)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
+                contentAlignment = Alignment.Center,
+            ) {
+                IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Ink, size = 18.dp, weight = 2.6f)
+            }
+            Row(
+                Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPeer),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                WyrmAvatar(
+                    url = peer?.avatarUrl.orEmpty(),
+                    avatarKey = peer?.avatarKey ?: "mono-ink",
+                    initial = initialsOf(peer?.displayName ?: title),
+                    size = 34.dp,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(peer?.displayName ?: title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
+                        color = Wyrm.Ink, maxLines = 1)
+                    val handle = peer?.username.orEmpty()
+                    if (handle.isNotEmpty()) {
+                        Text("@$handle", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet, maxLines = 1)
+                    }
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
         IosChatPage(
             messages = messages,
             meId = meId,
@@ -386,14 +429,91 @@ fun IosThreadScreen(
             emptyNote = "Say hello when you are ready.",
             error = error,
             draft = draft,
-            placeholder = "Message $title",
+            placeholder = "Message…",
             limit = 1000,
             sending = sending,
             insetBottom = insetBottom,
             onDraftChange = onDraftChange,
             onSend = onSend,
+            peer = peer,
+            onPeer = onPeer,
+            direct = true,
         )
     }
+}
+
+/** The other player at the head of a direct thread (Instagram's empty chat). */
+@Composable
+private fun DirectIntro(peer: ApiPlayer?, onPeer: () -> Unit) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        WyrmAvatar(
+            url = peer?.avatarUrl.orEmpty(),
+            avatarKey = peer?.avatarKey ?: "mono-ink",
+            initial = initialsOf(peer?.displayName ?: ""),
+            size = 92.dp,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+        Text(peer?.displayName.orEmpty(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Wyrm.Ink, maxLines = 1)
+        val handle = peer?.username.orEmpty()
+        if (handle.isNotEmpty()) Text("@$handle", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+        if (peer != null) {
+            Text("${compactCount(peer.followerCount)} followers · Wyrm", fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet)
+            when {
+                peer.isFollowing && peer.followsYou ->
+                    Text("You follow each other on Wyrm", fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet)
+                peer.followsYou -> Text("Follows you", fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet)
+            }
+        }
+        Text(
+            "View profile",
+            fontFamily = Wyrm.Body,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            color = Wyrm.Ink,
+            modifier = Modifier
+                .padding(top = 9.dp)
+                .clip(WyrmCapsule)
+                .background(Wyrm.Track)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPeer)
+                .padding(horizontal = 16.dp, vertical = 7.dp),
+        )
+    }
+}
+
+private fun compactCount(value: Long): String = when {
+    value >= 1_000_000 -> "%.1fM".format(value / 1_000_000.0).replace(".0M", "M")
+    value >= 10_000 -> "${value / 1000}K"
+    value >= 1_000 -> "%.1fK".format(value / 1_000.0).replace(".0K", "K")
+    else -> value.toString()
+}
+
+private fun parseInstant(raw: String): java.time.Instant? = runCatching { java.time.Instant.parse(raw) }.getOrNull()
+
+/** Runs an hour apart are separate runs, as on Instagram. */
+private fun farApart(first: ChatMessage?, second: ChatMessage?): Boolean {
+    val a = first?.let { parseInstant(it.createdAt) } ?: return false
+    val b = second?.let { parseInstant(it.createdAt) } ?: return false
+    return b.epochSecond - a.epochSecond > 3600
+}
+
+/** "Today 3:45 PM", "Yesterday 9:10 AM", "Mon 3:45 PM" or "12 Oct 3:45 PM". */
+private fun separatorLabel(message: ChatMessage, previous: ChatMessage?): String? {
+    val now = parseInstant(message.createdAt) ?: return null
+    if (previous != null) {
+        val before = parseInstant(previous.createdAt)
+        if (before != null && now.epochSecond - before.epochSecond <= 3600) return null
+    }
+    val zone = java.time.ZoneId.systemDefault()
+    val time = now.atZone(zone)
+    val clock = java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).format(time)
+    val days = java.time.temporal.ChronoUnit.DAYS.between(time.toLocalDate(), java.time.LocalDate.now(zone))
+    val day = when {
+        days == 0L -> "Today"
+        days == 1L -> "Yesterday"
+        days < 7L -> java.time.format.DateTimeFormatter.ofPattern("EEE").format(time)
+        else -> java.time.format.DateTimeFormatter.ofPattern("d MMM").format(time)
+    }
+    return "$day $clock"
 }
 
 @Composable
@@ -462,12 +582,15 @@ internal fun ColumnScope.IosChatPage(
     onSend: () -> Unit,
     onAuthor: ((String) -> Unit)? = null,
     onReport: ((ChatMessage) -> Unit)? = null,
+    peer: ApiPlayer? = null,
+    onPeer: () -> Unit = {},
+    direct: Boolean = false,
 ) {
     val backdrop = rememberLayerBackdrop()
     val imeUp = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Column(Modifier.weight(1f).fillMaxWidth().imePadding()) {
         Box(Modifier.weight(1f).fillMaxWidth().layerBackdrop(backdrop)) {
-            IosChatTranscript(messages, meId, showsAuthors, emptyTitle, emptyNote, onAuthor, onReport)
+            IosChatTranscript(messages, meId, showsAuthors, emptyTitle, emptyNote, onAuthor, onReport, peer, onPeer, direct)
         }
         AnimatedVisibility(error.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
             Text(
@@ -506,6 +629,9 @@ fun IosChatTranscript(
     emptyNote: String,
     onAuthor: ((String) -> Unit)?,
     onReport: ((ChatMessage) -> Unit)?,
+    peer: ApiPlayer? = null,
+    onPeer: () -> Unit = {},
+    direct: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val seen = remember { mutableSetOf<String>() }
@@ -524,23 +650,50 @@ fun IosChatTranscript(
     LaunchedEffect(imeBottom > 0) { if (imeBottom > 0 && messages.isNotEmpty()) listState.animateScrollToItem(messages.size) }
 
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 10.dp)) {
-        if (messages.isEmpty()) {
+        if (direct) {
+            item(key = "direct-intro") {
+                Box(Modifier.padding(top = if (messages.isEmpty()) 44.dp else 12.dp, bottom = 10.dp)) { DirectIntro(peer, onPeer) }
+            }
+        } else if (messages.isEmpty()) {
             item { Box(Modifier.padding(top = 18.dp)) { IosPaperCard { IosEmptyPanel(emptyTitle, emptyNote) } } }
         }
         itemsIndexed(messages, key = { _, m -> m.id }) { index, message ->
             val previous = messages.getOrNull(index - 1)
             val next = messages.getOrNull(index + 1)
             val fresh = message.id !in seen && !firstLoad.value
+            val mine = message.authorId == meId
+            val endsGroup = next?.authorId != message.authorId || (direct && farApart(message, next))
+            if (direct) {
+                separatorLabel(message, previous)?.let { stamp ->
+                    Text(stamp, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Wyrm.Quiet,
+                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp))
+                }
+            }
             ChatRow(
                 message = message,
-                mine = message.authorId == meId,
-                startsGroup = previous?.authorId != message.authorId,
-                endsGroup = next?.authorId != message.authorId,
+                mine = mine,
+                startsGroup = previous?.authorId != message.authorId || (direct && farApart(previous, message)),
+                endsGroup = endsGroup,
                 showsAuthors = showsAuthors,
                 animateIn = fresh,
                 onAuthor = onAuthor,
                 onReport = onReport,
                 modifier = Modifier.animateItem(),
+                showTime = !direct,
+                leading = if (direct && !mine) ({
+                    // Their face beside the last bubble of their run, a gap elsewhere.
+                    Box(Modifier.size(28.dp)) {
+                        if (endsGroup) {
+                            WyrmAvatar(
+                                url = peer?.avatarUrl.orEmpty(),
+                                avatarKey = peer?.avatarKey ?: "mono-ink",
+                                initial = initialsOf(peer?.displayName ?: message.authorName),
+                                size = 28.dp,
+                                modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPeer),
+                            )
+                        }
+                    }
+                }) else null,
             )
             LaunchedEffect(message.id) { seen += message.id }
         }
@@ -560,6 +713,8 @@ private fun ChatRow(
     onAuthor: ((String) -> Unit)?,
     onReport: ((ChatMessage) -> Unit)?,
     modifier: Modifier = Modifier,
+    showTime: Boolean = true,
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val appear = remember { Animatable(if (animateIn) 0f else 1f) }
     LaunchedEffect(Unit) { if (appear.value < 1f) appear.animateTo(1f, iosSpring(0.42f, 0.78f)) }
@@ -570,7 +725,7 @@ private fun ChatRow(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp)
+            .padding(horizontal = if (leading != null) 10.dp else 14.dp)
             .padding(top = if (startsGroup) 10.dp else 2.dp)
             .graphicsLayer {
                 val p = appear.value
@@ -592,9 +747,13 @@ private fun ChatRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(Modifier.size(18.dp).clip(CircleShape).background(Wyrm.Ink.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
-                    Text(initialsOf(message.authorName), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 8.5.sp, color = Wyrm.OnInk)
-                }
+                // The app's squircle face, as everywhere else (OM, 2026-10-09).
+                WyrmAvatar(
+                    url = message.authorAvatarUrl,
+                    avatarKey = message.authorAvatarKey,
+                    initial = initialsOf(message.authorName),
+                    size = 18.dp,
+                )
                 Text(
                     if (message.authorUsername.isEmpty()) message.authorName else "${message.authorName} · @${message.authorUsername}",
                     fontFamily = Wyrm.Body,
@@ -604,6 +763,8 @@ private fun ChatRow(
                 )
             }
         }
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        leading?.invoke()
         Box {
             Text(
                 text = message.body,
@@ -650,7 +811,8 @@ private fun ChatRow(
                 }
             }
         }
-        if (endsGroup) {
+        }
+        if (endsGroup && showTime) {
             shortTime(message.createdAt)?.let {
                 Text(it, fontFamily = Wyrm.Body, fontSize = 9.5.sp, color = Wyrm.Quiet, modifier = Modifier.padding(horizontal = 6.dp))
             }

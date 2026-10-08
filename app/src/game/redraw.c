@@ -190,6 +190,40 @@ static float apple_air_spacing(tenv* env, int point, float* sx, float* sy) {
   return fminf(1, d / 6);
 }
 
+/* Modes › Snake shadow (OM, 2026-10-09). The AIR client gives every snake
+ * `has_shadow` (setSkin) and draws `ksmc_t` beneath it (Main.as redraw): the
+ * head's first nine points fading out, then the tail's last four, then, as
+ * the body is drawn from the tail, one four points behind each body point,
+ * faded where the points bunch up. Same stamp, size and order as the wheel
+ * beads' shadow above, for every point of every snake. */
+static void air_snake_shadow_ends(tenv* env, int bp, float half, float a,
+                                  float mww2, float mhh2, float* sx,
+                                  float* sy) {
+  game_data* gdata = &env->usr->gdata;
+  for (int p = bp - 1 < 8 ? bp - 1 : 8; p >= 0; p--)
+    if (gdata->data.pbu[p] == 2)
+      apple_air_shadow(env, p, half, a * (1 - p / 9.0f), mww2, mhh2);
+  for (int n = 1; n <= 4; ++n) {
+    int p = bp - n;
+    if (p < 0 || gdata->data.pbu[p] != 2) continue;
+    float spacing = apple_air_spacing(env, p, sx, sy);
+    if (n == 1) spacing = 1;
+    apple_air_shadow(env, p, half, spacing * a * (p < 9 ? p / 9.0f : 1), mww2,
+                     mhh2);
+  }
+}
+
+static void air_snake_shadow_behind(tenv* env, int j, float half, float a,
+                                    float mww2, float mhh2, float* sx,
+                                    float* sy) {
+  game_data* gdata = &env->usr->gdata;
+  int p = j - 4;
+  if (p < 0 || gdata->data.pbu[p] != 2) return;
+  float spacing = apple_air_spacing(env, p, sx, sy);
+  apple_air_shadow(env, p, half, spacing * a * (p < 9 ? p / 9.0f : 1), mww2,
+                   mhh2);
+}
+
 /* Food style is presentation only. Mixed hashes the arena's existing id so a
  * morsel keeps its shape for its whole life without adding state or wire data. */
 static float food_shape(const food* fo, int style) {
@@ -641,11 +675,54 @@ static void draw_skinless_strip(tenv* env, snake* o, int bp, float cx, float cy,
   }
 }
 
-static void draw_snake_spine(tenv* env, int bp, float cx, float cy, float alpha) {
+/* A spine wider than the thread is drawn on the skinless mesh, so it does
+   not fold where the body coils tight (a thick ImGui polyline mitres). */
+static void draw_spine_mesh(tenv* env, int bp, float cx, float cy, ImU32 under,
+                            float under_w, ImU32 over, float over_w) {
+  game_data* gdata = &env->usr->gdata;
+  ImDrawList* draw = igGetWindowDrawList();
+  ImVec2 buf[SKINLESS_RUN];
+  int n = 0;
+  int i;
+  int continued = 0;
+  for (i = 1; i <= bp; ++i) {
+    int live = i < bp && gdata->data.pbu[i] >= 1;
+    if (live && n < SKINLESS_RUN) {
+      snake_screen_point(gdata, i, cx, cy, &buf[n]);
+      n += 1;
+      if (n < SKINLESS_RUN) continue;
+    }
+    if (n >= 1) {
+      draw_skinless_run(draw, buf, n, under, under_w, !continued, !live);
+      draw_skinless_run(draw, buf, n, over, over_w, !continued, !live);
+    }
+    if (live) {
+      buf[0] = buf[n > 0 ? n - 1 : 0];
+      n = 1;
+      continued = 1;
+    } else {
+      n = 0;
+      continued = 0;
+    }
+  }
+}
+
+/* Spine width (OM, 2026-10-09): 0 is the thin line it always was, 1 is as
+   wide as the body (`body_w`, the bead's diameter on screen). */
+static void draw_snake_spine(tenv* env, int bp, float cx, float cy, float alpha,
+                             float body_w, float width) {
   float dpi = snake_line_dpi(env);
+  float thread = 2.0f * dpi;
+  float over_w;
   ImU32 dark = igColorConvertFloat4ToU32((ImVec4){0.0f, 0.0f, 0.0f, 0.35f * alpha});
   ImU32 white = igColorConvertFloat4ToU32((ImVec4){1.0f, 1.0f, 1.0f, 0.8f * alpha});
-  draw_body_line(env, bp, 1, cx, cy, dark, 4.0f * dpi, white, 2.0f * dpi);
+  if (!(width > 0.0f) || body_w <= thread) {
+    draw_body_line(env, bp, 1, cx, cy, dark, 4.0f * dpi, white, 2.0f * dpi);
+    return;
+  }
+  if (width > 1.0f) width = 1.0f;
+  over_w = thread + (body_w - thread) * width;
+  draw_spine_mesh(env, bp, cx, cy, dark, over_w + 2.0f * dpi, white, over_w);
 }
 
 static void draw_snake_imgui_eyes(tenv* env, snake* o, float fang, float hx,
@@ -1346,6 +1423,15 @@ void redraw(tenv* env) {
               show_snake_shadows && o->id == gdata->data.snake_id;
 #endif
 
+          /* Modes › Snake shadow (OM, 2026-10-09), normal and assist apart.
+             Not under a skinless strip, which is meant to be see-through. */
+          const bool air_shadow =
+              usrs->ext.snake_shadow[usrs->hotkeys[HOTKEY_ASSIST].active ? 1 : 0] &&
+              mode->render_mode != 3;
+          const float air_half =
+              gdata->data.gsc * lsz * APPLE_AIR_SHADOW_SCALE;
+          float air_sx = 31337357, air_sy = 31337357;
+
           float om = 0;
           float mr = 0;
 
@@ -1381,7 +1467,10 @@ void redraw(tenv* env) {
               }
             }
 
-            if (show_snake_shadows) {
+            if (air_shadow)
+              air_snake_shadow_ends(env, bp, air_half, a, mww2, mhh2, &air_sx,
+                                    &air_sy);
+            else if (show_snake_shadows) {
               // draw last 4 body parts' shadow:
               int start = bp >= 4 ? bp - 4 : 0;
               for (j = start; j < bp; j++) {
@@ -1422,6 +1511,9 @@ void redraw(tenv* env) {
                                        spacing * a * (p < 9 ? p / 9.0f : 1),
                                        mww2, mhh2);
                     }
+                  } else if (air_shadow) {
+                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                                            &air_sx, &air_sy);
                   } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
                     if (gdata->data.pbu[(int)k] == 2) {
@@ -1479,7 +1571,10 @@ void redraw(tenv* env) {
                   px = gdata->data.pbx[(int)j];
                   py = gdata->data.pby[(int)j];
 
-                  if (j >= 4 && show_snake_shadows) {
+                  if (air_shadow) {
+                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                                            &air_sx, &air_sy);
+                  } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
                     if (gdata->data.pbu[(int)k] == 2) {
                       ox = tx;
@@ -1522,7 +1617,10 @@ void redraw(tenv* env) {
                 }
             }
           } else if (mode->render_mode == 1) {
-            if (show_snake_shadows) {
+            if (air_shadow)
+              air_snake_shadow_ends(env, bp, air_half, a, mww2, mhh2, &air_sx,
+                                    &air_sy);
+            else if (show_snake_shadows) {
               // draw last 4 body parts' shadow:
               int start = bp >= 4 ? bp - 4 : 0;
               for (j = start; j < bp; j++) {
@@ -1554,7 +1652,10 @@ void redraw(tenv* env) {
                   px = gdata->data.pbx[(int)j];
                   py = gdata->data.pby[(int)j];
 
-                  if (j >= 4 && show_snake_shadows) {
+                  if (air_shadow) {
+                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                                            &air_sx, &air_sy);
+                  } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
                     if (gdata->data.pbu[(int)k] == 2) {
                       ox = tx;
@@ -1603,7 +1704,10 @@ void redraw(tenv* env) {
                   px = gdata->data.pbx[(int)j];
                   py = gdata->data.pby[(int)j];
 
-                  if (j >= 4 && show_snake_shadows) {
+                  if (air_shadow) {
+                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                                            &air_sx, &air_sy);
+                  } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
                     if (gdata->data.pbu[(int)k] == 2) {
                       ox = tx;
@@ -1648,7 +1752,10 @@ void redraw(tenv* env) {
                 }
             }
           } else if (mode->render_mode == 2) {
-            if (show_snake_shadows) {
+            if (air_shadow)
+              air_snake_shadow_ends(env, bp, air_half, a, mww2, mhh2, &air_sx,
+                                    &air_sy);
+            else if (show_snake_shadows) {
               // draw last 4 body parts' shadow:
               int start = bp >= 4 ? bp - 4 : 0;
               for (j = start; j < bp; j++) {
@@ -1680,7 +1787,10 @@ void redraw(tenv* env) {
                   px = gdata->data.pbx[(int)j];
                   py = gdata->data.pby[(int)j];
 
-                  if (j >= 4 && show_snake_shadows) {
+                  if (air_shadow) {
+                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                                            &air_sx, &air_sy);
+                  } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
                     if (gdata->data.pbu[(int)k] == 2) {
                       ox = tx;
@@ -1729,7 +1839,10 @@ void redraw(tenv* env) {
                   px = gdata->data.pbx[(int)j];
                   py = gdata->data.pby[(int)j];
 
-                  if (j >= 4 && show_snake_shadows) {
+                  if (air_shadow) {
+                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                                            &air_sx, &air_sy);
+                  } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
                     if (gdata->data.pbu[(int)k] == 2) {
                       ox = tx;
@@ -2180,7 +2293,10 @@ void redraw(tenv* env) {
           {
             int assist_on = usrs->hotkeys[HOTKEY_ASSIST].active ? 1 : 0;
             int spine_on = usrs->ext.spine[assist_on] ? 1 : 0;
-            if (spine_on) draw_snake_spine(env, bp, mww2, mhh2, a);
+            if (spine_on)
+              draw_snake_spine(env, bp, mww2, mhh2, a,
+                               2.0f * lsz * gdata->data.gsc,
+                               usrs->ext.spine_width[assist_on]);
             if (mode->render_mode == 3 || spine_on)
               draw_snake_imgui_eyes(env, o, fang, hx, hy, ssc, ea, mww2, mhh2);
             else {

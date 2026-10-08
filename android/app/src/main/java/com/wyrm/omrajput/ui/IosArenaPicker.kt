@@ -7,6 +7,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
@@ -42,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -66,6 +69,38 @@ import com.wyrm.omrajput.data.ArenaDirectory
 fun Arena.iosCode(): String = "%04d".format(id % 10_000)
 
 private fun Arena.iosTitle(): String = if (id < 0) "Custom arena" else "Arena ${iosCode()}"
+
+/**
+ * The arena machine's country (OM, 2026-10-09): a real flag picture with
+ * rounded corners and a hairline edge, then its code ("IN"). Country from
+ * NTL's service, flag from flagcdn at 160 px, cached on disk like a face
+ * ([AvatarImages]). Nothing is drawn while the country is unknown; a quiet
+ * plate stands in until the picture lands.
+ */
+@Composable
+fun ArenaCountryBadge(country: String, modifier: Modifier = Modifier) {
+    if (country.length != 2) return
+    val url = ArenaDirectory.flagUrl(country)
+    var image by remember(url) { mutableStateOf(AvatarImages.peek(url)) }
+    LaunchedEffect(url) { if (image == null) image = AvatarImages.load(url) }
+    val shape = RoundedCornerShape(3.dp)
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(width = 20.dp, height = 14.dp)
+                .clip(shape)
+                .background(Wyrm.Track)
+                .border(0.5.dp, Wyrm.Ink.copy(alpha = 0.14f), shape),
+        ) {
+            image?.let {
+                Image(it, contentDescription = country, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+        }
+        Spacer(Modifier.width(5.dp))
+        Text(country, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp,
+            letterSpacing = 0.6.sp, color = Wyrm.Quiet)
+    }
+}
 
 /** A saved or typed address as an arena row; a missing port is Slither's 444. */
 fun customArena(raw: String): Arena? {
@@ -176,6 +211,7 @@ fun IosArenaPicker(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(arena.iosTitle(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+                    if (arena.id >= 0) ArenaCountryBadge(ArenaDirectory.countryOf(arena.address), Modifier.padding(start = 8.dp))
                     if (tag != null) {
                         Spacer(Modifier.width(8.dp))
                         Text(

@@ -40,6 +40,11 @@ import androidx.compose.ui.unit.sp
 import com.wyrm.omrajput.data.Setting
 import kotlin.math.sin
 import com.wyrm.omrajput.data.SettingType
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.graphics.Brush
+import kotlin.math.roundToInt
 
 /**
  * Spec page 12 — Settings › Assist.
@@ -66,7 +71,7 @@ fun SettingsAssistScreen(
     val foodIds = setOf("food_type", "food_scale", "food_float", "food_flicker",
         "const_food_scale", "uniform_food_color", "food_color")
     val dotIds = setOf("show_crosshair", "head_dot_size", "head_dot_color")
-    val snakeIds = setOf("render_mode", "spine", "hide_cosmetics")
+    val snakeIds = setOf("render_mode", "spine", "spine_width", "snake_shadow", "hide_cosmetics")
     val laser = listOfNotNull(
         settings.named("general.laser_thickness"),
         settings.named("general.laser_color"),
@@ -149,18 +154,47 @@ fun SettingsAssistScreen(
                 SettingsCard {
                     val render = modeSettings.firstOrNull { it.id.substringAfter('.') == "render_mode" }
                     val spineOn = modeSettings.firstOrNull { it.id.substringAfter('.') == "spine" }
+                    val spineWidth = modeSettings.firstOrNull { it.id.substringAfter('.') == "spine_width" }
+                    val shadow = modeSettings.firstOrNull { it.id.substringAfter('.') == "snake_shadow" }
                     val hideOn = visibleMode == 1 &&
                         modeSettings.firstOrNull { it.id.substringAfter('.') == "hide_cosmetics" }?.enabled == true
                     SnakeBodyPreview(
                         mode = render?.index ?: 0,
                         spine = spineOn?.enabled == true,
+                        spineWidth = spineWidth?.number ?: 0f,
+                        shadow = shadow?.enabled == true,
                         skin = skin,
                         hideCosmetics = hideOn,
                     )
                     render?.let { setting ->
                         SettingTypedRow(setting = setting, first = false, onChange = onChange)
                     }
-                    modeSettings.firstOrNull { it.id.substringAfter('.') == "spine" }?.let { setting ->
+                    spineOn?.let { setting ->
+                        SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                    }
+                    // Spine width (OM, 2026-10-09): comes out from under the
+                    // switch while the spine is on; each mode keeps its own.
+                    spineWidth?.let { setting ->
+                        AnimatedVisibility(
+                            visible = spineOn?.enabled == true,
+                            enter = expandVertically(tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(180)),
+                            exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(120)),
+                        ) {
+                            Box(Modifier.settingAnchor(setting.id)) {
+                                SettingsSliderRow(
+                                    title = "Spine width",
+                                    valueText = spineWidthLabel(setting.number),
+                                    detail = "From a thin thread to as wide as the snake",
+                                    value = setting.number.coerceIn(0f, 1f),
+                                    range = 0f..1f,
+                                    steps = 0,
+                                    first = false,
+                                    onChange = { onChange(setting, listOf(it)) },
+                                )
+                            }
+                        }
+                    }
+                    shadow?.let { setting ->
                         SettingTypedRow(setting = setting, first = false, onChange = onChange)
                     }
                     if (visibleMode == 1) {
@@ -169,7 +203,7 @@ fun SettingsAssistScreen(
                         }
                     }
                 }
-                SettingsCaption("Skinless keeps the plain snake's width and length. Only the skin turns see-through. Spine is a thin white line down every snake.")
+                SettingsCaption("Skinless keeps the plain snake's width and length. Only the skin turns see-through. Spine is a white line down every snake, from a thread to the snake's width. Snake shadow is the original app's shadow under every snake.")
 
                 SettingsSectionLabel("Arena colours")
                 SettingsCard {
@@ -285,7 +319,14 @@ fun SettingsAssistScreen(
  * the accessory and the look are left off.
  */
 @Composable
-private fun SnakeBodyPreview(mode: Int, spine: Boolean, skin: SkinState, hideCosmetics: Boolean) {
+private fun SnakeBodyPreview(
+    mode: Int,
+    spine: Boolean,
+    spineWidth: Float,
+    shadow: Boolean,
+    skin: SkinState,
+    hideCosmetics: Boolean,
+) {
     val textures by rememberSkinTextures()
     val savedLook = WyrmLookStore.spec()
     val custom = skin.custom && skin.code.isNotEmpty()
@@ -341,6 +382,31 @@ private fun SnakeBodyPreview(mode: Int, spine: Boolean, skin: SkinState, hideCos
                 }
                 val t = textures
                 val head = place(total - 1)
+                // AIR's `ksmc_t` under every bead, as the arena draws it
+                // (redraw.c air_snake_shadow_*): a soft shadow a little below
+                // the bead and a dark rim round it. Not under Skinless.
+                if (shadow && mode != 3) {
+                    val r = scale * 0.5f
+                    for (segment in 0 until total) {
+                        val at = place(segment)
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                0f to Color.Black.copy(alpha = 0.4f),
+                                0.708f to Color.Black.copy(alpha = 0.4f),
+                                0.8f to Color.Black.copy(alpha = 0.17f),
+                                0.9f to Color.Black.copy(alpha = 0.06f),
+                                1f to Color.Transparent,
+                                center = Offset(at.x, at.y + r * 0.14f),
+                                radius = r * 1.5f,
+                            ),
+                            radius = r * 1.5f,
+                            center = Offset(at.x, at.y + r * 0.14f),
+                        )
+                    }
+                    for (segment in 0 until total) {
+                        drawCircle(Color.Black, r * 1.14f, place(segment))
+                    }
+                }
                 when {
                     mode == 0 && t != null -> drawSkinAlong(
                         t, groups, colors, skin.preset, custom, accessory, look, scale, px, total,
@@ -369,8 +435,11 @@ private fun SnakeBodyPreview(mode: Int, spine: Boolean, skin: SkinState, hideCos
                     val first = place(0)
                     path.moveTo(first.x, first.y)
                     for (segment in 1 until total) place(segment).let { path.lineTo(it.x, it.y) }
-                    drawPath(path, Color.Black.copy(alpha = 0.35f), style = Stroke(width = 3.4f * px, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    drawPath(path, Color.White.copy(alpha = 0.8f), style = Stroke(width = 1.7f * px, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    // 0 is the thread it always was, 1 the body's width (redraw.c).
+                    val thread = 1.7f * px
+                    val over = thread + (scale - thread).coerceAtLeast(0f) * spineWidth.coerceIn(0f, 1f)
+                    drawPath(path, Color.Black.copy(alpha = 0.35f), style = Stroke(width = over + thread, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    drawPath(path, Color.White.copy(alpha = 0.8f), style = Stroke(width = over, cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
                 // The head over the spine, as the arena draws its eyes last (Texture
                 // drew its head already; again only when a spine crosses it).
@@ -384,6 +453,13 @@ private fun SnakeBodyPreview(mode: Int, spine: Boolean, skin: SkinState, hideCos
             }
         }
     }
+}
+
+/** "Thread" at the thin end, "Snake width" at the full end, else a percentage. */
+internal fun spineWidthLabel(value: Float): String = when {
+    value <= 0.005f -> "Thread"
+    value >= 0.995f -> "Snake width"
+    else -> "${(value * 100f).roundToInt()}%"
 }
 
 @Composable

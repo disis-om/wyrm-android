@@ -44,6 +44,11 @@ class PendingRunStore(context: Context) {
         writeLocked(readLocked().filterNot { it.eventId == eventId })
     }
 
+    fun removeAll(eventIds: Collection<String>) = synchronized(lock) {
+        val gone = eventIds.toSet()
+        writeLocked(readLocked().filterNot { it.eventId in gone })
+    }
+
     private fun readLocked(): List<PendingRun> {
         val array = runCatching {
             JSONArray(preferences.getString(KEY_RUNS, "[]").orEmpty())

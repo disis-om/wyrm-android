@@ -107,6 +107,20 @@ object AvatarImages {
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
     private var diskDir: java.io.File? = null
 
+    /*
+     * An address the server refused (no photo any more: 404; asked to slow
+     * down: 429) is not asked again for 10 minutes. Without this, every board
+     * refresh and every scroll past that row went back to the server for it.
+     */
+    private const val FAILED_RETRY_MS = 10L * 60L * 1000L
+    private val failedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private fun recentlyFailed(url: String): Boolean {
+        val at = failedAt[url] ?: return false
+        if (System.currentTimeMillis() - at < FAILED_RETRY_MS) return true
+        failedAt.remove(url)
+        return false
+    }
+
     /** The photographs are also kept on disk, so a face is downloaded once. */
     fun init(context: android.content.Context) {
         if (diskDir == null) diskDir = java.io.File(context.cacheDir, "avatars").apply { mkdirs() }
@@ -121,6 +135,7 @@ object AvatarImages {
     suspend fun load(url: String): ImageBitmap? {
         if (url.isBlank()) return null
         cache.get(url)?.let { return it }
+        if (recentlyFailed(url)) return null
         val job = inFlight.getOrPut(url) {
             scope.async {
                 try {
@@ -137,7 +152,7 @@ object AvatarImages {
     /** Puts faces on disk ahead of time (the account sync does this for the boards). */
     suspend fun prefetch(urls: Collection<String>) = kotlinx.coroutines.coroutineScope {
         val semaphore = kotlinx.coroutines.sync.Semaphore(6)
-        urls.filter { it.isNotBlank() && fileFor(it)?.exists() != true }.distinct().map { url ->
+        urls.filter { it.isNotBlank() && !recentlyFailed(it) && fileFor(it)?.exists() != true }.distinct().map { url ->
             async(Dispatchers.IO) { semaphore.acquire(); try { download(url) } finally { semaphore.release() } }
         }.forEach { it.await() }
     }
@@ -152,7 +167,10 @@ object AvatarImages {
             setRequestProperty("Accept", "image/*")
         }
         try {
-            if (connection.responseCode !in 200..299) return@runCatching null
+            if (connection.responseCode !in 200..299) {
+                failedAt[url] = System.currentTimeMillis()
+                return@runCatching null
+            }
             connection.inputStream.use { it.readBytes() }.also { bytes ->
                 fileFor(url)?.let { file -> runCatching { file.writeBytes(bytes) } }
             }
@@ -164,6 +182,7 @@ object AvatarImages {
     fun peek(url: String): ImageBitmap? = if (url.isBlank()) null else cache.get(url)
 
     fun forget(url: String) {
+        failedAt.remove(url)
         cache.remove(url)
         fileFor(url)?.delete()
     }

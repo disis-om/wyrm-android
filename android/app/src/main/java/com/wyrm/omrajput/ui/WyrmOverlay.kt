@@ -73,6 +73,7 @@ import com.wyrm.omrajput.BuildConfig
 import com.wyrm.omrajput.R
 import com.wyrm.omrajput.WyrmActivity
 import com.wyrm.omrajput.WyrmMessagingService
+import com.wyrm.omrajput.data.ApiException
 import com.wyrm.omrajput.data.ApiPlayer
 import com.wyrm.omrajput.data.Arena
 import com.wyrm.omrajput.data.ArenaDirectory
@@ -86,6 +87,7 @@ import com.wyrm.omrajput.data.NotificationPreferences
 import com.wyrm.omrajput.data.PendingRunStore
 import com.wyrm.omrajput.data.ReleaseNotesRepository
 import com.wyrm.omrajput.data.SavedArenas
+import com.wyrm.omrajput.data.ServerNotification
 import com.wyrm.omrajput.data.SocialCache
 import com.wyrm.omrajput.data.TRAILS_ENABLED
 import com.wyrm.omrajput.data.WyrmNotification
@@ -144,6 +146,14 @@ private data class SkinTrial(val author: String, val skin: SkinState, val look: 
 
 private const val STATS_RECONCILE_MS = 5L * 60L * 60L * 1000L
 private const val STATS_RETRY_MS = 15L * 60L * 1000L
+/** Runs per /v1/me/stats/batch request (the server takes 1-25). */
+private const val RUN_BATCH = 25
+/** After counted runs the boards refresh only if older than this (auto restart can end a run every few seconds). */
+private const val RUN_BOARD_MIN_AGE_MS = 20_000L
+/** A pull within this of the last one only plays the spinner. */
+private const val PULL_MIN_GAP_MS = 10_000L
+/** Faces fetched ahead per board; the rest load as their rows scroll in. */
+private const val BOARD_PREFETCH = 30
 
 /**
  * Hosts Wyrm's Compose interface above the native surface.
@@ -344,6 +354,7 @@ class WyrmOverlay(private val activity: Activity) :
     private var boardError by mutableStateOf("")
     private var boardOffline by mutableStateOf(false)
     private var boardUpdatedAt by mutableStateOf(0L)
+    private var lastHomePullAt = -PULL_MIN_GAP_MS
     private var profileLoading by mutableStateOf(false)
     private var profileOffline by mutableStateOf(false)
     private var profileUpdatedAt by mutableStateOf(socialCache.profile()?.savedAt ?: 0L)
@@ -2262,7 +2273,12 @@ class WyrmOverlay(private val activity: Activity) :
             showRootTabs = showRootTabs,
             onAppear = {},
             onRefresh = { done ->
-                if (interactive) {
+                val now = SystemClock.elapsedRealtime()
+                // A pull right after the last one only plays the spinner: the
+                // whole bootstrap is ten requests, and repeated pulls were
+                // enough to hit the server's limit (2026-10-08).
+                if (interactive && now - lastHomePullAt >= PULL_MIN_GAP_MS) {
+                    lastHomePullAt = now
                     if (TRAILS_ENABLED) TrailsStore.refresh()
                     scope.launch {
                         bootstrapSession()
@@ -2270,7 +2286,10 @@ class WyrmOverlay(private val activity: Activity) :
                         done()
                     }
                 } else {
-                    done()
+                    scope.launch {
+                        delay(450L)
+                        done()
+                    }
                 }
             },
             // Trails is a tab of its own now (OM, 2026-10-04): no card on Social.
@@ -5515,30 +5534,38 @@ class WyrmOverlay(private val activity: Activity) :
         runUploadJob = scope.launch {
             var stoppedForFailure = false
             var failures = 0
+            var counted = false
             try {
                 while (repository.hasSession && profile.id == playerId) {
-                    val run = pendingRuns.pendingFor(playerId).firstOrNull() ?: break
-                    val result = runCatching {
-                        repository.reportRun(run.eventId, run.score, run.kills)
-                    }
+                    val chunk = pendingRuns.pendingFor(playerId).take(RUN_BATCH)
+                    if (chunk.isEmpty()) break
+                    // The whole outbox goes in a few requests (25 runs each),
+                    // not one request per run (2026-10-08): after an outage a
+                    // phone used to send every run plus four refreshes each.
+                    val result = runCatching { sendRuns(chunk) }
                     if (result.isFailure) {
                         val error = result.exceptionOrNull()!!
                         if (repository.isUnauthorized(error) || ++failures >= 3) {
                             stoppedForFailure = true
                             break
                         }
-                        delay(5_000L * failures)
+                        // The server's Retry-After when it asked for a pause,
+                        // else 5 s, 10 s; a little jitter so phones that lost
+                        // the server together do not come back together.
+                        delay(repository.retryDelayMs(error, 5_000L * failures) + (0L..2_000L).random())
                         continue
                     }
-                    val earned = result.getOrThrow()
                     failures = 0
-                    pendingRuns.remove(run.eventId)
-                    val additions = earned.map { it.toWyrmNotification() }
+                    counted = true
+                    val additions = result.getOrThrow().map { it.toWyrmNotification() }
                     val known = pendingAchievements.mapTo(mutableSetOf()) { it.id }
                     pendingAchievements = pendingAchievements + additions.filter { known.add(it.id) }
+                }
+                // Once for the whole outbox, not once per run.
+                if (counted) {
                     refreshProfile()
                     refreshNotifications()
-                    refreshLeaderboards()
+                    refreshLeaderboards(silent = true, minAgeMs = RUN_BOARD_MIN_AGE_MS)
                 }
             } finally {
                 runUploadJob = null
@@ -5547,6 +5574,38 @@ class WyrmOverlay(private val activity: Activity) :
                 }
             }
         }
+    }
+
+    /** Batch route first; a server without it (404) or a refused batch falls back to one by one. */
+    private var runBatchSupported = true
+
+    private suspend fun sendRuns(chunk: List<com.wyrm.omrajput.data.PendingRun>): List<ServerNotification> {
+        if (runBatchSupported && chunk.size > 1) {
+            val batch = runCatching {
+                repository.reportRuns(chunk.map { Triple(it.eventId, it.score, it.kills) })
+            }
+            batch.onSuccess { (done, earned) ->
+                pendingRuns.removeAll(done.ifEmpty { chunk.map { it.eventId } })
+                return earned
+            }
+            val error = batch.exceptionOrNull()!!
+            val status = (error as? ApiException)?.status
+            if (status == 404) runBatchSupported = false
+            // 400 = one run in it can never be accepted: find it one by one below.
+            if (status != 404 && status != 400) throw error
+        }
+        val earned = mutableListOf<ServerNotification>()
+        for (run in chunk) {
+            val single = runCatching { repository.reportRun(run.eventId, run.score, run.kills) }
+            single.onSuccess {
+                pendingRuns.remove(run.eventId)
+                earned += it
+            }
+            val error = single.exceptionOrNull() ?: continue
+            // A receipt the server can never accept must not block the rest (iOS does the same).
+            if ((error as? ApiException)?.status == 400) pendingRuns.remove(run.eventId) else throw error
+        }
+        return earned
     }
 
     /**
@@ -6002,13 +6061,28 @@ class WyrmOverlay(private val activity: Activity) :
         }
     }
 
+    /*
+     * Names the account refused (another player owns it: IGN_TAKEN, or an
+     * invalid profile). Every Play used to send the same taken name again,
+     * 96 refusals in a day on the server (2026-10-08). The arena still uses
+     * the name as typed; only the account copy is not asked for again until
+     * the app restarts.
+     */
+    private val refusedIngameNames = mutableSetOf<String>()
+
     private fun syncIngameName() {
         val name = nickname.trim()
         if (!repository.hasSession || name == profile.ingameName) return
         if (!name.matches(Regex("^[A-Za-z0-9_]{3,20}$"))) return
+        if (name.lowercase() in refusedIngameNames) return
         scope.launch {
             runCatching { repository.updateProfile(ingameName = name) }
                 .onSuccess { profile = it.toWyrmProfile() }
+                .onFailure { error ->
+                    val status = (error as? ApiException)?.status
+                    val limited = repository.errorCode(error) == "NAME_CHANGE_LIMIT"
+                    if (status == 409 || status == 400 || limited) refusedIngameNames += name.lowercase()
+                }
         }
     }
 
@@ -6449,9 +6523,7 @@ class WyrmOverlay(private val activity: Activity) :
         if (playerId.isNotBlank()) {
             runCatching { repository.connections(playerId, "followers") }.getOrNull()?.let { followers = it }
         }
-        AvatarImages.prefetch(
-            (scoreBoard + killBoard + following + followers + conversations.map { it.player }).map { it.avatarUrl },
-        )
+        prefetchBoardFaces(following + followers + conversations.map { it.player })
         boardUpdatedAt = System.currentTimeMillis()
         startBoardRefresh()
         refreshArenas()
@@ -7071,8 +7143,27 @@ class WyrmOverlay(private val activity: Activity) :
         }
     }
 
+    /**
+     * Faces ahead of time for the top of each board (what opens on screen)
+     * and the given people. The rest load as their rows scroll in, through
+     * [AvatarImages.load]'s disk cache. All 200 rows of both boards at once
+     * was the burst behind the avatar 429s (2026-10-08).
+     */
+    private suspend fun prefetchBoardFaces(extra: List<ApiPlayer> = emptyList()) {
+        if (repository.shouldStayQuiet) return
+        AvatarImages.prefetch(
+            (scoreBoard.take(BOARD_PREFETCH) + killBoard.take(BOARD_PREFETCH) + extra).map { it.avatarUrl },
+        )
+    }
+
     /** Wyrm iOS's `refreshLeaderboards`: score and kills, together. */
-    private fun refreshLeaderboards(silent: Boolean = false) {
+    private fun refreshLeaderboards(silent: Boolean = false, minAgeMs: Long = 0L) {
+        // A background refresh (after runs) skips a fresh board, and stays
+        // quiet while the server has asked for a pause; the shown rows stay.
+        if (silent && minAgeMs > 0L) {
+            if (System.currentTimeMillis() - boardUpdatedAt < minAgeMs) return
+            if (repository.shouldStayQuiet) return
+        }
         val gen = ++boardLoadGen
         scope.launch {
             if (!silent) boardLoading = true
@@ -7090,7 +7181,7 @@ class WyrmOverlay(private val activity: Activity) :
                 killBoard = it
                 socialCache.saveLeaderboard("kills", it)
             }
-            launch { AvatarImages.prefetch((scoreBoard + killBoard).map { it.avatarUrl }) }
+            launch { prefetchBoardFaces() }
             val failure = scoreResult.exceptionOrNull() ?: killResult.exceptionOrNull()
             boardOffline = failure != null
             boardError = when {

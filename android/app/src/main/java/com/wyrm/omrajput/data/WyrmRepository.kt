@@ -90,7 +90,12 @@ data class ServerNotification(
     val read: Boolean,
 )
 
-internal class ApiException(val status: Int, message: String) : Exception(message)
+internal class ApiException(
+    val status: Int,
+    message: String,
+    /** Seconds from a 429's Retry-After, 0 when the server gave none. */
+    val retryAfterSeconds: Int = 0,
+) : Exception(message)
 
 /* Diagnostic kill switch. While true every backend call fails like a network
    outage (IOException, never 401), so the saved session stays signed in and
@@ -295,6 +300,34 @@ class WyrmRepository(context: Context, baseUrl: String) {
             }
         }
     }
+
+    /**
+     * Up to 25 queued runs in one request, applied in order by the server
+     * exactly as [reportRun] would (2026-10-08). Returns the event ids the
+     * server answered for, plus every achievement earned. A server without
+     * the route answers 404; the caller then sends them one by one.
+     */
+    suspend fun reportRuns(runs: List<Triple<String, Int, Int>>): Pair<List<String>, List<ServerNotification>> =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject().put("runs", JSONArray().apply {
+                runs.forEach { (eventId, score, kills) ->
+                    put(JSONObject().put("eventId", eventId).put("score", score).put("kills", kills))
+                }
+            })
+            val response = call(path = "/v1/me/stats/batch", method = "POST", body = body)
+            val results = response.optJSONArray("results")
+            val done = buildList {
+                for (index in 0 until (results?.length() ?: 0)) {
+                    results!!.optJSONObject(index)?.optString("eventId")?.takeIf { it.isNotBlank() }?.let(::add)
+                }
+            }
+            val earned = response.optJSONArray("achievements")
+            done to buildList {
+                for (index in 0 until (earned?.length() ?: 0)) {
+                    add(earned!!.getJSONObject(index).toServerNotification())
+                }
+            }
+        }
 
     /** Idempotent recovery from absolute device totals; it never lowers server data. */
     suspend fun reconcileStats(highestScore: Long, kills: Long): ApiPlayer = withContext(Dispatchers.IO) {
@@ -634,6 +667,24 @@ class WyrmRepository(context: Context, baseUrl: String) {
     fun isUnauthorized(error: Throwable): Boolean =
         error is ApiException && error.status == HttpURLConnection.HTTP_UNAUTHORIZED
 
+    fun isRateLimited(error: Throwable): Boolean = error is ApiException && error.status == 429
+
+    /**
+     * Set by any 429: until then, background refreshes (after a run, the
+     * hourly board, avatar prefetch) stay quiet and screens keep what they
+     * show. A player's own action (a pull, a send) still goes through.
+     */
+    @Volatile var quietUntil: Long = 0L
+        private set
+
+    val shouldStayQuiet: Boolean get() = System.currentTimeMillis() < quietUntil
+
+    /** How long to wait after [error]: the server's Retry-After if it gave one. */
+    fun retryDelayMs(error: Throwable, fallbackMs: Long): Long {
+        val seconds = (error as? ApiException)?.retryAfterSeconds ?: 0
+        return if (seconds > 0) seconds * 1000L else fallbackMs
+    }
+
     suspend fun signOut() {
         session = null
         runCatching { clearGoogleCredentials(appContext) }
@@ -690,7 +741,15 @@ class WyrmRepository(context: Context, baseUrl: String) {
             if (status !in 200..299) {
                 val message = runCatching { JSONObject(text).optString("error") }.getOrNull()
                     ?.takeIf { it.isNotBlank() } ?: "HTTP_$status"
-                throw ApiException(status, message)
+                // Only the rate limiter sends Retry-After; a business 429
+                // (NAME_CHANGE_LIMIT) has none and must not quiet the app.
+                val retryAfter = if (status == 429) {
+                    connection.getHeaderField("Retry-After")?.trim()?.toIntOrNull()?.coerceIn(1, 600) ?: 0
+                } else 0
+                if (retryAfter > 0) {
+                    quietUntil = maxOf(quietUntil, System.currentTimeMillis() + retryAfter * 1000L)
+                }
+                throw ApiException(status, message, retryAfter)
             }
             // A 204, or any success with nothing to say, is still a success.
             if (text.isBlank()) JSONObject() else JSONObject(text)

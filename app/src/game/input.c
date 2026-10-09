@@ -171,7 +171,7 @@ static void eb_send(game_data* gdata, struct mg_connection* connection,
     eb.conn = connection;
     eb.snake_id = me->id;
   }
-  if (!(gdata->data.ctm - gdata->data.last_e_mtm > ARENA_AIM_MS)) return;
+  if (!(gdata->data.ctm - gdata->data.last_e_mtm > ARENA_EYES_BACK_MS)) return;
   gdata->data.last_e_mtm = gdata->data.ctm;
   gdata->data.lsxm = xm;
   gdata->data.lsym = ym;

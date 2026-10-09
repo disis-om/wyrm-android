@@ -846,7 +846,7 @@ fun SnakeLookPreviewEditor(
                 SettingsSliderRow(
                     title = "Spine width",
                     valueText = spineWidthLabel(spineWidth.number),
-                    detail = "From a thin thread to as wide as the snake",
+                    detail = "0 hides it; full is as wide as the snake",
                     value = spineWidth.number.coerceIn(0f, 1f),
                     range = 0f..1f,
                     steps = 0,

@@ -707,22 +707,26 @@ static void draw_spine_mesh(tenv* env, int bp, float cx, float cy, ImU32 under,
   }
 }
 
-/* Spine width (OM, 2026-10-09): 0 is the thin line it always was, 1 is as
-   wide as the body (`body_w`, the bead's diameter on screen). */
+/* Spine width (OM, 2026-10-09): the slider is a share of the body's width
+   (`body_w`, the bead's diameter on screen): 0 draws nothing, 1 is as wide as
+   the snake, smooth in between. The dark edge is 2 dpi, or as wide as the
+   white line when that is thinner, so a hairline stays a hairline. Up to
+   2 dpi the anti-aliased ImGui line draws it; wider, the skinless mesh. */
 static void draw_snake_spine(tenv* env, int bp, float cx, float cy, float alpha,
                              float body_w, float width) {
   float dpi = snake_line_dpi(env);
-  float thread = 2.0f * dpi;
   float over_w;
+  float edge;
   ImU32 dark = igColorConvertFloat4ToU32((ImVec4){0.0f, 0.0f, 0.0f, 0.35f * alpha});
   ImU32 white = igColorConvertFloat4ToU32((ImVec4){1.0f, 1.0f, 1.0f, 0.8f * alpha});
-  if (!(width > 0.0f) || body_w <= thread) {
-    draw_body_line(env, bp, 1, cx, cy, dark, 4.0f * dpi, white, 2.0f * dpi);
-    return;
-  }
+  if (!(width > 0.0f) || !(body_w > 0.0f)) return;
   if (width > 1.0f) width = 1.0f;
-  over_w = thread + (body_w - thread) * width;
-  draw_spine_mesh(env, bp, cx, cy, dark, over_w + 2.0f * dpi, white, over_w);
+  over_w = body_w * width;
+  edge = over_w < 2.0f * dpi ? over_w : 2.0f * dpi;
+  if (over_w <= 2.0f * dpi)
+    draw_body_line(env, bp, 1, cx, cy, dark, over_w + edge, white, over_w);
+  else
+    draw_spine_mesh(env, bp, cx, cy, dark, over_w + edge, white, over_w);
 }
 
 static void draw_snake_imgui_eyes(tenv* env, snake* o, float fang, float hx,
@@ -2495,8 +2499,10 @@ void redraw(tenv* env) {
    * remain original circles in fd_renderer_render(). */
   usr->r->fdr->pipeline_idx = 0;
 
+  /* About half a second to cross-fade a minimap cell (was ~0.3 s), so a
+     snake's mark glides to its new cells (OM, 2026-10-09). */
   lerp_minimap_float(gdata->data.mm_data_follow, gdata->data.mm_data,
-                     gdata->data.mmsz, 0.05f * gdata->data.vfr);
+                     gdata->data.mmsz, 0.035f * gdata->data.vfr);
 
   minimap_float_to_u8(gdata->data.mm_data_follow, usr->r->mmr->minimap,
                       gdata->data.mmsz);

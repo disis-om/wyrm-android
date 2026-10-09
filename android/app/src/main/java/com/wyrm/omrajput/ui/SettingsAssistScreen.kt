@@ -161,7 +161,7 @@ fun SettingsAssistScreen(
                     SnakeBodyPreview(
                         mode = render?.index ?: 0,
                         spine = spineOn?.enabled == true,
-                        spineWidth = spineWidth?.number ?: 0f,
+                        spineWidth = spineWidth?.number ?: 0.1f,
                         shadow = shadow?.enabled == true,
                         skin = skin,
                         hideCosmetics = hideOn,
@@ -184,7 +184,7 @@ fun SettingsAssistScreen(
                                 SettingsSliderRow(
                                     title = "Spine width",
                                     valueText = spineWidthLabel(setting.number),
-                                    detail = "From a thin thread to as wide as the snake",
+                                    detail = "0 hides it; full is as wide as the snake",
                                     value = setting.number.coerceIn(0f, 1f),
                                     range = 0f..1f,
                                     steps = 0,
@@ -203,7 +203,7 @@ fun SettingsAssistScreen(
                         }
                     }
                 }
-                SettingsCaption("Skinless keeps the plain snake's width and length. Only the skin turns see-through. Spine is a white line down every snake, from a thread to the snake's width. Snake shadow is the original app's shadow under every snake.")
+                SettingsCaption("Skinless keeps the plain snake's width and length. Only the skin turns see-through. Spine is a white line down every snake; its width goes from hidden to the snake's own. Snake shadow is the original app's shadow under every snake.")
 
                 SettingsSectionLabel("Arena colours")
                 SettingsCard {
@@ -435,11 +435,13 @@ private fun SnakeBodyPreview(
                     val first = place(0)
                     path.moveTo(first.x, first.y)
                     for (segment in 1 until total) place(segment).let { path.lineTo(it.x, it.y) }
-                    // 0 is the thread it always was, 1 the body's width (redraw.c).
-                    val thread = 1.7f * px
-                    val over = thread + (scale - thread).coerceAtLeast(0f) * spineWidth.coerceIn(0f, 1f)
-                    drawPath(path, Color.Black.copy(alpha = 0.35f), style = Stroke(width = over + thread, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    drawPath(path, Color.White.copy(alpha = 0.8f), style = Stroke(width = over, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    // A share of the body's width: 0 hides it, 1 is the body (redraw.c).
+                    val over = scale * spineWidth.coerceIn(0f, 1f)
+                    val edge = minOf(over, 1.7f * px)
+                    if (over > 0f) {
+                        drawPath(path, Color.Black.copy(alpha = 0.35f), style = Stroke(width = over + edge, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        drawPath(path, Color.White.copy(alpha = 0.8f), style = Stroke(width = over, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    }
                 }
                 // The head over the spine, as the arena draws its eyes last (Texture
                 // drew its head already; again only when a spine crosses it).
@@ -455,9 +457,9 @@ private fun SnakeBodyPreview(
     }
 }
 
-/** "Thread" at the thin end, "Snake width" at the full end, else a percentage. */
+/** "Hidden" at 0, "Snake width" at the full end, else a percentage. */
 internal fun spineWidthLabel(value: Float): String = when {
-    value <= 0.005f -> "Thread"
+    value <= 0.005f -> "Hidden"
     value >= 0.995f -> "Snake width"
     else -> "${(value * 100f).roundToInt()}%"
 }

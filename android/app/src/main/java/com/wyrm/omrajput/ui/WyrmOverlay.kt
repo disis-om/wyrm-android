@@ -283,6 +283,21 @@ class WyrmOverlay(private val activity: Activity) :
         "wyrm_ui_preferences",
         android.content.Context.MODE_PRIVATE,
     )
+
+    /*
+     * The arena the player chose (OM, 2026-10-09: Home kept showing another
+     * one). Kept here as well as in the engine: until the engine published its
+     * saved address, Home showed the lowest-ping arena and a Play there saved
+     * it; an event, invite or friend's Join also overwrote the choice. Only
+     * the picker (and a Play on what Home showed) changes it now. In
+     * wyrm_ui_preferences, so it follows the account like the rest of it.
+     */
+    private fun chosenArena(): String =
+        uiPreferences.getString(CHOSEN_ARENA, null).orEmpty().takeIf { ArenaDirectory.isValidEndpoint(it) }.orEmpty()
+
+    init {
+        chosenArena().takeIf { it.isNotEmpty() }?.let { arenaLabel = it }
+    }
     private var appTheme by mutableStateOf(
         WyrmThemeId.fromStored(uiPreferences.getString("theme", null)),
     )
@@ -431,6 +446,19 @@ class WyrmOverlay(private val activity: Activity) :
     }
     /** False while the engine holds an arena connection: no extra requests mid-match. */
     private var arenaPortFree = true
+
+    /*
+     * Presence (OM, 2026-10-09; backend presence.mjs): what the player is doing,
+     * said on the live socket when it changes. The engine's screen, whether the
+     * match is Play with AI, the arena of the last online Play, and idle after
+     * two minutes without a touch outside a match.
+     */
+    private var presenceScreen = 0
+    private var presenceAi = false
+    private var presenceArena = ""
+    @Volatile private var lastTouchAt = System.currentTimeMillis()
+    private var presenceIdle = false
+    private var presenceJob: Job? = null
     private var conversations by mutableStateOf<List<Conversation>>(emptyList())
     private var following by mutableStateOf<List<ApiPlayer>>(emptyList())
     private var threadPlayer by mutableStateOf<ApiPlayer?>(null)
@@ -783,6 +811,9 @@ class WyrmOverlay(private val activity: Activity) :
                             insetBottom = insetBottom,
                             backLabel = if (privacyReturn == Route.AUTH) "Back" else "Settings",
                             onBack = { route = privacyReturn },
+                            signedIn = privacyReturn != Route.AUTH && repository.hasSession,
+                            shareActivity = com.wyrm.omrajput.data.FriendPresence.sharing,
+                            onShareActivity = ::applyActivitySharing,
                         )
 
                         Route.HOME -> PlayHome(showRootTabs = false)
@@ -804,6 +835,7 @@ class WyrmOverlay(private val activity: Activity) :
                                     arenaJob?.cancel()
                                     armArenaGate()
                                     enteringArena = false
+                                    presenceAi = true
                                     host?.onEnterAiMode(nickname)
                                 }
                             },
@@ -1141,6 +1173,8 @@ class WyrmOverlay(private val activity: Activity) :
                                 },
                                 onBack = ::leaveChat,
                                 onOpenThread = ::openThread,
+                                activityOf = { com.wyrm.omrajput.data.FriendPresence.of(it) },
+                                onJoin = ::joinFriendArena,
                             )
                         }
 
@@ -1168,6 +1202,8 @@ class WyrmOverlay(private val activity: Activity) :
                             },
                             peer = threadPlayer,
                             onPeer = { threadPlayer?.let { openPlayer(it.id) } },
+                            activity = com.wyrm.omrajput.data.FriendPresence.of(threadPlayer?.id),
+                            onJoin = ::joinFriendArena,
                         )
 
                         Route.PLAYER -> {
@@ -1223,6 +1259,8 @@ class WyrmOverlay(private val activity: Activity) :
                             insetBottom = insetBottom,
                             onBack = { route = connectionsReturn },
                             onOpenPlayer = ::openPlayer,
+                            activityOf = { com.wyrm.omrajput.data.FriendPresence.of(it) },
+                            onJoin = ::joinFriendArena,
                         )
 
                         Route.TEAM -> TeamScreen(
@@ -1873,6 +1911,8 @@ class WyrmOverlay(private val activity: Activity) :
 
                     // Where the player is, for a crash report.
                     LaunchedEffect(route) {
+                        // Friends' activity is fresh whenever a list of them opens.
+                        if (route in FRIEND_ROUTES) com.wyrm.omrajput.data.FriendPresence.refresh(repository)
                         // A tried skin lives only on the Skin tab: leaving it is "Back to mine".
                         if (route != Route.SKIN) skinTrial = null
                         com.wyrm.omrajput.data.CrashWatch.screen = route.name
@@ -5498,7 +5538,9 @@ class WyrmOverlay(private val activity: Activity) :
             recordFinishedRun(score, kills)
             val playerId = profile.id
             if (repository.hasSession && playerId.isNotBlank()) {
-                pendingRuns.enqueue(playerId, score, kills)
+                // How long it lasted and where (2026-10-09), for the Observatory.
+                val durationMs = if (seconds.isFinite() && seconds >= 0) (seconds * 1000).toLong() else -1L
+                pendingRuns.enqueue(playerId, score, kills, durationMs, if (presenceAi) "" else presenceArena)
                 flushPendingRuns()
             }
         }
@@ -5586,7 +5628,7 @@ class WyrmOverlay(private val activity: Activity) :
     private suspend fun sendRuns(chunk: List<com.wyrm.omrajput.data.PendingRun>): List<ServerNotification> {
         if (runBatchSupported && chunk.size > 1) {
             val batch = runCatching {
-                repository.reportRuns(chunk.map { Triple(it.eventId, it.score, it.kills) })
+                repository.reportRuns(chunk)
             }
             batch.onSuccess { (done, earned) ->
                 pendingRuns.removeAll(done.ifEmpty { chunk.map { it.eventId } })
@@ -5600,7 +5642,7 @@ class WyrmOverlay(private val activity: Activity) :
         }
         val earned = mutableListOf<ServerNotification>()
         for (run in chunk) {
-            val single = runCatching { repository.reportRun(run.eventId, run.score, run.kills) }
+            val single = runCatching { repository.reportRun(run) }
             single.onSuccess {
                 pendingRuns.remove(run.eventId)
                 earned += it
@@ -5883,6 +5925,7 @@ class WyrmOverlay(private val activity: Activity) :
             it.endpoint.equals(address, ignoreCase = true)
         }
         host?.onSelectArena(address)
+        if (ArenaDirectory.isValidEndpoint(address)) uiPreferences.edit().putString(CHOSEN_ARENA, address).apply()
         arenaState = arenaState.copy(selected = address)
         arenaLabel = address
         lobbyArena = selected
@@ -6034,6 +6077,7 @@ class WyrmOverlay(private val activity: Activity) :
      * replacement.
      */
     private fun acceptPlayer(player: ApiPlayer) {
+        com.wyrm.omrajput.data.FriendPresence.sharing = player.shareActivity
         socialCache.switchAccount(player.id)
         socialCache.saveProfile(player)
         profileUpdatedAt = System.currentTimeMillis()
@@ -6382,6 +6426,10 @@ class WyrmOverlay(private val activity: Activity) :
         PlayFeelStore.reload(activity)
         TeamHudStore.reload(activity)
         NearOriginalStore.reload(activity)
+        chosenArena().takeIf { it.isNotEmpty() }?.let {
+            arenaLabel = it
+            host?.onSelectArena(it)
+        }
         appTheme = WyrmThemeId.fromStored(uiPreferences.getString("theme", null))
         themeIntensity = uiPreferences.getFloat("theme_intensity", 0.5f).coerceIn(0f, 1f)
         Wyrm.applyTheme(appTheme, themeIntensity)
@@ -6648,6 +6696,7 @@ class WyrmOverlay(private val activity: Activity) :
         whatsNewState = null
         // Nothing of one account is shown to the next.
         TrailsStore.reset()
+        com.wyrm.omrajput.data.FriendPresence.reset()
         com.wyrm.omrajput.data.BadgeStore.reset()
         com.wyrm.omrajput.data.SupportStore.reset()
         com.wyrm.omrajput.data.DropWatch.dismissPrompt()
@@ -7038,8 +7087,11 @@ class WyrmOverlay(private val activity: Activity) :
         lobbyJob?.cancel()
         stopArenaProbes()
         armArenaGate()
+        presenceAi = false
+        presenceArena = target
         val attemptId = SystemClock.elapsedRealtimeNanos()
-        if (target != arenaLabel) selectArena(target)
+        // An event, invite or friend's arena is entered, not chosen: Home keeps
+        // the player's own choice (the engine is handed the address directly).
         /*
          * Asked for immediately.
          *
@@ -7291,9 +7343,11 @@ class WyrmOverlay(private val activity: Activity) :
 
     fun updateArena(label: String, online: Boolean) {
         activity.runOnUiThread {
-            arenaLabel = label
+            // The engine's address follows the last arena entered; Home shows the chosen one.
+            val shown = chosenArena().ifEmpty { label }
+            arenaLabel = shown
             lobbyArena = arenaState.arenas.firstOrNull {
-                it.endpoint.equals(label, ignoreCase = true)
+                it.endpoint.equals(shown, ignoreCase = true)
             }
             arenaOnline = online
         }
@@ -7355,7 +7409,29 @@ class WyrmOverlay(private val activity: Activity) :
 
     private fun startLiveInbox() {
         if (!repository.hasSession) return
+        com.wyrm.omrajput.data.FriendPresence.arenaName = { endpoint ->
+            arenaState.arenas.firstOrNull { it.endpoint == endpoint }?.let { "Arena ${it.iosCode()}" } ?: endpoint
+        }
+        lastTouchAt = System.currentTimeMillis()
+        presenceIdle = false
+        pushPresence()
         liveInbox.start()
+        // Idle after two quiet minutes outside a match; friends' activity every
+        // 30 s while a list of them is open.
+        if (presenceJob?.isActive != true) {
+            presenceJob = scope.launch {
+                var tick = 0
+                while (activityResumed && repository.hasSession) {
+                    delay(15_000L)
+                    val idle = presenceScreen != SCREEN_PLAYING && System.currentTimeMillis() - lastTouchAt > IDLE_AFTER_MS
+                    if (idle != presenceIdle) {
+                        presenceIdle = idle
+                        pushPresence()
+                    }
+                    if (++tick % 2 == 0 && route in FRIEND_ROUTES) com.wyrm.omrajput.data.FriendPresence.refresh(repository)
+                }
+            }
+        }
         refreshGlobalUnread()
         // Belt and braces: while the Notifications page is open it also asks every 15 s.
         // Global chat's count is looked at every 45 s, never mid-match.
@@ -7371,7 +7447,60 @@ class WyrmOverlay(private val activity: Activity) :
         }
     }
 
+    /** The engine changed screen (WyrmActivity.setScreenFromNative). */
+    fun onPresenceScreen(screen: Int) {
+        activity.runOnUiThread {
+            presenceScreen = screen
+            lastTouchAt = System.currentTimeMillis()
+            presenceIdle = false
+            pushPresence()
+        }
+    }
+
+    /** Any touch (WyrmActivity.dispatchTouchEvent): not idle. */
+    fun onUserTouch() {
+        lastTouchAt = System.currentTimeMillis()
+        if (presenceIdle) {
+            presenceIdle = false
+            activity.runOnUiThread { pushPresence() }
+        }
+    }
+
+    private fun pushPresence() {
+        val playing = presenceScreen == SCREEN_PLAYING
+        val state = when {
+            playing && presenceAi -> "practice"
+            playing -> "playing"
+            presenceIdle -> "idle"
+            presenceScreen == SCREEN_LOBBY || route == Route.LOBBY -> "lobby"
+            else -> "home"
+        }
+        liveInbox.setPresence(state, if (state == "playing") presenceArena.takeIf { ArenaDirectory.isValidEndpoint(it) } else null)
+    }
+
+    /** "Join" on a friend's activity: the same entry as an arena invite. */
+    private fun joinFriendArena(address: String) {
+        if (ArenaDirectory.isValidEndpoint(address)) requestArenaEntry(address)
+    }
+
+    /** Settings › Privacy › Show my activity to friends; undone if the server says no. */
+    private fun applyActivitySharing(share: Boolean) {
+        val presence = com.wyrm.omrajput.data.FriendPresence
+        val before = presence.sharing
+        presence.sharing = share
+        scope.launch {
+            runCatching { repository.setActivitySharing(share) }
+                .onSuccess {
+                    presence.sharing = it
+                    presence.refresh(repository, force = true)
+                }
+                .onFailure { presence.sharing = before }
+        }
+    }
+
     private fun stopLiveInbox() {
+        presenceJob?.cancel()
+        presenceJob = null
         liveInbox.stop()
         inboxPollJob?.cancel()
         inboxPollJob = null
@@ -7415,6 +7544,17 @@ class WyrmOverlay(private val activity: Activity) :
         voiceHud = null
     }
 }
+
+/* Presence (2026-10-09): the engine's screens (WyrmActivity.SCREEN_*), idle
+   after two quiet minutes, and the pages that show friends' activity. */
+private const val SCREEN_PLAYING = 2
+private const val CHOSEN_ARENA = "chosen_arena"
+private const val SCREEN_LOBBY = 3
+private const val IDLE_AFTER_MS = 120_000L
+private val FRIEND_ROUTES = setOf(
+    WyrmOverlay.Route.CHAT, WyrmOverlay.Route.THREAD, WyrmOverlay.Route.CONNECTIONS,
+    WyrmOverlay.Route.SOCIAL, WyrmOverlay.Route.PLAYER,
+)
 
 private fun ApiPlayer.toWyrmProfile(): WyrmProfile = WyrmProfile(
     id = id,

@@ -517,6 +517,13 @@ public final class WyrmActivity extends SDLActivity {
         intent.removeExtra("wyrm.address");
     }
 
+    /** Any touch keeps presence from going idle (2026-10-09). */
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        if (overlay != null) overlay.onUserTouch();
+        return super.dispatchTouchEvent(event);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
@@ -758,6 +765,7 @@ public final class WyrmActivity extends SDLActivity {
                     ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
             if (activity.overlay != null) {
+                activity.overlay.onPresenceScreen(screen);
                 // A run is starting: the last one can no longer be shared.
                 if (screen == SCREEN_PLAYING) activity.overlay.clearLastRun();
                 if (isLobby) {

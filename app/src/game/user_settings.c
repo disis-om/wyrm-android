@@ -164,8 +164,8 @@ void user_settings_ext_default(user_settings_ext* x) {
   x->eyes_back_scale = 1.0f;
   x->eyes_back_opacity = 0.82f;
   x->eyes_back_visible = false;
-  x->spine_width[0] = 0.0f;
-  x->spine_width[1] = 0.0f;
+  x->spine_width[0] = 0.1f;
+  x->spine_width[1] = 0.1f;
   x->snake_shadow[0] = false;
   x->snake_shadow[1] = false;
 }
@@ -241,9 +241,9 @@ bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
   fixed |= ext_take_bool(&ext->eyes_back_visible,
                          written >= eb_visible_at + 1);
   fixed |= ext_take_float(&ext->spine_width[0], written >= spine_w_at + 4,
-                          0.0f, 1.0f, 0.0f);
+                          0.0f, 1.0f, 0.1f);
   fixed |= ext_take_float(&ext->spine_width[1], written >= spine_w_at + 8,
-                          0.0f, 1.0f, 0.0f);
+                          0.0f, 1.0f, 0.1f);
   fixed |= ext_take_bool(&ext->snake_shadow[0], written >= shadow_at + 1);
   fixed |= ext_take_bool(&ext->snake_shadow[1], written >= shadow_at + 2);
   /* A longer tail belongs to a newer build. Do not shrink it just to rewrite

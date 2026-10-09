@@ -1022,7 +1022,7 @@ internal fun TrailStudioScreen(
         if (sharing && input != null) {
             // A shared run says whether the skin goes with it; the skin only when it does.
             TrailsStore.post(image, draft.caption,
-                if (shareSkin) input.skin.toTrailSkin(input.look, SkinCatalog.tags.getOrNull(input.tagId)?.ntlId?.takeIf { !isWyrmTag(it) } ?: -1) else null,
+                if (shareSkin) input.skin.toTrailSkin(input.look, SkinCatalog.tags.getOrNull(input.tagId)?.ntlId ?: -1) else null,
                 shareSkin)
             onPosted()
         } else {

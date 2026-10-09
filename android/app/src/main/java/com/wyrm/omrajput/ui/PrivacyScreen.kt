@@ -43,6 +43,10 @@ fun PrivacyScreen(
     insetBottom: Dp,
     backLabel: String = "Back",
     onBack: () -> Unit,
+    /** Signed in from Settings: the activity switch shows (2026-10-09). */
+    signedIn: Boolean = false,
+    shareActivity: Boolean = true,
+    onShareActivity: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val document by produceState(initialValue = emptyList<Block>(), context) {
@@ -56,12 +60,26 @@ fun PrivacyScreen(
         insetBottom = insetBottom,
         onBack = onBack,
     ) {
+        if (signedIn) {
+            SettingsSectionLabel("Activity", top = 18.dp)
+            SettingsCard {
+                Box(Modifier.settingAnchor("app.share-activity")) {
+                    SettingsBoolRow(
+                        title = "Show my activity to friends",
+                        detail = "Friends who follow you back see when you are on Wyrm and which arena you play in. Off, you don't see theirs either.",
+                        on = shareActivity,
+                        first = true,
+                        onToggle = onShareActivity,
+                    )
+                }
+            }
+        }
         SettingsSectionLabel("What Wyrm keeps", top = 18.dp)
         SettingsCard {
             SettingsValueRow("Stored on this phone", "Team ID, auth key, all settings", first = true)
-            SettingsValueRow("Stored on the server", "Name, username, photo, bio, scores", first = false)
+            SettingsValueRow("Stored on the server", "Name, username, photo, bio, scores, when you play", first = false)
             SettingsValueRow("Chat retention", "Global 24 hours · direct until deleted", first = false)
-            SettingsValueRow("Analytics", "Crash reports only", first = false)
+            SettingsValueRow("Analytics", "Crash reports, when you play", first = false)
         }
         SettingsSectionLabel("The policy")
         Column(modifier = Modifier.padding(horizontal = 20.dp)) {

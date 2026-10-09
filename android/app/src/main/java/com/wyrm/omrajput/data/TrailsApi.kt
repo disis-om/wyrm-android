@@ -85,10 +85,14 @@ data class TrailSkin(
             .put("hairTone", Math.round(look.hairTone.coerceIn(0f, 1f) * 10000.0) / 10000.0)
             .put("ears", look.ears.coerceIn(-1, 255))
             .put("glasses", look.glasses.coerceIn(-1, 255)))
-        .apply { if (tag in 0..65535) put("tag", tag) }
+        .apply { if (validTag(tag)) put("tag", tag) }
 
     companion object {
         private val HEX8 = Regex("^[0-9A-Fa-f]{8}$")
+
+        /** NTL's tags in NTL's numbering, Wyrm's own as 100000 + their number
+         *  (0-255), the same rule as the backend (2026-10-09). */
+        fun validTag(tag: Int): Boolean = tag in 0..65535 || tag in 100_000..100_255
 
         /** Another player's JSON, checked and clamped; anything unreadable is no skin at all. */
         fun from(json: JSONObject?): TrailSkin? {
@@ -112,7 +116,7 @@ data class TrailSkin(
                     ears = slot(look?.optInt("ears", -1) ?: -1),
                     glasses = slot(look?.optInt("glasses", -1) ?: -1),
                 ),
-                tag = json.optInt("tag", -1).takeIf { it in 0..65535 } ?: -1,
+                tag = json.optInt("tag", -1).takeIf { validTag(it) } ?: -1,
             )
         }
     }

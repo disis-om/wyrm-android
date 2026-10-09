@@ -23,6 +23,13 @@ def between(text, start, end):
 
 
 core = between(src, "#define EB_EPS 8.0f", "static void eb_send(")
+# The tick itself: NTL runs NTL_EB.tick under its 33 ms send gate (`33<ab-qc`),
+# so eb_send must use ARENA_EYES_BACK_MS = 33, not the web aim gate (2026-10-09).
+send = between(src, "static void eb_send(", "static void eyes_back_toggle(")
+assert "last_e_mtm > ARENA_EYES_BACK_MS)) return;" in send, "eb_send is not on the Eyes Back gate"
+proto = (W / SRC.replace("game/input.c", "network/arena_protocol.h")).read_text(encoding="utf-8")
+assert "ARENA_EYES_BACK_MS = 33" in proto, "ARENA_EYES_BACK_MS is not 33 ms"
+print("gate: eb_send ticks every 33 ms like NTL")
 heading = between(src, "void eyes_back_heading(float ang, float now) {", "static void input_with_policy(")
 
 PRE = r'''

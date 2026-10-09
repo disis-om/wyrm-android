@@ -93,6 +93,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.wyrm.omrajput.data.ApiPlayer
 import com.wyrm.omrajput.data.ChatMessage
 import com.wyrm.omrajput.data.Conversation
+import com.wyrm.omrajput.data.FriendActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.DateFormat
@@ -294,10 +295,18 @@ private fun PlayerRankRow(rank: Int, player: ApiPlayer, value: Long, onClick: ()
 }
 
 @Composable
-private fun PersonText(name: String, handle: String, modifier: Modifier = Modifier) {
+private fun PersonText(
+    name: String,
+    handle: String,
+    modifier: Modifier = Modifier,
+    activity: FriendActivity? = null,
+    onJoin: ((String) -> Unit)? = null,
+) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = Wyrm.Ink, maxLines = 1)
-        if (handle.isNotEmpty()) Text(handle, fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet, maxLines = 1)
+        val shows = activity != null && (activity.online || activity.lastArena != null)
+        if (shows) FriendActivityLine(activity, fontSize = 11.sp, onJoin = onJoin)
+        else if (handle.isNotEmpty()) Text(handle, fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet, maxLines = 1)
     }
 }
 
@@ -318,6 +327,9 @@ fun IosMessagesScreen(
     onRefresh: () -> Unit,
     onBack: () -> Unit,
     onOpenThread: (ApiPlayer) -> Unit,
+    /** Friends' activity (2026-10-09): online dot and "Playing in …" with Join. */
+    activityOf: (String) -> FriendActivity? = { null },
+    onJoin: ((String) -> Unit)? = null,
 ) {
     IosPageChrome("Messages", insetTop, onBack) {
         IosRefreshable(refreshing, onRefresh, Modifier.weight(1f)) {
@@ -325,14 +337,38 @@ fun IosMessagesScreen(
                 IosSectionLabel("Conversations")
                 IosPaperCard {
                     if (conversations.isEmpty()) IosEmptyPanel("No messages yet", "Mutual follows can start a private conversation.")
-                    conversations.forEach { row ->
-                        IosListRow(
-                            title = row.player.displayName,
-                            detail = row.lastMessage.ifEmpty { "No messages yet" },
-                            value = if (row.unread > 0) "${row.unread}" else "",
-                            glyph = IosGlyph.PERSON_CIRCLE,
-                            tint = Wyrm.Link,
-                        ) { onOpenThread(row.player) }
+                    // Instagram's inbox (2026-10-09): their face (green dot while
+                    // Wyrm is open), name, the last message or the arena they play in.
+                    conversations.forEachIndexed { index, row ->
+                        if (index > 0) RowRule(start = 70.dp)
+                        val activity = activityOf(row.player.id)
+                        val unread = row.unread > 0
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 64.dp)
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onOpenThread(row.player) }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            WyrmAvatar(row.player.avatarUrl, row.player.avatarKey, initialsOf(row.player.displayName), 44.dp,
+                                online = activity?.online == true)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(row.player.displayName, fontFamily = Wyrm.Body,
+                                    fontWeight = if (unread) FontWeight.Bold else FontWeight.SemiBold,
+                                    fontSize = 15.sp, color = Wyrm.Ink, maxLines = 1)
+                                if (activity?.playing == true) FriendActivityLine(activity, fontSize = 11.5.sp, onJoin = onJoin)
+                                else Text(
+                                    row.lastMessage.ifEmpty { "No messages yet" },
+                                    fontFamily = Wyrm.Body, fontSize = 12.5.sp,
+                                    fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (unread) Wyrm.Ink else Wyrm.Quiet,
+                                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                            }
+                            WyrmCountBadge(row.unread.toInt())
+                        }
                     }
                 }
                 if (candidates.isNotEmpty()) {
@@ -348,8 +384,10 @@ fun IosMessagesScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
-                                WyrmAvatar(person.avatarUrl, person.avatarKey, initialsOf(person.displayName), 35.dp)
-                                PersonText(person.displayName, person.handle, Modifier.weight(1f))
+                                val activity = activityOf(person.id)
+                                WyrmAvatar(person.avatarUrl, person.avatarKey, initialsOf(person.displayName), 35.dp,
+                                    online = activity?.online == true)
+                                PersonText(person.displayName, person.handle, Modifier.weight(1f), activity, onJoin)
                                 IosIcon(IosGlyph.MESSAGE, Wyrm.Link, size = 20.dp)
                             }
                         }
@@ -385,6 +423,9 @@ fun IosThreadScreen(
     onBack: () -> Unit,
     peer: ApiPlayer? = null,
     onPeer: () -> Unit = {},
+    /** The other player's activity (2026-10-09), "Active now" / "Playing in …" + Join. */
+    activity: FriendActivity? = null,
+    onJoin: ((String) -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
         Row(
@@ -409,12 +450,15 @@ fun IosThreadScreen(
                     avatarKey = peer?.avatarKey ?: "mono-ink",
                     initial = initialsOf(peer?.displayName ?: title),
                     size = 34.dp,
+                    online = activity?.online == true,
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Text(peer?.displayName ?: title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
                         color = Wyrm.Ink, maxLines = 1)
                     val handle = peer?.username.orEmpty()
-                    if (handle.isNotEmpty()) {
+                    if (activity != null && (activity.online || activity.lastArena != null)) {
+                        FriendActivityLine(activity, fontSize = 11.5.sp, onJoin = onJoin)
+                    } else if (handle.isNotEmpty()) {
                         Text("@$handle", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet, maxLines = 1)
                     }
                 }
@@ -1068,6 +1112,8 @@ fun IosConnectionsScreen(
     insetBottom: Dp,
     onBack: () -> Unit,
     onOpenPlayer: (String) -> Unit,
+    activityOf: (String) -> FriendActivity? = { null },
+    onJoin: ((String) -> Unit)? = null,
 ) {
     val pager = rememberPagerState(initialPage = initialPage) { 2 }
     val scope = rememberCoroutineScope()
@@ -1100,8 +1146,10 @@ fun IosConnectionsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            WyrmAvatar(person.avatarUrl, person.avatarKey, initialsOf(person.displayName), 36.dp)
-                            PersonText(person.displayName, person.handle, Modifier.weight(1f))
+                            val activity = activityOf(person.id)
+                            WyrmAvatar(person.avatarUrl, person.avatarKey, initialsOf(person.displayName), 36.dp,
+                                online = activity?.online == true)
+                            PersonText(person.displayName, person.handle, Modifier.weight(1f), activity, onJoin)
                             IosIcon(IosGlyph.CHEVRON_RIGHT, Wyrm.Chevron, size = 12.dp, weight = 2.6f)
                         }
                     }

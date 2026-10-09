@@ -69,7 +69,8 @@ static void draw_last_death(tenv* env, float left, float top, float diameter) {
   float core = diameter * 0.016f;
   if (core < 2.4f) core = 2.4f;
   if (core > 4.0f) core = 4.0f;
-  float ring = core + 3.2f;
+  /* A clear gap between the dot and the ring (OM, 2026-10-09). */
+  float ring = core + 6.0f;
   ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
   ImU32 shade = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.60f});
   ImU32 red = igColorConvertFloat4ToU32((ImVec4){1.0f, 0.302f, 0.302f, 1.0f});
@@ -726,7 +727,12 @@ static void wyrm_draw_minimap(tenv* env, ImDrawList* draw, float left,
   ImDrawList_AddLine(draw, (ImVec2){c.x, c.y - R * 0.92f}, (ImVec2){c.x, c.y + R * 0.92f}, faint, 1.0f);
   ImDrawList_AddCircle(draw, c, R * 0.45f, faint, 48, 1.0f);
 
-  /* The cells: eased values in six steps, one rect per run of a step. */
+  /* The cells (OM, 2026-10-09: snakes glide across the map instead of
+     jumping). A cell's eased value (mm_data_follow, 0-255) is its opacity,
+     smoothstepped, and it is drawn as a soft round blob a little wider than
+     the cell, so the cell fading out and its neighbour fading in overlap into
+     one mark that moves. The six steps before read the 0-255 value as 0-1: a
+     new cell showed at full at once and an old one hung on, then vanished. */
   int mmsz = gdata->data.mmsz;
   if (mmsz > MAX_MINIMAP_SIZE) mmsz = MAX_MINIMAP_SIZE;
   if (mmsz > 0) {
@@ -734,24 +740,18 @@ static void wyrm_draw_minimap(tenv* env, ImDrawList* draw, float left,
     float cell = span / mmsz;
     float ox = c.x - R * 0.9f;
     float oy = c.y - R * 0.9f;
+    float blob = cell * 0.82f;
+    if (blob < 1.2f) blob = 1.2f;
     for (int y = 0; y < mmsz; ++y) {
       const float* row = gdata->data.mm_data_follow + y * MAX_MINIMAP_SIZE;
-      int x = 0;
-      while (x < mmsz) {
-        int level = (int)(row[x] * 6.0f + 0.5f);
-        if (level <= 0) { ++x; continue; }
-        if (level > 6) level = 6;
-        int start = x;
-        while (x < mmsz) {
-          int next = (int)(row[x] * 6.0f + 0.5f);
-          if (next > 6) next = 6;
-          if (next != level) break;
-          ++x;
-        }
-        ImDrawList_AddRectFilled(
-            draw, (ImVec2){ox + start * cell, oy + y * cell},
-            (ImVec2){ox + x * cell, oy + (y + 1) * cell},
-            igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.62f * level / 6.0f}), 0, 0);
+      for (int x = 0; x < mmsz; ++x) {
+        float v = row[x] / 255.0f;
+        if (v <= 0.02f) continue;
+        if (v > 1.0f) v = 1.0f;
+        v = v * v * (3.0f - 2.0f * v);
+        ImDrawList_AddCircleFilled(
+            draw, (ImVec2){ox + (x + 0.5f) * cell, oy + (y + 0.5f) * cell}, blob,
+            igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.62f * v}), 10);
       }
     }
   }
@@ -768,9 +768,9 @@ static void wyrm_draw_minimap(tenv* env, ImDrawList* draw, float left,
       if (reach > 1.0f) { nx /= reach; ny /= reach; }
       ImVec2 p = {c.x + nx * R * 0.9f, c.y + ny * R * 0.9f};
       float dx = cosf(me->ehang), dy = sinf(me->ehang);
-      /* Half the size it was (OM, 2026-10-06). */
-      float s = R * 0.0425f;
-      if (s < 2.5f) s = 2.5f;
+      /* Half the size it was (OM, 2026-10-06), then 30% bigger (2026-10-09). */
+      float s = R * 0.05525f;
+      if (s < 3.25f) s = 3.25f;
       for (int pass = 0; pass < 2; ++pass) {
         float k = pass == 0 ? s * 1.45f : s;
         ImVec2 tip = {p.x + dx * k * 1.25f, p.y + dy * k * 1.25f};

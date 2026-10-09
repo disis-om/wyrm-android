@@ -112,10 +112,10 @@ static const setting_desc GLOBAL_FIELDS[] = {
      "A thin white line down the middle of every snake.", SETTING_BOOL, 0, 1,
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.spine[1])},
     {"normal.spine_width", "normal", "Spine width",
-     "From a thin thread to as wide as the snake.", SETTING_FLOAT, 0, 1,
+     "0 hides it; full is as wide as the snake.", SETTING_FLOAT, 0, 1,
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.spine_width[0])},
     {"assist.spine_width", "assist", "Spine width",
-     "From a thin thread to as wide as the snake.", SETTING_FLOAT, 0, 1,
+     "0 hides it; full is as wide as the snake.", SETTING_FLOAT, 0, 1,
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.spine_width[1])},
     {"normal.snake_shadow", "normal", "Snake shadow",
      "The soft shadow the original app draws under every snake.",
@@ -267,6 +267,8 @@ static const setting_desc GLOBAL_FIELDS[] = {
     KEY_APPEARANCE(7),
     KEY_APPEARANCE(8),
     KEY_APPEARANCE(9),
+    /* Auto restart (OM, 2026-10-09: its size and opacity sliders did nothing). */
+    KEY_APPEARANCE(14),
 #undef KEY_APPEARANCE
     /* Eyes Back (OM, 2026-10-06): action 15's size and opacity live in the
        ext block, under the same ids the layout editor builds for any key. */

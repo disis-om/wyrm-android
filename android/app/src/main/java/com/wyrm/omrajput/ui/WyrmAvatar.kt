@@ -7,6 +7,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -50,6 +53,8 @@ fun WyrmAvatar(
     size: Dp,
     modifier: Modifier = Modifier,
     corner: Dp = size * 0.30f,
+    /** A friend with Wyrm open (2026-10-09): a green dot on the corner. */
+    online: Boolean = false,
 ) {
     var image by remember(url) { mutableStateOf(AvatarImages.peek(url)) }
 
@@ -57,9 +62,10 @@ fun WyrmAvatar(
         image = if (url.isBlank()) null else AvatarImages.load(url)
     }
 
+    Box(modifier.size(size)) {
     Box(
-        modifier = modifier
-            .size(size)
+        modifier = Modifier
+            .fillMaxSize()
             .clip(wyrmRounded(corner))
             .then(
                 if (image == null) Modifier.background(avatarBrushFor(avatarKey))
@@ -84,6 +90,21 @@ fun WyrmAvatar(
                 color = Wyrm.Black,
             )
         }
+    }
+    if (online) {
+        val dot = (size * 0.27f).coerceIn(9.dp, 16.dp)
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = dot * 0.18f, y = dot * 0.18f)
+                .size(dot)
+                .clip(CircleShape)
+                .background(Wyrm.Card)
+                .padding(dot * 0.16f)
+                .clip(CircleShape)
+                .background(Wyrm.Live),
+        )
+    }
     }
 }
 

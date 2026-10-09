@@ -35,6 +35,22 @@ internal class LiveInbox(
     @Volatile private var running = false
     private var failures = 0
     private val pendingKinds = mutableMapOf<String, String>()
+    /** The last presence said (2026-10-09), said again after every reconnect. */
+    @Volatile private var presence: String? = null
+
+    /**
+     * What the player is doing (backend presence.mjs): home, lobby, playing
+     * with the arena, practice or idle. Sent when it changes; a reconnect
+     * repeats the last one.
+     */
+    fun setPresence(state: String, arena: String?) {
+        val json = JSONObject().put("type", "presence").put("state", state).put("platform", "android")
+            .apply { if (state == "playing" && !arena.isNullOrBlank()) put("arena", arena) }
+            .toString()
+        if (json == presence) return
+        presence = json
+        socket?.send(json)
+    }
 
     fun start() {
         if (running) return
@@ -70,7 +86,10 @@ internal class LiveInbox(
             val event = runCatching { JSONObject(text) }.getOrNull() ?: return
             when (event.optString("type")) {
                 // A reconnect may have missed something: one catch-up refresh.
-                "live.ready" -> scope.launch { onInbox("", "") }
+                "live.ready" -> {
+                    presence?.let { webSocket.send(it) }
+                    scope.launch { onInbox("", "") }
+                }
                 "inbox" -> {
                     // A burst (a broadcast, several follows) becomes one refresh per kind.
                     synchronized(pendingKinds) { pendingKinds[event.optString("kind")] = event.optString("id") }

@@ -48,6 +48,8 @@ data class ApiPlayer(
     val followsYou: Boolean = false,
     /** Direct messages need both people to follow each other. */
     val canMessage: Boolean = false,
+    /** "Show my activity to friends" (2026-10-09); only /v1/me says it. */
+    val shareActivity: Boolean = true,
 ) {
     val isDeleted: Boolean get() = deletedAt.isNotEmpty()
     val handle: String get() = if (username.isNullOrBlank()) "" else "@$username"
@@ -71,6 +73,51 @@ data class ChatMessage(
     val authorAvatarKey: String,
     val authorDeleted: Boolean = false,
 )
+
+/** A finished run waiting for the account backend to acknowledge it. */
+data class PendingRun(
+    val eventId: String,
+    val playerId: String,
+    val score: Int,
+    val kills: Int,
+    /** How long the run lasted, -1 unknown (runs queued before 2026-10-09). */
+    val durationMs: Long = -1,
+    /** The arena ("ip:port") it was played in; blank for Play with AI or unknown. */
+    val arena: String = "",
+) {
+    /** The body /v1/me/stats takes; length and arena only when known. */
+    fun toStatsJson(): JSONObject = JSONObject()
+        .put("eventId", eventId)
+        .put("score", score)
+        .put("kills", kills)
+        .apply {
+            if (durationMs >= 0) put("durationMs", durationMs.coerceAtMost(24L * 3_600_000L))
+            if (ArenaDirectory.isValidEndpoint(arena)) put("arena", arena)
+        }
+}
+
+/**
+ * A mutual follow's activity (OM, 2026-10-09; backend `presence.mjs`):
+ * online (the app open on screen), the arena they play in, or the last one
+ * they played in and when. Only for friends who share it, and only while you
+ * share yours.
+ */
+data class FriendActivity(
+    val playerId: String,
+    val online: Boolean,
+    /** "playing", "online", "idle" or "offline". */
+    val state: String,
+    val arena: String?,
+    val sinceMs: Long?,
+    val lastArena: String?,
+    val lastPlayedAtMs: Long?,
+    /** When this phone fetched it, so "12 min" keeps counting between fetches. */
+    val fetchedAt: Long,
+) {
+    val playing: Boolean get() = online && state == "playing" && !arena.isNullOrBlank()
+
+    fun sinceNow(now: Long = System.currentTimeMillis()): Long? = sinceMs?.let { it + (now - fetchedAt) }
+}
 
 data class Conversation(
     val player: ApiPlayer,
@@ -284,14 +331,11 @@ class WyrmRepository(context: Context, baseUrl: String) {
             }
         }
 
-    suspend fun reportRun(eventId: String, score: Int, kills: Int): List<ServerNotification> = withContext(Dispatchers.IO) {
+    suspend fun reportRun(run: PendingRun): List<ServerNotification> = withContext(Dispatchers.IO) {
         val response = call(
             path = "/v1/me/stats",
             method = "POST",
-            body = JSONObject()
-                .put("eventId", eventId)
-                .put("score", score)
-                .put("kills", kills),
+            body = run.toStatsJson(),
         )
         val earned = response.optJSONArray("achievements")
         buildList {
@@ -307,12 +351,10 @@ class WyrmRepository(context: Context, baseUrl: String) {
      * server answered for, plus every achievement earned. A server without
      * the route answers 404; the caller then sends them one by one.
      */
-    suspend fun reportRuns(runs: List<Triple<String, Int, Int>>): Pair<List<String>, List<ServerNotification>> =
+    suspend fun reportRuns(runs: List<PendingRun>): Pair<List<String>, List<ServerNotification>> =
         withContext(Dispatchers.IO) {
             val body = JSONObject().put("runs", JSONArray().apply {
-                runs.forEach { (eventId, score, kills) ->
-                    put(JSONObject().put("eventId", eventId).put("score", score).put("kills", kills))
-                }
+                runs.forEach { put(it.toStatsJson()) }
             })
             val response = call(path = "/v1/me/stats/batch", method = "POST", body = body)
             val results = response.optJSONArray("results")
@@ -477,6 +519,41 @@ class WyrmRepository(context: Context, baseUrl: String) {
     /* ------------------------------------------------- badges and support */
 
     /** The ten profile badges (`backend/src/badges.mjs`). */
+    /**
+     * Friends' activity (2026-10-09): `sharing` is false when this account has
+     * "Show my activity to friends" off, and then the list is empty too.
+     */
+    suspend fun friendsPresence(): Pair<Boolean, List<FriendActivity>> = withContext(Dispatchers.IO) {
+        val json = call("/v1/friends/presence")
+        val now = System.currentTimeMillis()
+        val rows = json.optJSONArray("friends")
+        json.optBoolean("sharing", true) to buildList {
+            for (index in 0 until (rows?.length() ?: 0)) {
+                val row = rows!!.optJSONObject(index) ?: continue
+                val id = row.optString("playerId").takeIf { it.isNotBlank() } ?: continue
+                fun text(key: String) = row.optString(key).takeIf { it.isNotBlank() && it != "null" }
+                add(FriendActivity(
+                    playerId = id,
+                    online = row.optBoolean("online", false),
+                    state = row.optString("state", "offline"),
+                    arena = text("arena"),
+                    sinceMs = if (row.isNull("sinceMs")) null else row.optLong("sinceMs"),
+                    lastArena = text("lastArena"),
+                    lastPlayedAtMs = text("lastPlayedAt")?.let {
+                        runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
+                    },
+                    fetchedAt = now,
+                ))
+            }
+        }
+    }
+
+    /** Turns "Show my activity to friends" on or off for the account. */
+    suspend fun setActivitySharing(share: Boolean): Boolean = withContext(Dispatchers.IO) {
+        call("/v1/me/activity-sharing", method = "PUT", body = JSONObject().put("share", share))
+            .optBoolean("shareActivity", share)
+    }
+
     suspend fun badges(id: String): BadgeBook = withContext(Dispatchers.IO) {
         call("/v1/players/$id/badges").toBadgeBook()
     }
@@ -830,6 +907,7 @@ private fun JSONObject.toPlayer(base: String) = ApiPlayer(
     isFollowing = optBoolean("isFollowing", false),
     followsYou = optBoolean("followsYou", false),
     canMessage = optBoolean("canMessage", false),
+    shareActivity = optBoolean("shareActivity", true),
 )
 
 private fun JSONObject.players(base: String): List<ApiPlayer> {

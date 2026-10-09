@@ -5,14 +5,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** A finished run waiting for the account backend to acknowledge it. */
-data class PendingRun(
-    val eventId: String,
-    val playerId: String,
-    val score: Int,
-    val kills: Int,
-)
-
 /**
  * A tiny durable outbox for finished runs.
  *
@@ -25,12 +17,14 @@ class PendingRunStore(context: Context) {
         .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val lock = Any()
 
-    fun enqueue(playerId: String, score: Int, kills: Int): PendingRun = synchronized(lock) {
+    fun enqueue(playerId: String, score: Int, kills: Int, durationMs: Long = -1, arena: String = ""): PendingRun = synchronized(lock) {
         val run = PendingRun(
             eventId = UUID.randomUUID().toString(),
             playerId = playerId,
             score = score.coerceAtLeast(0),
             kills = kills.coerceAtLeast(0),
+            durationMs = durationMs,
+            arena = arena,
         )
         // commit(), not apply(): the run is on disk before this returns, so
         // even a crash or a killed process right after a death cannot lose it
@@ -65,7 +59,8 @@ class PendingRunStore(context: Context) {
                 val score = row.optInt("score", -1)
                 val kills = row.optInt("kills", -1)
                 if (eventId.isNotBlank() && playerId.isNotBlank() && score >= 0 && kills >= 0) {
-                    add(PendingRun(eventId, playerId, score, kills))
+                    add(PendingRun(eventId, playerId, score, kills,
+                        row.optLong("durationMs", -1L), row.optString("arena", "")))
                 }
             }
         }
@@ -80,6 +75,8 @@ class PendingRunStore(context: Context) {
                     .put("playerId", run.playerId)
                     .put("score", run.score)
                     .put("kills", run.kills)
+                    .put("durationMs", run.durationMs)
+                    .put("arena", run.arena)
             )
         }
         val edit = preferences.edit().putString(KEY_RUNS, array.toString())

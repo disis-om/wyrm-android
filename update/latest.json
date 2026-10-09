@@ -3,15 +3,15 @@
   "source": "github",
   "productName": "Wyrm",
   "packageName": "com.wyrm.omrajput",
-  "versionCode": 700,
-  "versionName": "7.0.0",
+  "versionCode": 710,
+  "versionName": "7.1.0",
   "minimumVersionCode": 0,
   "mandatory": false,
-  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v7.0.0/Wyrm-v7.0.0.apk",
-  "apkSize": 64868828,
-  "sha256": "77a0cf531eaf9addf245330633f0b6ab81cc471641cdcaa70bc72e41388aa75a",
-  "publishedAt": "2026-10-05T21:51:50Z",
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v7.1.0/Wyrm-v7.1.0.apk",
+  "apkSize": 66545000,
+  "sha256": "95c640d13af745c72a7b505b67e132827fe0cb78a41c03bece66ce4886e94e35",
+  "publishedAt": "2026-10-09T09:43:36Z",
   "headline": "A new version of Wyrm",
   "author": "OM Rajput",
-  "releaseNotes": ["A welcome tour shows you where everything is.", "Trails is open: post photos, text or a canvas.", "Photo editor: swipe looks, Adjust, emoji stickers, Glow and Line text.", "Near Original: slither's own HUD and controls, one switch on Home.", "Team Mode is back, with roster and chat in the arena.", "NTL tags show to everyone and swing like NTL.", "Skinless and Spine snake looks, in normal and assist.", "Play feel: original arrow, Look ahead, spring zoom bar.", "Auto restart button and leaderboard search.", "Fixed: HUD resize crashes and the flickering tag."]
+  "releaseNotes": ["See your friends play, and Join their arena.", "Every arena, with real pings and country flags.", "Home keeps the arena you picked.", "Eyes Back: a new on-screen button.", "77 new Wyrm tags.", "Snake shadow and a spine width slider in Modes.", "Messages look like Instagram.", "A smoother minimap.", "Plays like the web client; your skin goes in as built.", "Fixed: a screen crash and the Auto restart sliders."]
 }

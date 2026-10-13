@@ -5,6 +5,8 @@
 
 #define MAX_NICKNAME_LEN 24
 #define MAX_IPV4_LEN 19
+/* Any arena address, IPv6 too: "[2001:db8::1]:444" (OM, 2026-10-12). */
+#define MAX_ARENA_LEN 63
 #define MAX_SKIN_CODE_LEN 256
 #define NUM_COLOR_GROUPS 42
 #define NUM_DEFAULT_SKINS 66

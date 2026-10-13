@@ -19,7 +19,7 @@ used = {}
 for path in list(ROOT.rglob("*.kt")) + list(ROOT.rglob("*.java")):
     text = path.read_text(encoding="utf-8")
     names = set(re.findall(r'getSharedPreferences\(\s*"([a-z0-9_]+)"', text))
-    names |= set(re.findall(r'(?:PREFS\w*|PREF_\w+)\s*=\s*"((?:wyrm|vlither)_[a-z0-9_]+)"', text))
+    names |= set(re.findall(r'(?:PREFS\w*|PREF_\w+)\s*=\s*"(wyrm_[a-z0-9_]+)"', text))
     names |= set(re.findall(r'String PREFS\w*\s*=\s*"([a-z0-9_]+)"', text))
     for name in names:
         used.setdefault(name, set()).add(path.name)

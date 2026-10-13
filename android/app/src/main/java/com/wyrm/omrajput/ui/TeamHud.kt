@@ -25,12 +25,20 @@ object TeamHudStore {
         "team_scale", "team_opacity", "team_width", "team_height", "team_name", "team_data",
         "chat_width", "chat_height", "chat_name", "chat_text",
         "team_panel", "chat_panel", "stats_panel",
+        // The stats panel's text colour (OM, 2026-10-11), appended: the engine
+        // reads this order, and an older engine ignores the extra value.
+        "stats_text",
+        // The leaderboard's WIDTH and HEIGHT (OM, 2026-10-13), appended likewise:
+        // multiples of the board's own width and row height.
+        "lb_width", "lb_height",
     )
-    private val DEFAULTS = floatArrayOf(1f, 1f, 340f, 210f, 0f, 0f, 400f, 270f, 0f, 0f, 1f, 1f, 1f)
+    private val DEFAULTS = floatArrayOf(1f, 1f, 340f, 210f, 0f, 0f, 400f, 270f, 0f, 0f, 1f, 1f, 1f, 0f, 1f, 1f)
     private val RANGES = listOf(
         0.65f..1.60f, 0.05f..1f, 220f..900f, 120f..800f, 0f..8f, 0f..8f,
         240f..1000f, 150f..900f, 0f..8f, 0f..8f,
         0f..1f, 0f..1f, 0f..1f,
+        0f..8f,
+        0.7f..2.2f, 1f..2.2f,
     )
 
     /** The engine's palette; 0 keeps the theme's colour. */

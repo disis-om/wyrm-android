@@ -8,7 +8,7 @@
 #include "../constants.h"
 
 typedef struct taint_slot {
-  char endpoint[MAX_IPV4_LEN + 1];
+  char endpoint[MAX_ARENA_LEN + 1];
   uint64_t at_ms;
 } taint_slot;
 

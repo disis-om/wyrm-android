@@ -24,6 +24,9 @@ internal class LiveInbox(
     baseUrl: String,
     private val scope: CoroutineScope,
     private val onInbox: (kind: String, id: String) -> Unit,
+    /** Presence's `platform` (Wyrm Desktop passes "windows"). */
+    private val platform: String = "android",
+    private val onMessageDeleted: (type: String, id: String) -> Unit = { _, _ -> },
 ) {
     private val session = context.applicationContext.getSharedPreferences("wyrm_session", Context.MODE_PRIVATE)
     private val url = baseUrl.trimEnd('/').replaceFirst("https://", "wss://")
@@ -44,7 +47,7 @@ internal class LiveInbox(
      * repeats the last one.
      */
     fun setPresence(state: String, arena: String?) {
-        val json = JSONObject().put("type", "presence").put("state", state).put("platform", "android")
+        val json = JSONObject().put("type", "presence").put("state", state).put("platform", platform)
             .apply { if (state == "playing" && !arena.isNullOrBlank()) put("arena", arena) }
             .toString()
         if (json == presence) return
@@ -85,6 +88,9 @@ internal class LiveInbox(
         override fun onMessage(webSocket: WebSocket, text: String) {
             val event = runCatching { JSONObject(text) }.getOrNull() ?: return
             when (event.optString("type")) {
+                "chat.deleted", "direct.deleted" -> scope.launch {
+                    if (running && socket === webSocket) onMessageDeleted(event.optString("type"), event.optString("id"))
+                }
                 // A reconnect may have missed something: one catch-up refresh.
                 "live.ready" -> {
                     presence?.let { webSocket.send(it) }

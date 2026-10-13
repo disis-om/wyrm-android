@@ -67,6 +67,7 @@ object AccountSync {
         PrefFile("wyrm_recent_arenas", Scope.SYNC),
         PrefFile("wyrm_local_stats", Scope.SYNC),
         PrefFile("wyrm_skin_studio", Scope.SYNC),
+        PrefFile("wyrm_saved_skins", Scope.SYNC),             // Skin › Saved skins: every custom skin played (2026-10-13)
         PrefFile("wyrm_performance", Scope.SYNC),              // Settings › Performance: mode, FPS limit
         // Run receipts not yet uploaded: carried by the account so none is lost
         // (the server ignores a receipt it already has, by event id).
@@ -74,7 +75,7 @@ object AccountSync {
         PrefFile("wyrm_stats_sync", Scope.SYNC),
         PrefFile("wyrm_drop", Scope.SYNC, keys = setOf("auto_send")),
         PrefFile("wyrm_crash", Scope.SYNC, keys = setOf("auto_send"), rest = Scope.KEEP),
-        PrefFile("vlither_update_state", Scope.SYNC, keys = setOf("beta_updates"), rest = Scope.KEEP),
+        PrefFile("wyrm_update_state", Scope.SYNC, keys = setOf("beta_updates"), rest = Scope.KEEP),
         // Wiped: caches and session state of the account.
         PrefFile("wyrm_look", Scope.WIPE),                     // travels in the shared document
         PrefFile("wyrm_session", Scope.WIPE),
@@ -93,7 +94,6 @@ object AccountSync {
         PrefFile("wyrm_account_sync", Scope.WIPE),             // an owed restore, per account
         // The retired manual backups (2026-10-01): their folder grant goes too.
         PrefFile("wyrm_backup_state", Scope.WIPE),
-        PrefFile("vlither_backup_state", Scope.WIPE),
         // About the phone itself: kept.
         PrefFile("hidapi", Scope.KEEP),                        // SDL game controllers
         // Which build's "What's new" this phone has seen (OM, 2026-10-02): a log
@@ -197,9 +197,10 @@ object AccountSync {
         var skipped = 0
         val prefs = doc.optJSONObject("prefs") ?: JSONObject()
         val known = FILES.associateBy { it.name }
-        prefs.keys().forEach { name ->
+        prefs.keys().forEach { docName ->
+            val name = LegacyPrefs.currentName(docName)
             val file = known[name]
-            val rows = prefs.optJSONObject(name)
+            val rows = prefs.optJSONObject(docName)
             if (file == null || file.scope != Scope.SYNC || rows == null) { skipped += rows?.length() ?: 1; return@forEach }
             val renames = PREF_RENAMES[name].orEmpty()
             val editor = context.getSharedPreferences(name, Context.MODE_PRIVATE).edit()

@@ -99,8 +99,19 @@ void android_team_set_chat(const char* packed);
 void android_team_set_hud_style(const float* values, int count);
 /** The stats panel's BACK, 0..1 (its plate only; text keeps OPACITY). */
 float android_team_stats_panel(void);
+/* The leaderboard's WIDTH and HEIGHT (OM, 2026-10-13). */
+float android_team_lb_width(void);
+float android_team_lb_height(void);
+/** The stats text colour (OM, 2026-10-11): the chosen one, else the theme's
+    [role] (an arena_theme_role), at [alpha]. An ImU32. */
+unsigned int android_team_stats_colour(int role, float alpha);
 bool android_team_hud_touch(tenv* env, int type, unsigned long long finger,
                             float x, float y);
+#ifdef WYRM_DESKTOP
+/* Wyrm Desktop: the wheel scrolls the roster / chat under the pointer. */
+bool android_team_hud_wheel(tenv* env, float x, float y, float notches);
+bool android_team_hud_contains(float x, float y);
+#endif
 
 /** Runs the bot handover and draws the countdown. Called once a frame. */
 void android_team_tick(tenv* env);

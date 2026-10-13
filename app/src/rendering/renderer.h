@@ -43,6 +43,13 @@ typedef struct renderer {
   texture* tex_atlas;
   texture* bg_tex;
   int background;
+  /* An arena floor change in progress (OM, 2026-10-12): renderer.c. */
+  struct bg_swap* bg_swap;
+  /* Skin Studio (OM, 2026-10-12): the player's own atlas on binding 4, and
+     its change in progress. NULL until one is worn (binding 4 then points
+     at the game atlas, never read). */
+  texture* studio_tex;
+  struct studio_swap* studio_swap;
   texture* logo_tex;
   texture* home_icons_tex;
   /* Every tag on one sheet. Drawn through ImGui rather than through a pipeline
@@ -93,6 +100,13 @@ void renderer_resize(renderer* r, tcontext* ctx, ivec2 size);
  * player picks one, never from the frame loop.
  */
 void renderer_set_background(renderer* r, tcontext* ctx, int index);
+
+/* Skin Studio (OM, 2026-10-12): load the atlas at [path] (an RGBA PNG) in
+   the background and wear [skin] once every frame shows it. NULL path: off
+   at once. Engine thread. */
+struct studio_skin;
+void renderer_set_studio(renderer* r, tcontext* ctx, const char* path,
+                         const struct studio_skin* skin);
 void renderer_clear_instances(renderer* r);
 
 #endif

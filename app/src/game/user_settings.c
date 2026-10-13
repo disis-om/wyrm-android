@@ -34,6 +34,11 @@ static void mobile_hotkeys_default(mobile_hotkey_settings* settings) {
   settings->direct_keys[3] = GLFW_KEY_LEFT;
   settings->direct_keys[4] = GLFW_KEY_RIGHT;
   settings->direct_keys[5] = GLFW_KEY_F11;
+#ifdef WYRM_DESKTOP
+  /* Wyrm Desktop (OM, 2026-10-11): turn on A and D, beside W's boost. */
+  settings->direct_keys[3] = GLFW_KEY_A;
+  settings->direct_keys[4] = GLFW_KEY_D;
+#endif
 
   // Two compact vertical banks provide collision-free defaults. Everything is
   // hidden initially so upgrading users never receive an unexpected overlay.
@@ -152,6 +157,28 @@ static void user_settings_default_layout_appearance(user_settings* settings) {
   settings->hud_chat_opacity = 1.0f;
 }
 
+bool server_address_is_valid(const char* address);
+
+const char* user_settings_arena(const user_settings* settings) {
+  if (settings->ext.arena[0] == '[') return settings->ext.arena;
+  return settings->ipv4;
+}
+
+void user_settings_set_arena(user_settings* settings, const char* address) {
+  if (!address) address = "";
+  snprintf(settings->ext.arena, sizeof(settings->ext.arena), "%s", address);
+  if (address[0] != '[')
+    snprintf(settings->ipv4, sizeof(settings->ipv4), "%s", address);
+}
+
+#ifdef WYRM_DESKTOP
+_Static_assert(offsetof(user_settings_ext, arena) == 48,
+               "Wyrm Desktop's ext.arena moved");
+#else
+_Static_assert(offsetof(user_settings_ext, arena) == 44,
+               "the phones' ext.arena moved");
+#endif
+
 void user_settings_ext_default(user_settings_ext* x) {
   memset(x, 0, sizeof(*x));
   x->magic = USER_SETTINGS_EXT_MAGIC;
@@ -168,6 +195,9 @@ void user_settings_ext_default(user_settings_ext* x) {
   x->spine_width[1] = 0.1f;
   x->snake_shadow[0] = false;
   x->snake_shadow[1] = false;
+#ifdef WYRM_DESKTOP
+  x->eyes_back_key = GLFW_KEY_E;
+#endif
 }
 
 float* user_settings_key_scale(user_settings* settings, int action) {
@@ -234,7 +264,7 @@ bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
   fixed |= ext_take_float(&ext->eyes_back_y, written >= eb_y_at + 4, 0.0f,
                           1.0f, 0.33f);
   fixed |= ext_take_float(&ext->eyes_back_scale, written >= eb_scale_at + 4,
-                          0.65f, 1.60f, settings->mobile_hotkeys.key_scale);
+                          0.65f, 2.50f, settings->mobile_hotkeys.key_scale);
   fixed |= ext_take_float(&ext->eyes_back_opacity,
                           written >= eb_opacity_at + 4, 0.05f, 1.0f,
                           settings->mobile_hotkeys.opacity);
@@ -246,6 +276,28 @@ bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
                           0.0f, 1.0f, 0.1f);
   fixed |= ext_take_bool(&ext->snake_shadow[0], written >= shadow_at + 1);
   fixed |= ext_take_bool(&ext->snake_shadow[1], written >= shadow_at + 2);
+  {
+    /* The arena (OM, 2026-10-12). A file without it, or with anything that is
+       not an arena address, keeps `ipv4` alone. */
+    size_t arena_at = offsetof(user_settings_ext, arena);
+    if (written < arena_at + sizeof(ext->arena) ||
+        memchr(ext->arena, 0, sizeof(ext->arena)) == NULL ||
+        (ext->arena[0] && !server_address_is_valid(ext->arena)))
+      memset(ext->arena, 0, sizeof(ext->arena));
+  }
+#ifdef WYRM_DESKTOP
+  {
+    /* Eyes Back's key: a file without it, or with a key this build cannot
+       bind, gets E. GLFW_KEY_UNKNOWN is a key the player cleared. */
+    size_t eb_key_at = offsetof(user_settings_ext, eyes_back_key);
+    if (written < eb_key_at + 4 ||
+        (ext->eyes_back_key != GLFW_KEY_UNKNOWN &&
+         !mobile_hotkey_key_bindable(ext->eyes_back_key))) {
+      ext->eyes_back_key = GLFW_KEY_E;
+      fixed = 1;
+    }
+  }
+#endif
   /* A longer tail belongs to a newer build. Do not shrink it just to rewrite
      the size we already understood. A shorter one is missing fields, so save. */
   if (written < (uint32_t)sizeof(user_settings_ext)) fixed = 1;
@@ -307,7 +359,7 @@ void user_settings_default(user_settings* usr_settings) {
     usr_settings->head_dot_color[mode][2] = 1.0f;
   }
   user_settings_reset_hud_layout(usr_settings);
-  usr_settings->bot_radius_mult = 20;
+  usr_settings->bot_radius_mult = 12; /* NTL's de (OM, 2026-10-13) */
   usr_settings->bot_follow_circle_score = 2000;
 
   usr_settings->mobile_controls =
@@ -748,7 +800,7 @@ void read_user_settings(user_settings* usr_settings) {
   if (normalize_on_screen_buttons(usr_settings)) save_user_settings(usr_settings);
   if (!isfinite(usr_settings->mobile_hotkeys.key_scale) ||
       usr_settings->mobile_hotkeys.key_scale < 0.65f ||
-      usr_settings->mobile_hotkeys.key_scale > 1.60f) {
+      usr_settings->mobile_hotkeys.key_scale > 2.50f) {
     usr_settings->mobile_hotkeys.key_scale = 1.0f;
     save_user_settings(usr_settings);
   }
@@ -825,7 +877,7 @@ void read_user_settings(user_settings* usr_settings) {
   for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action) {
     float* key_scale = user_settings_key_scale(usr_settings, action);
     float* key_opacity = user_settings_key_opacity(usr_settings, action);
-    REPAIR_APPEARANCE(*key_scale, 0.65f, 1.60f,
+    REPAIR_APPEARANCE(*key_scale, 0.65f, 2.50f,
                       usr_settings->mobile_hotkeys.key_scale);
     REPAIR_APPEARANCE(*key_opacity, 0.05f, 1.0f,
                       usr_settings->mobile_hotkeys.opacity);

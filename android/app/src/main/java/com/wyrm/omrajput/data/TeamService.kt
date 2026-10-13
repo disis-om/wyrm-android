@@ -2,8 +2,6 @@ package com.wyrm.omrajput.data
 
 import android.content.Context
 import com.wyrm.omrajput.BuildConfig
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.text.Html
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
@@ -13,10 +11,8 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
-import java.security.KeyStore
 import java.security.MessageDigest
 import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
@@ -522,21 +518,9 @@ class TeamService(context: Context) {
         return String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)))
     }
 
-    private fun key(): SecretKey {
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        generator.init(
-            KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .build()
-        )
-        return generator.generateKey()
-    }
+    /* The key lives in TeamVaultKey.kt (Android Keystore here); Wyrm Desktop
+       compiles this file unchanged with its own TeamVaultKey (Windows DPAPI). */
+    private fun key(): SecretKey = TeamVaultKey.key(appContext, KEY_ALIAS)
 
     private fun encode(value: String) = URLEncoder.encode(value, "UTF-8")
 

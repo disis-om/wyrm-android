@@ -1,7 +1,7 @@
 #ifndef ANDROID_ARROWS_H
 #define ANDROID_ARROWS_H
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include <stdbool.h>
 
 #include "../user.h"

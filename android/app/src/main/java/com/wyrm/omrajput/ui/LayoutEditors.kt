@@ -415,7 +415,7 @@ fun UnifiedArenaLayoutEditor(
                 Draggable(Offset(hotkey.x, hotkey.y), area, { onMoveKey(hotkey.action, it) }, onLongPress = {
                     openOptions(
                         "key-${hotkey.action}", hotkey.name.uppercase(Locale.US),
-                        LayoutSlider("SIZE", keyScale, 0.65f..1.60f) { onSettingChange("layout.key_${hotkey.action}_scale", it) },
+                        LayoutSlider("SIZE", keyScale, 0.65f..2.50f) { onSettingChange("layout.key_${hotkey.action}_scale", it) },
                         LayoutSlider("OPACITY", keysOpacity, 0.05f..1f) { onSettingChange("layout.key_${hotkey.action}_opacity", it) },
                     )
                 }) { PaperKey(label = hotkey.name, opacity = keysOpacity, scale = keyScale) }
@@ -435,14 +435,22 @@ fun UnifiedArenaLayoutEditor(
                 ) { Text("MAP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = Wyrm.Ink) }
             }
             Draggable(hudPosition(ArenaHudTarget.LEADERBOARD), area, { onMoveHud(ArenaHudTarget.LEADERBOARD, it) }, onTap = onLeaderboardTap, onLongPress = {
-                openOptions(
+                options = LayoutOptions(
                     "leaderboard", "LEADERBOARD",
-                    LayoutSlider("TEXT SIZE", leaderboardFont.toFloat(), 0f..2f) {
-                        onSettingChange("general.lb_font", it.toInt().coerceIn(0, 2).toFloat())
-                    },
+                    listOf(
+                        LayoutSlider("TEXT SIZE", leaderboardFont.toFloat(), 0f..2f) {
+                            onSettingChange("general.lb_font", it.toInt().coerceIn(0, 2).toFloat())
+                        },
+                        // WIDTH and HEIGHT (OM, 2026-10-13): long names show whole on a wider
+                        // board; from a tall enough row they fold onto a second line.
+                        teamHudSlider("WIDTH", "lb_width"),
+                        teamHudSlider("HEIGHT", "lb_height"),
+                    ),
                 )
             }) {
-                HudPreviewPanel("LEADERBOARD\n1  Wyrm Player     9503\n2  Northwind       2819\n3  Orbit            418\n4  Meadow           389\n5  Drift            248", with(density) { (250f * leaderboardScale).toDp() }, with(density) { (132f * leaderboardScale).toDp() })
+                HudPreviewPanel("LEADERBOARD\n1  Wyrm Player     9503\n2  Northwind       2819\n3  Orbit            418\n4  Meadow           389\n5  Drift            248",
+                    with(density) { (250f * leaderboardScale * TeamHudStore.value("lb_width")).toDp() },
+                    with(density) { (132f * leaderboardScale * (0.4f + 0.6f * TeamHudStore.value("lb_height"))).toDp() })
             }
             Draggable(hudPosition(ArenaHudTarget.STATS), area, { onMoveHud(ArenaHudTarget.STATS, it) }, onLongPress = {
                 options = LayoutOptions(
@@ -453,6 +461,8 @@ fun UnifiedArenaLayoutEditor(
                         // BACK (OM, 2026-10-05): the white plate only; the text keeps OPACITY.
                         teamHudSlider("BACK", "stats_panel"),
                     ),
+                    // TEXT (OM, 2026-10-11): the server line, labels and values.
+                    colours = listOf(teamHudColour("TEXT", "stats_text")),
                 )
             }) {
                 HudPreviewPanel("STATS\nSCORE   9503\nKILLS      4\nRANK    8 / 46\nPING    64 ms\nFPS     61", with(density) { (142f * statsPreviewScale).toDp() }, with(density) { (132f * statsPreviewScale).toDp() }, statsOpacity)

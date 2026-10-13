@@ -68,6 +68,30 @@ static bool notice_ok_hit(tenv* e, float x, float y) {
 bool ai_mode_notice_process_event(tenv* e, const void* raw_event) {
   if (!notice_visible || editor_session || !e->usr->gdata.ai_mode) return false;
   const SDL_Event* event = raw_event;
+#ifdef WYRM_DESKTOP
+  /* Wyrm Desktop: the mouse presses OK (press and release on it), Enter
+     closes it too. Every button press is the card's while it is up. */
+  if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+      event->type == SDL_EVENT_MOUSE_BUTTON_UP) {
+    if (event->button.button != SDL_BUTTON_LEFT) return true;
+    float mx = event->button.x;
+    float my = event->button.y;
+    if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+      notice_ok_down = notice_ok_hit(e, mx, my);
+    } else {
+      if (notice_ok_down && notice_ok_hit(e, mx, my)) notice_visible = false;
+      notice_ok_down = false;
+    }
+    return true;
+  }
+  if (event->type == SDL_EVENT_KEY_DOWN &&
+      (event->key.scancode == SDL_SCANCODE_RETURN ||
+       event->key.scancode == SDL_SCANCODE_KP_ENTER)) {
+    notice_visible = false;
+    notice_ok_down = false;
+    return true;
+  }
+#endif
   if (event->type != SDL_EVENT_FINGER_DOWN &&
       event->type != SDL_EVENT_FINGER_MOTION &&
       event->type != SDL_EVENT_FINGER_UP &&
@@ -345,9 +369,24 @@ static void player_input(tenv* e) {
   snake* p = g->data.snakes + n - 1;
   if (!p->local_player || p->dead) return;
   int x = 0, y = 0;
+#ifdef WYRM_DESKTOP
+  /* Wyrm Desktop: a held turn key turns the snake at its own rate (a target
+     a radian round from where it heads) and wins over the mouse meanwhile. */
+  user_settings* keys = &e->usr->usrs;
+  bool left = twindow_key_down(
+      e->wnd, mobile_hotkey_get_key(keys, MOBILE_HOTKEY_TURN_LEFT));
+  bool right = twindow_key_down(
+      e->wnd, mobile_hotkey_get_key(keys, MOBILE_HOTKEY_TURN_RIGHT));
+  if (left != right)
+    steer(p, p->ang + (left ? -1.0f : 1.0f));
+  else
+#endif
   if (mobile_controls_get_aim(e, &x, &y) && x * x + y * y > 16)
     steer(p, atan2f((float)y, (float)x));
   bool boost = mobile_controls_boost_down(e) ||
+#ifdef WYRM_DESKTOP
+               mobile_hotkeys_desktop_boost_down(e) ||
+#endif
                mobile_hotkeys_down(e, MOBILE_HOTKEY_BOOST);
   accelerate(g, p, state(p->id, true), boost);
   g->data.md = g->data.wmd = boost;
@@ -359,6 +398,16 @@ static void playable_zoom(tenv* e) {
     g->data.ms_zoom *= expf(e->usr->usrs.zoom_step);
   if (mobile_hotkeys_pressed(e, MOBILE_HOTKEY_ZOOM_OUT))
     g->data.ms_zoom *= expf(-e->usr->usrs.zoom_step);
+#ifdef WYRM_DESKTOP
+  /* Wyrm Desktop: the wheel and the zoom keys, as input.c does online. */
+  g->data.ms_zoom *= expf(e->ms->dwheel * e->usr->usrs.zoom_step);
+  if (tkeyboard_key_pressed(
+          e->kb, mobile_hotkey_get_key(&e->usr->usrs, MOBILE_HOTKEY_ZOOM_IN)))
+    g->data.ms_zoom *= expf(e->usr->usrs.zoom_step);
+  else if (tkeyboard_key_pressed(e->kb, mobile_hotkey_get_key(
+                                            &e->usr->usrs, MOBILE_HOTKEY_ZOOM_OUT)))
+    g->data.ms_zoom *= expf(-e->usr->usrs.zoom_step);
+#endif
   g->data.ms_zoom = fmaxf(MAX_ZOOM_OUT, fminf(MAX_ZOOM_IN, g->data.ms_zoom));
 }
 
@@ -370,10 +419,16 @@ static void playable_hotkeys(tenv* e) {
   for (int i = 0; i < NUM_HOTKEYS; ++i) {
     hotkey* key = settings->hotkeys + i;
     bool pressed = mobile_hotkeys_pressed(e, i);
+    bool down = mobile_hotkeys_down(e, i);
+#ifdef WYRM_DESKTOP
+    /* Wyrm Desktop: the bound keys, the same way input.c reads them online. */
+    pressed = pressed || tkeyboard_key_pressed(e->kb, key->key);
+    down = down || twindow_key_down(e->wnd, key->key);
+#endif
     if (i == HOTKEY_RESTART || i == HOTKEY_QUIT)
       key->active = pressed;
     else if (key->mode)
-      key->active = mobile_hotkeys_down(e, i);
+      key->active = down;
     else if (pressed)
       key->active = !key->active;
   }
@@ -389,6 +444,9 @@ static void playable_player(tenv* e) {
       ai_state* mind = state(player->id, true);
       steer(player, decision.heading);
       bool boost = decision.accel || mobile_controls_boost_down(e) ||
+#ifdef WYRM_DESKTOP
+                   mobile_hotkeys_desktop_boost_down(e) ||
+#endif
                    mobile_hotkeys_down(e, MOBILE_HOTKEY_BOOST);
       accelerate(g, player, mind, boost);
       g->data.md = g->data.wmd = boost;
@@ -397,6 +455,9 @@ static void playable_player(tenv* e) {
     player_input(e);
   }
   playable_zoom(e);
+#ifdef WYRM_DESKTOP
+  mobile_hotkeys_desktop_trace(e, g->data.wmd);
+#endif
 }
 
 static body_part* threat(game_data* g, snake* b, ai_state* a, uint64_t now) {

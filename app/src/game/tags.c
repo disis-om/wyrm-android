@@ -127,7 +127,25 @@ typedef struct tag_slot {
   double draw_x[ROPE_POINTS];
   double draw_y[ROPE_POINTS];
   bool draw_seeded;
+  bool flown; /* this snake's tag has flown off (it died) */
 } tag_slot;
+
+/* A tag flying off a dead snake (OM, 2026-10-13). */
+#define TAG_FLYERS 64
+#define TAG_FLY_SECONDS 1.4f
+typedef struct tag_flyer {
+  bool used;
+  int tag;
+  tag_slot rope;
+  float ax, ay;   /* where the rope's head end is now, world units */
+  float vx, vy;   /* how fast it goes, world units a second */
+  float scale;
+  float age;      /* seconds since it let go */
+} tag_flyer;
+static tag_flyer flyers[TAG_FLYERS];
+/* While a flying tag is drawn: its rope's stretch and the bobble's hop. */
+static float draw_stretch = 1.0f;
+static float draw_pop = 1.0f;
 
 static tag_slot slots[TAG_SLOTS];
 static double last_frame_time = 0.0;
@@ -219,7 +237,10 @@ void tags_set(int snake_id, int tag) {
   if (slot) slot->tag = tag;
 }
 
-void tags_forget_all(void) { memset(slots, 0, sizeof(slots)); }
+void tags_forget_all(void) {
+  memset(slots, 0, sizeof(slots));
+  memset(flyers, 0, sizeof(flyers));
+}
 
 /* The tag socket closed (OM, 2026-10-06: tags flickered once a second and
    went straight in turns). It retries every second, and each close used to
@@ -400,6 +421,8 @@ static void draw_tag(tenv* env, tag_slot* slot, const tag_entry* tag,
      rope and the pull along it, and swing softens the damping so the bobble
      carries further past a turn before it settles. */
   float chain = usrs->tag_chain < 1.0f ? 1.0f : usrs->tag_chain;
+  /* A flying tag's rope stretches (1 everywhere else). */
+  chain *= draw_stretch;
   float swing = usrs->tag_swing;
   float loose = (swing - 1.0f) * 0.5f;
   if (loose < 0.0f) loose = 0.0f;
@@ -521,7 +544,7 @@ static void draw_tag(tenv* env, tag_slot* slot, const tag_entry* tag,
     slot->angle = fmod(slot->angle + TAG_TURN * d, he);
   }
 
-  float size = TAG_SCALE * usrs->tag_scale;
+  float size = TAG_SCALE * usrs->tag_scale * draw_pop;
   float height = tag->h * size * pixels;
 
   /* Small tags: rather than clipping a big bobble, every term is multiplied
@@ -561,6 +584,72 @@ static void draw_tag(tenv* env, tag_slot* slot, const tag_entry* tag,
    tag again. */
 #define WYRM_TAGS_DISABLED 0
 
+/* A dead snake's tag lets go (OM, 2026-10-13): it takes the rope as it was
+   and flies off along the rope's own direction, give or take, fast at first. */
+static void tags_launch(tag_slot* slot, int tag, float scale) {
+  tag_flyer* f = NULL;
+  for (int i = 0; i < TAG_FLYERS && !f; ++i)
+    if (!flyers[i].used) f = flyers + i;
+  if (!f) {
+    /* A rain of snakes: the oldest flying tag makes room. */
+    f = flyers;
+    for (int i = 1; i < TAG_FLYERS; ++i)
+      if (flyers[i].age > f->age) f = flyers + i;
+  }
+  memset(f, 0, sizeof(*f));
+  f->used = true;
+  f->tag = tag;
+  f->rope = *slot;
+  f->rope.used = true;
+  f->scale = scale > 0.0f ? scale : 1.0f;
+  f->ax = slot->x[0];
+  f->ay = slot->y[0];
+  float dx = slot->x[ROPE_POINTS - 1] - slot->x[0];
+  float dy = slot->y[ROPE_POINTS - 1] - slot->y[0];
+  float away = (dx == 0.0f && dy == 0.0f) ? (float)(rand() % 628) / 100.0f
+                                          : atan2f(dy, dx);
+  away += ((float)(rand() % 1000) / 1000.0f - 0.5f) * 1.2f;
+  float speed = (520.0f + (float)(rand() % 380)) * f->scale;
+  f->vx = cosf(away) * speed;
+  f->vy = sinf(away) * speed;
+}
+
+void tags_draw_flying(tenv* env) {
+  tuser_data* usr = env->usr;
+  game_data* gdata = &usr->gdata;
+  if (WYRM_TAGS_DISABLED || usr->usrs.tags_hidden) return;
+  if (!usr->r || !usr->r->tags_descriptor) return;
+  float dt = (float)(frame_delta_ms / 1000.0);
+  float zoom = gdata->data.gsc;
+  for (int i = 0; i < TAG_FLYERS; ++i) {
+    tag_flyer* f = flyers + i;
+    if (!f->used) continue;
+    f->age += dt;
+    if (f->age >= TAG_FLY_SECONDS || !tags_valid(f->tag)) {
+      f->used = false;
+      continue;
+    }
+    f->ax += f->vx * dt;
+    f->ay += f->vy * dt;
+    float slow = powf(0.3f, dt);
+    f->vx *= slow;
+    f->vy *= slow;
+    float grow = f->age / 0.45f;
+    if (grow > 1.0f) grow = 1.0f;
+    draw_stretch = 1.0f + 1.8f * grow;
+    draw_pop = 1.0f + 0.45f * fabsf(sinf(f->age * 10.0f)) * expf(-f->age * 2.2f);
+    float left = 1.0f - f->age / TAG_FLY_SECONDS;
+    /* The rope trails behind where the tag is going. */
+    float heading = atan2f(f->vy, f->vx) + (float)M_PI;
+    draw_tag(env, &f->rope, TAG_TABLE + f->tag, f->ax, f->ay, heading,
+             f->scale, zoom, env->ctx->size[0] * 0.5f - gdata->data.view_xx * zoom,
+             env->ctx->size[1] * 0.5f - gdata->data.view_yy * zoom,
+             left * left, false);
+  }
+  draw_stretch = 1.0f;
+  draw_pop = 1.0f;
+}
+
 void tags_draw(tenv* env, snake* o, bool mine, bool teammate) {
   tuser_data* usr = env->usr;
   user_settings* usrs = &usr->usrs;
@@ -586,6 +675,15 @@ void tags_draw(tenv* env, snake* o, bool mine, bool teammate) {
     slot = slot_for(o->id);
     if (!slot) return;
   }
+
+  /* Dead (OM, 2026-10-13): the tag lets go of the head and flies off on its
+     own (tags_draw_flying), once; the head draws it no more. */
+  if (o->dead || o->dead_amt > 0.0f) {
+    if (!slot->flown && slot->seeded) tags_launch(slot, index, o->sc);
+    slot->flown = true;
+    return;
+  }
+  slot->flown = false;
 
   /* Squared, because the snake's own fade is squared: a tag that faded
      linearly would still be visible over a snake that had all but gone. */

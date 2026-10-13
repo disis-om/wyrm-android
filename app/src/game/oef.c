@@ -3,6 +3,75 @@
 #include "../user.h"
 #include "../network/arena_protocol.h"
 
+/* Ping (OM, 2026-10-12, from the reference client, as NTL does it). The
+   arena socket is read once a frame, so a pong is seen up to a frame late,
+   and a long frame (a texture, a stall) made a good network look hundreds of
+   ms late. The round trip is bracketed instead: the pong was not there when
+   the previous poll ended (lower bound) and is here now (upper bound).
+   SDL_GetTicksNS, not glfwGetTime: Wyrm rewinds the latter. */
+static double ping_clock_ms(void) { return (double)SDL_GetTicksNS() / 1e6; }
+
+void ping_mark_sent(tenv* env) {
+  env->usr->gdata.data.ping_sent_ms = ping_clock_ms();
+}
+
+void ping_poll_done(tenv* env) {
+  env->usr->gdata.ping_poll_end_ms = ping_clock_ms();
+}
+
+void ping_mark_received(tenv* env) {
+  game_data* gdata = &env->usr->gdata;
+  /* A pong with no ping in flight (late, or after the 3 s retry): nothing
+     to time. */
+  if (gdata->data.ping_sent_ms <= 0) return;
+
+  double now = ping_clock_ms();
+  double sent = gdata->data.ping_sent_ms;
+  gdata->data.ping_sent_ms = 0;
+
+  double upper = now - sent;
+  double lower = gdata->ping_poll_end_ms - sent;
+  if (lower < 0) lower = 0;
+  if (lower > upper) lower = upper;
+
+  double est;
+  if (upper - lower <= 34.0) {
+    /* An ordinary frame: the middle of a window at most a frame wide. */
+    est = (lower + upper) * 0.5;
+  } else if (gdata->data.ping_avg_stamp > 0) {
+    /* A long stall on our side: keep the last ping if it fits the window,
+       else the nearest edge, so the stall does not read as lag. */
+    est = (double)gdata->data.ping;
+    if (est < lower) est = lower;
+    if (est > upper) est = upper;
+  } else {
+    est = lower; /* no history yet */
+  }
+  int rtt = (int)(est + 0.5);
+  if (rtt < 0) rtt = 0;
+
+  /* The shown number moves once a second (NTL), from the samples since. */
+  gdata->data.ping_accum_sum += rtt;
+  gdata->data.ping_accum_count++;
+  if (now - gdata->data.ping_avg_stamp > 1000) {
+    int avg = (int)(gdata->data.ping_accum_sum / gdata->data.ping_accum_count + 0.5);
+    gdata->data.ping = gdata->data.ping_avg_stamp > 0
+                           ? (gdata->data.ping + avg) / 2
+                           : avg;
+    gdata->data.ping_avg_stamp = now;
+    gdata->data.ping_accum_sum = 0;
+    gdata->data.ping_accum_count = 0;
+  }
+
+  /* The worst round trip inside a 10 s window (NTL's peak). */
+  if (now - gdata->data.ping_peak_stamp > 10000) {
+    gdata->data.ping_peak = rtt;
+    gdata->data.ping_peak_stamp = now;
+  } else if (rtt > gdata->data.ping_peak) {
+    gdata->data.ping_peak = rtt;
+  }
+}
+
 void time_step(tenv* env) {
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
@@ -25,6 +94,15 @@ void time_step(tenv* env) {
     if (gdata->data.wfpr && gdata->data.ctm - gdata->data.last_ping_mtm > ARENA_LAG_MS) {
       gdata->data.lagging = true;
     }
+  }
+
+  /* 3 (OM, 2026-10-12, from the reference client): a lost pong left `wfpr` set
+     for good, and input() never pinged again; on mobile data a silent socket
+     is what a carrier's NAT drops. After 3 s (four times the 750 ms lag mark)
+     the next ping goes out; a pong for the lost one is not timed. */
+  if (gdata->data.wfpr && gdata->data.ctm - gdata->data.last_ping_mtm > 3000) {
+    gdata->data.wfpr = false;
+    gdata->data.ping_sent_ms = 0;
   }
 
   if (gdata->data.lagging) {

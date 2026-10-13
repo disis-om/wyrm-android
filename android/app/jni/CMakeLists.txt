@@ -1,39 +1,40 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(VlitherEnhanced LANGUAGES C CXX)
+project(Wyrm LANGUAGES C CXX)
 
 # APP_VERSION comes from ../.cxx-version/wyrm_version.h, written by build.gradle.
 
-get_filename_component(VLITHER_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+get_filename_component(WYRM_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 
 set(SDL_SHARED ON CACHE BOOL "Build SDL as a shared library" FORCE)
 set(SDL_STATIC OFF CACHE BOOL "Disable the unused SDL static library" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "Disable SDL tests" FORCE)
-add_subdirectory("${VLITHER_ROOT}/android-sdl" "${CMAKE_BINARY_DIR}/SDL" EXCLUDE_FROM_ALL)
+add_subdirectory("${WYRM_ROOT}/android-sdl" "${CMAKE_BINARY_DIR}/SDL" EXCLUDE_FROM_ALL)
 
-file(GLOB_RECURSE VLITHER_C_SOURCES CONFIGURE_DEPENDS
-    "${VLITHER_ROOT}/app/src/*.c"
-    "${VLITHER_ROOT}/thermite/src/*.c")
-file(GLOB_RECURSE VLITHER_CXX_SOURCES CONFIGURE_DEPENDS
-    "${VLITHER_ROOT}/app/src/*.cpp"
-    "${VLITHER_ROOT}/thermite/src/*.cpp")
+file(GLOB_RECURSE WYRM_C_SOURCES CONFIGURE_DEPENDS
+    "${WYRM_ROOT}/app/src/*.c"
+    "${WYRM_ROOT}/thermite/src/*.c")
+file(GLOB_RECURSE WYRM_CXX_SOURCES CONFIGURE_DEPENDS
+    "${WYRM_ROOT}/app/src/*.cpp"
+    "${WYRM_ROOT}/thermite/src/*.cpp")
 
-list(FILTER VLITHER_CXX_SOURCES EXCLUDE REGEX "imgui_impl_glfw\\.cpp$")
+list(FILTER WYRM_CXX_SOURCES EXCLUDE REGEX "imgui_impl_glfw\\.cpp$")
 
-add_library(main SHARED ${VLITHER_C_SOURCES} ${VLITHER_CXX_SOURCES})
+add_library(main SHARED ${WYRM_C_SOURCES} ${WYRM_CXX_SOURCES})
 
 target_compile_features(main PRIVATE c_std_11 cxx_std_17)
 target_compile_definitions(main PRIVATE
     SETTINGS_VERSION="2.8"
     CIMGUI_NO_EXPORT
     CGLM_FORCE_DEPTH_ZERO_TO_ONE
-    VLITHER_ANDROID=1)
+    MG_ENABLE_IPV6=1
+    WYRM_SDL_JNI=1)
 target_include_directories(main PRIVATE
-    "${VLITHER_ROOT}/app/src"
+    "${WYRM_ROOT}/app/src"
     "${CMAKE_CURRENT_LIST_DIR}/../.cxx-version"
-    "${VLITHER_ROOT}/thermite/include"
-    "${VLITHER_ROOT}/thermite/src"
-    "${VLITHER_ROOT}/android-sdl/include")
+    "${WYRM_ROOT}/thermite/include"
+    "${WYRM_ROOT}/thermite/src"
+    "${WYRM_ROOT}/android-sdl/include")
 target_compile_options(main PRIVATE
     $<$<COMPILE_LANGUAGE:C>:-Wall;-Wextra;-Wno-unused-parameter>
     $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wno-unused-parameter>)

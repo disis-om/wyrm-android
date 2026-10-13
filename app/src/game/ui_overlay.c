@@ -220,7 +220,7 @@ static void draw_stat_row(tenv* env, ImDrawList* draw, float right, float y,
 
   ImDrawList_AddText_FontPtr(draw, display, display->LegacySize * scale,
                              (ImVec2){right - value_size.x, y},
-                             arena_theme_colour(ARENA_THEME_INK, alpha), value,
+                             android_team_stats_colour(ARENA_THEME_INK, alpha), value,
                              NULL, 0, NULL);
 
   ImVec2 label_size = measure_scaled(body, label, scale);
@@ -228,7 +228,7 @@ static void draw_stat_row(tenv* env, ImDrawList* draw, float right, float y,
       draw, body, body->LegacySize * scale,
       (ImVec2){right - value_size.x - 10.0f * scale - label_size.x,
                y + (value_size.y - label_size.y) * 0.72f},
-      arena_theme_colour(ARENA_THEME_QUIET, 0.92f * alpha), label, NULL, 0,
+      android_team_stats_colour(ARENA_THEME_QUIET, 0.92f * alpha), label, NULL, 0,
       NULL);
 }
 
@@ -691,6 +691,35 @@ static void wyrm_halo_fitted(ImDrawList* draw, ImFont* font, ImVec2 pos,
   wyrm_halo_text(draw, font, font->LegacySize, pos, colour, alpha, shortened);
 }
 
+/* A leaderboard name (OM, 2026-10-13): one line, shortened to fit; when the
+   row has room for two (the HEIGHT slider), a name too long for one line
+   folds onto the second instead, cut only between letters (UTF-8 aware). */
+static void wyrm_halo_name_rows(ImDrawList* draw, ImFont* font, ImVec2 pos,
+                                ImU32 colour, float alpha, const char* text,
+                                float max_width, int lines, float line_step) {
+  if (lines < 2 || !text || measure(font, text) <= max_width) {
+    wyrm_halo_fitted(draw, font, pos, colour, alpha, text, max_width);
+    return;
+  }
+  char first[MAX_NICKNAME_LEN + 8];
+  int length = (int)strlen(text);
+  int cut = 0;
+  for (int i = 1; i <= length && i < (int)sizeof(first) - 1; ++i) {
+    if (i < length && (((unsigned char)text[i]) & 0xC0) == 0x80) continue;
+    snprintf(first, sizeof(first), "%.*s", i, text);
+    if (measure(font, first) > max_width) break;
+    cut = i;
+  }
+  if (cut <= 0 || cut >= length) {
+    wyrm_halo_fitted(draw, font, pos, colour, alpha, text, max_width);
+    return;
+  }
+  snprintf(first, sizeof(first), "%.*s", cut, text);
+  wyrm_halo_text(draw, font, font->LegacySize, pos, colour, alpha, first);
+  wyrm_halo_fitted(draw, font, (ImVec2){pos.x, pos.y + line_step}, colour,
+                   alpha, text + cut, max_width);
+}
+
 /*
  * Wyrm's minimap, drawn here instead of the old glass shader (which was nearly
  * clear and lost on light floors). A disc tinted by the floor at one fixed
@@ -827,6 +856,9 @@ void ui_overlay(tenv* env) {
             usrs->laser_thickness);
       }
 
+#ifndef WYRM_DESKTOP
+      /* Wyrm Desktop has no joystick: its laser is the arrow one above,
+         head to the pointer (OM, 2026-10-11). */
       /* Assist laser in joystick mode (OM, 2026-10-01/02). With assist on and
          a joystick (not the arrow, which has its own line), a line from the
          front of the head where the snake is going, like the collision dot:
@@ -853,6 +885,7 @@ void ui_overlay(tenv* env) {
                          usrs->laser_color[2], usrs->laser_color[3] * a}),
             usrs->laser_thickness);
       }
+#endif
     }
   }
 
@@ -949,11 +982,17 @@ void ui_overlay(tenv* env) {
                      -1);
       igPopFont();
 
-      float row_height = score_size.y + 7.0f;
+      /* HEIGHT (OM, 2026-10-13): taller rows; two lines a name from 1.75. */
+      float lb_height = android_team_lb_height();
+      int name_lines = lb_height >= 1.75f ? 2 : 1;
+      float row_height = (score_size.y + 7.0f) * lb_height;
       float board_width = GLM_MAX(
           position_size.x, GLM_MAX(hint_size.x,
                                    rank_size.x + 10.0f + name_size.x + 12.0f +
                                        score_size.x));
+      /* WIDTH (OM, 2026-10-13): the name column grows or shrinks with it. */
+      board_width = GLM_MAX(rank_size.x + 10.0f + score_size.x + 60.0f,
+                            board_width * android_team_lb_width());
       float board_height = title_size.y + 8.0f +
                            row_height * (5.0f + 5.0f * reveal) + 8.0f +
                            GLM_MAX(position_size.y, score_size.y) + 4.0f +
@@ -1034,9 +1073,10 @@ void ui_overlay(tenv* env) {
         /* The name gets whatever is left after the score has taken its width,
            and is shortened to fit rather than allowed to run over it. */
         float name_x = board_min.x + rank_size.x + 10.0f + me_shift;
-        wyrm_halo_fitted(draw, name_font, (ImVec2){name_x, row_y + 3.0f},
-                         snake_ink, alpha, gdata->data.lb.entries[row].nickname,
-                         board_max.x - score_width - 10.0f - name_x);
+        wyrm_halo_name_rows(draw, name_font, (ImVec2){name_x, row_y + 3.0f},
+                            snake_ink, alpha, gdata->data.lb.entries[row].nickname,
+                            board_max.x - score_width - 10.0f - name_x,
+                            name_lines, name_font->LegacySize * 1.02f);
 
         measured.x = score_width;
         wyrm_halo_text(draw, score_font, score_font->LegacySize,
@@ -1082,7 +1122,7 @@ void ui_overlay(tenv* env) {
       float stats_scale = usrs->hud_stats_scale;
       float stats_alpha = usrs->hud_stats_opacity;
       ImVec2 sample = measure_scaled(value_font, "000000", stats_scale);
-      ImVec2 caption_size = measure_scaled(stats_label_font, usrs->ipv4,
+      ImVec2 caption_size = measure_scaled(stats_label_font, user_settings_arena(usrs),
                                            stats_scale);
 
       /* Measured from the widest row that is actually there rather than from a
@@ -1110,9 +1150,9 @@ void ui_overlay(tenv* env) {
       ImDrawList_AddText_FontPtr(draw, stats_label_font,
                                  stats_label_font->LegacySize * stats_scale,
                                  (ImVec2){min.x + pad, min.y + pad * 0.7f},
-                                 arena_theme_colour(ARENA_THEME_QUIET,
-                                                    0.78f * stats_alpha),
-                                 usrs->ipv4, NULL, 0,
+                                 android_team_stats_colour(ARENA_THEME_QUIET,
+                                                           0.78f * stats_alpha),
+                                 user_settings_arena(usrs), NULL, 0,
                                  NULL);
       float rule_y = min.y + pad * 0.7f + caption_size.y + 5.0f;
       ImDrawList_AddLine(draw, (ImVec2){min.x + pad, rule_y},

@@ -205,11 +205,16 @@ fun SettingsAssistScreen(
                 }
                 SettingsCaption("Skinless keeps the plain snake's width and length. Only the skin turns see-through. Spine is a white line down every snake; its width goes from hidden to the snake's own. Snake shadow is the original app's shadow under every snake.")
 
-                SettingsSectionLabel("Arena colours")
-                SettingsCard {
-                    colours.forEachIndexed { index, setting ->
-                        Box(Modifier.settingAnchor(setting.id)) {
-                            SettingsColourRow(setting = setting, first = index == 0, onChange = onChange)
+                // Only when a colour is left to set here (food and the head dot
+                // have their own): an empty card under a heading read as broken
+                // (2026-10-11).
+                if (colours.isNotEmpty()) {
+                    SettingsSectionLabel("Arena colours")
+                    SettingsCard {
+                        colours.forEachIndexed { index, setting ->
+                            Box(Modifier.settingAnchor(setting.id)) {
+                                SettingsColourRow(setting = setting, first = index == 0, onChange = onChange)
+                            }
                         }
                     }
                 }

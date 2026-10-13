@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -140,6 +141,8 @@ internal fun IosSkinScreen(
     onShareSkin: (() -> Unit)? = null,
     /** Arena background open: "Adjust size" in line with Share this skin, far right (OM, 2026-10-01). */
     onAdjustBackgroundSize: (() -> Unit)? = null,
+    /** Beside the title: the way back to Skin Studio (OM, 2026-10-12). */
+    headerTrailing: (@Composable () -> Unit)? = null,
 ) {
     val textures by rememberSkinTextures()
     val lookNow = look ?: WyrmLookStore.spec()
@@ -149,6 +152,8 @@ internal fun IosSkinScreen(
     }
     val prefs = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("wyrm_skin_studio", android.content.Context.MODE_PRIVATE)
     var section by remember { mutableStateOf(SkinSection.OVERVIEW) }
+    /** Saved skins being selected (keys), Gmail-style: the top bar turns into their actions. */
+    var savedSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
     var editingPattern by remember { mutableStateOf(false) }
     var showingWheel by remember { mutableStateOf(false) }
 
@@ -201,11 +206,31 @@ internal fun IosSkinScreen(
 
     fun enter(target: SkinSection) {
         if (target != SkinSection.PATTERN && editingPattern) editingPattern = false
+        if (target != SkinSection.OVERVIEW) savedSelection = emptySet()
         section = target
     }
 
     Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
-        IosScreenHeader(kicker = "WYRM", title = "Skin")
+        if (savedSelection.isNotEmpty()) {
+            SavedSelectionBar(
+                count = savedSelection.size,
+                onClose = { savedSelection = emptySet() },
+                onEdit = if (savedSelection.size == 1) ({
+                    SavedSkins.list.firstOrNull { it.key in savedSelection }?.let { saved ->
+                        val groups = saved.code.mapNotNull { SkinCatalog.group(it) }
+                        savedSelection = emptySet()
+                        enter(SkinSection.PATTERN)
+                        savePattern(groups, List(groups.size) { saved.colours.getOrElse(it) { 0 } })
+                    }
+                }) else null,
+                onDelete = {
+                    SavedSkins.delete(savedSelection)
+                    savedSelection = emptySet()
+                },
+            )
+        } else {
+            IosScreenHeader(kicker = "WYRM", title = "Skin", trailing = headerTrailing)
+        }
         banner?.invoke()
         Box(Modifier.fillMaxWidth().height(218.dp)) {
             SkinPreview(
@@ -252,6 +277,25 @@ internal fun IosSkinScreen(
                             IosListRow(SkinSection.TAGS.title, value = if (TAGS_DISABLED) "Coming soon" else SkinCatalog.tags.getOrNull(tag)?.let { if (isWyrmTag(it.ntlId)) "On" else "#${it.ntlId}" } ?: "None") { if (!TAGS_DISABLED) enter(SkinSection.TAGS) }
                             IosListRow(SkinSection.BACKGROUND.title, value = SkinCatalog.backgrounds.getOrNull(backgroundId)?.label ?: "Wyrm") { enter(SkinSection.BACKGROUND) }
                         }
+                        // Saved skins (OM, 2026-10-13): every custom skin played, newest first.
+                        IosSectionLabel("Saved skins")
+                        SavedSkinsBlock(
+                            textures = textures,
+                            selected = savedSelection,
+                            onTap = { saved ->
+                                if (savedSelection.isNotEmpty()) {
+                                    savedSelection = if (saved.key in savedSelection) savedSelection - saved.key else savedSelection + saved.key
+                                } else {
+                                    val groups = saved.code.mapNotNull { SkinCatalog.group(it) }
+                                    val colours = List(groups.size) { saved.colours.getOrElse(it) { 0 } }
+                                    pattern = groups
+                                    patternColors = colours
+                                    customEnabled = groups.isNotEmpty()
+                                    onCode(SkinCatalog.code(groups), IntArray(groups.size) { colours[it] })
+                                }
+                            },
+                            onLongPress = { saved -> savedSelection = savedSelection + saved.key },
+                        )
                         // Wyrm's own looks (hair, ears, glasses): only this phone sees them.
                         IosSectionLabel("Wyrm accessories")
                         IosPaperCard {
@@ -464,6 +508,171 @@ internal fun IosSkinScreen(
                 }
                 Spacer(Modifier.height(LocalRootTabClearance.current.coerceAtLeast(108.dp)))
             }
+        }
+    }
+}
+
+/* ------------------------------------------------------------- saved skins */
+
+/**
+ * A skin that was played (OM, 2026-10-13): its code and, per position, the
+ * exact colour (0 = the palette's), as the Pattern editor keeps them.
+ */
+internal class SavedSkin(val code: String, val colours: IntArray) {
+    val key: String = code + "|" + colours.joinToString(",")
+}
+
+/**
+ * Saved skins (OM, 2026-10-13): every custom skin a match is started with is
+ * kept here, newest first (playing one again moves it to the top), up to 40.
+ * Tap one to wear it; touch and hold to select, then Edit (one) or Delete
+ * from the top bar. Saved in `wyrm_saved_skins` (synced with the account,
+ * AccountSync.FILES, platform document): one skin a line, `code<TAB>colours`
+ * with the colours as hex.
+ */
+internal object SavedSkins {
+    private const val PREFS = "wyrm_saved_skins"
+    private const val MAX = 40
+    var list by mutableStateOf<List<SavedSkin>>(emptyList())
+        private set
+    private var prefs: android.content.SharedPreferences? = null
+
+    fun attach(context: android.content.Context) {
+        prefs = context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+        load()
+    }
+
+    /** After a log in or log out rewrote the file (AccountSync). */
+    fun reload(context: android.content.Context) = attach(context)
+
+    /** A match starts with this custom skin. */
+    fun record(code: String, colours: IntArray) {
+        if (code.isEmpty() || prefs == null) return
+        val saved = SavedSkin(code, IntArray(code.length) { colours.getOrElse(it) { 0 } })
+        list = (listOf(saved) + list.filter { it.key != saved.key }).take(MAX)
+        save()
+    }
+
+    fun delete(keys: Set<String>) {
+        list = list.filter { it.key !in keys }
+        save()
+    }
+
+    private fun load() {
+        val text = prefs?.getString("skins", null).orEmpty()
+        list = text.split('\n').mapNotNull { line ->
+            val tab = line.indexOf('\t')
+            if (tab <= 0) return@mapNotNull null
+            val code = line.substring(0, tab)
+            if (code.any { SkinCatalog.group(it) == null }) return@mapNotNull null
+            val colours = line.substring(tab + 1).split(',').map { it.toLongOrNull(16)?.toInt() ?: 0 }
+            SavedSkin(code, IntArray(code.length) { colours.getOrElse(it) { 0 } })
+        }.distinctBy { it.key }.take(MAX)
+    }
+
+    private fun save() {
+        val text = list.joinToString("\n") { s -> s.code + "\t" + s.colours.joinToString(",") { Integer.toHexString(it) } }
+        prefs?.edit()?.putString("skins", text)?.apply()
+    }
+}
+
+/** The top bar while saved skins are selected (Gmail-style): close, the count, Edit (one), Delete. */
+@Composable
+private fun SavedSelectionBar(count: Int, onClose: () -> Unit, onEdit: (() -> Unit)?, onDelete: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Wyrm.Paper)
+            .padding(start = 12.dp, end = 16.dp, top = 6.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Wyrm.Card)
+                .border(1.dp, Wyrm.Rule, CircleShape)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+            contentAlignment = Alignment.Center,
+        ) { Text("✕", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink) }
+        Spacer(Modifier.width(12.dp))
+        Text("$count selected", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Wyrm.Ink,
+            modifier = Modifier.weight(1f))
+        if (onEdit != null) {
+            SelectionAction("Edit", Wyrm.Ink, onEdit)
+            Spacer(Modifier.width(8.dp))
+        }
+        SelectionAction("Delete", Wyrm.Badge, onDelete)
+    }
+}
+
+@Composable
+private fun SelectionAction(label: String, colour: Color, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        Modifier
+            .scale(pressScale(pressed))
+            .clip(WyrmCapsule)
+            .background(Wyrm.Card)
+            .border(1.dp, Wyrm.Rule, WyrmCapsule)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+    ) { Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = colour) }
+}
+
+/** The saved skins, two to a row, each its own snake; tap / touch and hold. */
+@Composable
+private fun SavedSkinsBlock(
+    textures: SkinTextures?,
+    selected: Set<String>,
+    onTap: (SavedSkin) -> Unit,
+    onLongPress: (SavedSkin) -> Unit,
+) {
+    val skins = SavedSkins.list
+    if (skins.isEmpty()) {
+        Text("Play with a custom skin and it is saved here.", fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+        return
+    }
+    Text(
+        if (selected.isEmpty()) "Tap a skin to wear it. Touch and hold a skin to select it."
+        else "Tap more skins to select them. Edit works on one skin.",
+        fontFamily = Wyrm.Body, fontSize = 11.5.sp, lineHeight = 15.sp, color = Wyrm.Quiet,
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+    )
+    TileGrid(minimum = 150.dp, count = skins.size, aspect = 3.4f, fixedColumns = 2) { index ->
+        val saved = skins[index]
+        val chosen = saved.key in selected
+        val tap = rememberUpdatedState(onTap)
+        val hold = rememberUpdatedState(onLongPress)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clip(wyrmRounded(14.dp))
+                .background(if (chosen) Wyrm.Ink.copy(alpha = 0.08f) else Wyrm.Card.copy(alpha = 0.92f))
+                .border(if (chosen) 2.dp else 1.dp, if (chosen) Wyrm.Ink else Wyrm.Rule, wyrmRounded(14.dp))
+                .pointerInput(saved.key) {
+                    detectTapGestures(
+                        onTap = { tap.value(saved) },
+                        onLongPress = { hold.value(saved) },
+                    )
+                },
+        ) {
+            Canvas(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                val t = textures ?: return@Canvas
+                val groups = saved.code.mapNotNull { SkinCatalog.group(it) }
+                if (groups.isEmpty()) return@Canvas
+                val bead = size.height * 0.86f
+                val step = bead * (8f / 48f)
+                val count = ((size.width - bead) / step).toInt().coerceIn(1, 128)
+                for (i in 0 until count) {
+                    val codeIndex = (count - 1 - i) % groups.size
+                    val (image, tint) = skinBead(t, groups[codeIndex], saved.colours.getOrElse(codeIndex) { 0 }) ?: continue
+                    drawImageInto(image, i * step, (size.height - bead) / 2f, bead, bead, tint)
+                }
+            }
+            if (chosen) SelectionCheck(Modifier.align(Alignment.TopEnd))
         }
     }
 }

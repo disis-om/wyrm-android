@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_system.h>
 #include <jni.h>
@@ -182,11 +182,15 @@ static const setting_desc GLOBAL_FIELDS[] = {
     {"general.laser_thickness", "general.bot", "Laser thickness", "",
      SETTING_INT, 1, 4, NULL, OWNER_SETTINGS, SETTINGS_FIELD(laser_thickness)},
     {"general.bot_circle", "general.bot", "Circle after score",
-     "The score at which the bot starts circling instead of hunting.",
-     SETTING_INT, 1000, 6000, NULL, OWNER_SETTINGS,
+     "Below this score the bot eats. Above it, it turns until its head meets "
+     "its own body and coils round itself, keeping the coil clear and closing "
+     "it on a snake caught inside. NTL's bot length; 2000 is NTL's.",
+     SETTING_INT, 1000, 50000, NULL, OWNER_SETTINGS,
      SETTINGS_FIELD(bot_follow_circle_score)},
     {"general.bot_radius", "general.bot", "Bot radius",
-     "How wide the bot keeps its distance.", SETTING_INT, 10, 40, NULL,
+     "How far ahead of its head the bot watches for snakes, in half snake "
+     "widths. Smaller goes closer to snakes for food; bigger dodges sooner. "
+     "12 is NTL's.", SETTING_INT, 10, 40, NULL,
      OWNER_SETTINGS, SETTINGS_FIELD(bot_radius_mult)},
 
     /* CONTROLS. Steering is one choice of three rather than a checkbox and a
@@ -242,7 +246,7 @@ static const setting_desc GLOBAL_FIELDS[] = {
      NULL, OWNER_ARROW, ARROW_FIELD(color)},
 
     /* ON-SCREEN BUTTONS. Positions and per-action modes use their own bridge. */
-    {"keys.key_scale", "keys", "Button size", "", SETTING_FLOAT, 0.65f, 1.60f,
+    {"keys.key_scale", "keys", "Button size", "", SETTING_FLOAT, 0.65f, 2.50f,
      NULL, OWNER_KEYS, KEYS_FIELD(key_scale)},
     {"keys.opacity", "keys", "Button opacity", "", SETTING_FLOAT, 0.25f, 1.0f,
      NULL, OWNER_KEYS, KEYS_FIELD(opacity)},
@@ -254,7 +258,7 @@ static const setting_desc GLOBAL_FIELDS[] = {
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(zoom_opacity)},
 #define KEY_APPEARANCE(action)                                                \
     {"layout.key_" #action "_scale", "layout", "", "", SETTING_FLOAT,     \
-     0.65f, 1.60f, NULL, OWNER_SETTINGS,                                      \
+     0.65f, 2.50f, NULL, OWNER_SETTINGS,                                      \
      SETTINGS_ARRAY_FIELD(hotkey_scale, action)},                             \
     {"layout.key_" #action "_opacity", "layout", "", "", SETTING_FLOAT,   \
      0.05f, 1.0f, NULL, OWNER_SETTINGS,                                       \
@@ -272,7 +276,7 @@ static const setting_desc GLOBAL_FIELDS[] = {
 #undef KEY_APPEARANCE
     /* Eyes Back (OM, 2026-10-06): action 15's size and opacity live in the
        ext block, under the same ids the layout editor builds for any key. */
-    {"layout.key_15_scale", "layout", "", "", SETTING_FLOAT, 0.65f, 1.60f,
+    {"layout.key_15_scale", "layout", "", "", SETTING_FLOAT, 0.65f, 2.50f,
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.eyes_back_scale)},
     {"layout.key_15_opacity", "layout", "", "", SETTING_FLOAT, 0.05f, 1.0f,
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.eyes_back_opacity)},
@@ -384,7 +388,16 @@ static const int BINDABLE_KEYS[] = {
     GLFW_KEY_P,    GLFW_KEY_Q,     GLFW_KEY_R,    GLFW_KEY_S,     GLFW_KEY_T,
     GLFW_KEY_U,    GLFW_KEY_V,     GLFW_KEY_W,    GLFW_KEY_X,     GLFW_KEY_Y,
     GLFW_KEY_Z,    GLFW_KEY_SPACE, GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_UP,
-    GLFW_KEY_DOWN, GLFW_KEY_F11};
+    GLFW_KEY_DOWN, GLFW_KEY_F11,
+#ifdef WYRM_DESKTOP
+    /* Wyrm Desktop (OM, 2026-10-11): mobile_hotkey_key_bindable's extras. */
+    GLFW_KEY_TAB, GLFW_KEY_LEFT_SHIFT, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_F1,
+    GLFW_KEY_F2, GLFW_KEY_F3, GLFW_KEY_F4, GLFW_KEY_F5, GLFW_KEY_F6,
+    GLFW_KEY_F7, GLFW_KEY_F8, GLFW_KEY_F9, GLFW_KEY_F10, GLFW_KEY_F12,
+    WYRM_KEY_MOUSE_RIGHT, WYRM_KEY_MOUSE_MIDDLE, WYRM_KEY_MOUSE_BACK,
+    WYRM_KEY_MOUSE_FORWARD,
+#endif
+};
 static const int BINDABLE_COUNT =
     (int)(sizeof(BINDABLE_KEYS) / sizeof(BINDABLE_KEYS[0]));
 
@@ -602,10 +615,9 @@ static void write_field(tenv* env, const char* id, const float* values,
           settings->mobile_hotkeys.opacity;
   }
 
-  if (strcmp(id, "general.vsync") == 0) {
-    env->config.vsync = settings->vsync;
-    twindow_request_refresh(env->wnd);
-  }
+  /* Vsync always (2026-10-12): the old switch no longer changes the
+     present mode. */
+  if (strcmp(id, "general.vsync") == 0) env->config.vsync = true;
 }
 
 void android_settings_poll(tenv* env) {
@@ -631,7 +643,7 @@ void android_settings_poll(tenv* env) {
 
   if (actions & 1) {
     user_settings_default(&env->usr->usrs);
-    env->config.vsync = env->usr->usrs.vsync;
+    env->config.vsync = true; /* vsync always (2026-10-12) */
     twindow_request_refresh(env->wnd);
   }
   if (actions & 2) mobile_controls_reset_layout(env);
@@ -810,7 +822,13 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeHotkeysSnapshot(JNIEnv* env,
   buffer[0] = '\0';
 
   for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action) {
+#ifdef WYRM_DESKTOP
+    /* Wyrm Desktop: every action is a key there; full screen is the
+       window's F11 / Alt+Enter, and rope mode is Auto restart's slot. */
+    if (action == MOBILE_HOTKEY_FULLSCREEN) continue;
+#else
     if (!mobile_hotkey_is_on_screen_button(action)) continue;
+#endif
     /* Restart, quit and the movement actions have no toggle to offer: they
        either fire or they are held, and saying otherwise would be a lie in a
        dropdown. */

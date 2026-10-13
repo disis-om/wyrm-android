@@ -1,5 +1,12 @@
 package com.wyrm.omrajput.data
 
+/**
+ * Voice chat is hidden on every app (OM, 2026-10-12): its rows, buttons,
+ * alerts and notification choice are not shown, so nobody can reach it. The
+ * code stays; set this to true to bring voice back (iOS: `WyrmVoiceFeature.enabled`).
+ */
+const val VOICE_ENABLED = false
+
 data class VoiceVerification(
     val verified: Boolean = false,
     val verifiedAt: String = "",

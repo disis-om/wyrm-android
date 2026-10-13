@@ -3,6 +3,7 @@
 #include "../game/food.h"
 #include "../game/snake.h"
 #include "../game/tags.h"
+#include "../game/oef.h"
 #include "../platform/android_home.h"
 #include "../user.h"
 #include "arena_persona.h"
@@ -97,19 +98,19 @@ static bool skin_colour_allowed(int cg) {
 }
 
 /*
- * Vlither's run list for the join (OM, 2026-10-09): the skin code exactly as
+ * The reference client's run list for the join (OM, 2026-10-09): the skin code exactly as
  * the player typed or built it, one (count, colour) pair per run of equal
  * beads, in order. Nothing is folded, repeated or reordered: the arena repeats
  * what it is sent along the body, so what the player made is what goes, and
  * no bead of it is dropped. Both apps hand over the code as made (the preview
  * alone shows it repeated).
  *
- * Two guards Vlither does not have:
+ * Two guards the reference client does not have:
  * - only the colours the official client allows (any other bead is skipped);
  * - at most WYRM_JOIN_SKIN_MAX_RUNS runs. Only a code whose beads change
  *   colour more than 146 times reaches it; the rest of that code is not sent
  *   (logged), because a ~500-byte block is refused by the arena.
- * A run longer than 255 beads is split in two: Vlither's 8-bit counter
+ * A run longer than 255 beads is split in two: the reference client's 8-bit counter
  * wrapped to 0 on 256 equal beads.
  * Empty when nothing valid is left: the join then goes out as a preset one.
  */
@@ -988,7 +989,7 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
         if (gdata->data.protocol_version != PROTOCOL_VERSION) {
           SDL_Log("Wyrm arena: '%s' speaks protocol %d, we were built for %d — "
                   "playing anyway",
-                  usrs->ipv4, gdata->data.protocol_version, PROTOCOL_VERSION);
+                  user_settings_arena(usrs), gdata->data.protocol_version, PROTOCOL_VERSION);
         }
       }
 
@@ -1390,8 +1391,7 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
     }
   } else if (cmd == 'p') {
     gdata->data.wfpr = false;
-    gdata->data.pings[gdata->data.cping] = gdata->data.ctm - gdata->data.last_ping_mtm;
-    gdata->data.cping = (gdata->data.cping + 1) % PING_SAMPLE_COUNT;
+    ping_mark_received(env);
     if (gdata->data.lagging) {
       gdata->data.etm *= gdata->data.lag_mult;
       gdata->data.lagging = false;
@@ -1747,6 +1747,7 @@ void server_callback(struct mg_connection* c, int ev, void* ev_data) {
       game_fail_connection(gdata, "the arena sent an empty frame");
       return;
     }
+    gdata->network_rx_bytes += msg->data.len;
     uint8_t* a = (uint8_t*)msg->data.buf;
     int m = 0;
     if (a[m] < 32) {
@@ -1787,7 +1788,7 @@ void server_callback(struct mg_connection* c, int ev, void* ev_data) {
   } else if (ev == MG_EV_ERROR) {
     /* Logged rather than printed: stdout goes nowhere on a phone, and this is
        the one line that says why a match ended before it began. */
-    SDL_Log("Wyrm arena: '%s' errored — %s", usr->usrs.ipv4, (char*)ev_data);
+    SDL_Log("Wyrm arena: '%s' errored — %s", user_settings_arena(&usr->usrs), (char*)ev_data);
     android_home_arena_error((const char*)ev_data);
     if (!gdata->closed_by_us)
       game_fail_connection(gdata, "connection error");
@@ -1801,7 +1802,7 @@ void server_callback(struct mg_connection* c, int ev, void* ev_data) {
     arena_trace_summary(traffic, sizeof(traffic));
     SDL_Log("Wyrm arena: '%s' ended after %.1fs as '%s' — %s "
             "(snake: %s, visible: %s) [%s]",
-            usr->usrs.ipv4, gdata->last_life,
+            user_settings_arena(&usr->usrs), gdata->last_life,
             arena_persona_get(gdata->persona)->name,
             gdata->closed_by_us ? "our doing" : "the arena dropped us",
             gdata->data.follow_view ? "yes" : "never",

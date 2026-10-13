@@ -611,6 +611,11 @@ class WyrmRepository(context: Context, baseUrl: String) {
         Unit
     }
 
+    suspend fun deleteChatMessage(id: String, direct: Boolean): Unit = withContext(Dispatchers.IO) {
+        call(if (direct) "/v1/direct/messages/$id" else "/v1/chat/messages/$id", method = "DELETE")
+        Unit
+    }
+
     suspend fun reportMessage(id: String, reason: String): Unit = withContext(Dispatchers.IO) {
         call(
             "/v1/chat/messages/$id/report",

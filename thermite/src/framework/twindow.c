@@ -12,7 +12,7 @@
 #define APP_VERSION "dev"
 #endif
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include <SDL3/SDL.h>
 #include "platform/android_startup.h"
 
@@ -46,6 +46,33 @@ static SDL_Scancode sdl_scancode_from_key(int key) {
   }
 }
 
+#ifdef WYRM_DESKTOP
+/* WYRM_DESKTOP: which keys (GLFW codes, mouse buttons as WYRM_KEY_MOUSE_*) are
+   held right now. The shell pushes its keys as SDL events, and pushed events
+   never reach SDL_GetKeyboardState, so a held key (turn, boost, a hold
+   hotkey) used to read as up. The shell lets everything go on focus loss. */
+static bool desktop_held[WYRM_DESKTOP_KEY_SLOTS];
+
+/* Set by the game when a wheel turn went to a panel (the team roster or
+   chat), so this one turn does not zoom as well. */
+static bool desktop_wheel_taken;
+void twindow_desktop_take_wheel(void) { desktop_wheel_taken = true; }
+
+static void desktop_hold(int key, bool down) {
+  if (key >= 0 && key < WYRM_DESKTOP_KEY_SLOTS) desktop_held[key] = down;
+}
+
+static int desktop_mouse_key(Uint8 button) {
+  switch (button) {
+    case SDL_BUTTON_RIGHT: return WYRM_KEY_MOUSE_RIGHT;
+    case SDL_BUTTON_MIDDLE: return WYRM_KEY_MOUSE_MIDDLE;
+    case SDL_BUTTON_X1: return WYRM_KEY_MOUSE_BACK;
+    case SDL_BUTTON_X2: return WYRM_KEY_MOUSE_FORWARD;
+    default: return -1;
+  }
+}
+#endif
+
 static int desktop_key_from_scancode(SDL_Scancode scancode) {
   if (scancode >= SDL_SCANCODE_A && scancode <= SDL_SCANCODE_Z)
     return 'A' + (int)(scancode - SDL_SCANCODE_A);
@@ -53,6 +80,20 @@ static int desktop_key_from_scancode(SDL_Scancode scancode) {
     return '1' + (int)(scancode - SDL_SCANCODE_1);
   if (scancode == SDL_SCANCODE_0)
     return '0';
+#ifdef WYRM_DESKTOP
+  if (scancode >= SDL_SCANCODE_F1 && scancode <= SDL_SCANCODE_F10)
+    return GLFW_KEY_F1 + (int)(scancode - SDL_SCANCODE_F1);
+  switch (scancode) {
+    case SDL_SCANCODE_DOWN: return GLFW_KEY_DOWN;
+    case SDL_SCANCODE_TAB: return GLFW_KEY_TAB;
+    case SDL_SCANCODE_F12: return GLFW_KEY_F12;
+    case SDL_SCANCODE_LSHIFT:
+    case SDL_SCANCODE_RSHIFT: return GLFW_KEY_LEFT_SHIFT;
+    case SDL_SCANCODE_LCTRL:
+    case SDL_SCANCODE_RCTRL: return GLFW_KEY_LEFT_CONTROL;
+    default: break;
+  }
+#endif
   switch (scancode) {
     case SDL_SCANCODE_SPACE: return GLFW_KEY_SPACE;
     case SDL_SCANCODE_LEFT: return GLFW_KEY_LEFT;
@@ -100,6 +141,17 @@ static void process_android_event(twindow* window, const SDL_Event* event) {
             tdarray_push(&env->kb->keys_pressed, &key);
           else
             tdarray_push(&env->kb->keys_released, &key);
+#ifdef WYRM_DESKTOP
+          desktop_hold(key, event->type == SDL_EVENT_KEY_DOWN);
+          {
+            /* The first presses of a run, so a log shows keys arrive. */
+            static int logged;
+            if (event->type == SDL_EVENT_KEY_DOWN && logged < 40) {
+              logged++;
+              SDL_Log("Wyrm keys: key %d down", key);
+            }
+          }
+#endif
         }
       }
       break;
@@ -118,6 +170,19 @@ static void process_android_event(twindow* window, const SDL_Event* event) {
             tdarray_push(&env->ms->buttons_released, &button);
         }
       }
+#ifdef WYRM_DESKTOP
+      /* The mouse's other buttons are keys too, so they can be bound. */
+      if (env->kb) {
+        int key = desktop_mouse_key(event->button.button);
+        if (key >= 0) {
+          if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+            tdarray_push(&env->kb->keys_pressed, &key);
+          else
+            tdarray_push(&env->kb->keys_released, &key);
+          desktop_hold(key, event->type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+        }
+      }
+#endif
       break;
     case SDL_EVENT_MOUSE_MOTION:
       if (env->ms) {
@@ -126,6 +191,12 @@ static void process_android_event(twindow* window, const SDL_Event* event) {
       }
       break;
     case SDL_EVENT_MOUSE_WHEEL:
+#ifdef WYRM_DESKTOP
+      if (desktop_wheel_taken) {
+        desktop_wheel_taken = false;
+        break;
+      }
+#endif
       if (env->ms)
         env->ms->dwheel += event->wheel.y;
       break;
@@ -139,7 +210,7 @@ void twindow_request_refresh(twindow* twindow) {
   twindow->_refresh = true;
 }
 
-#ifndef VLITHER_ANDROID
+#ifndef WYRM_SDL_JNI
 void window_resize_callback(GLFWwindow* window, int width, int height) {
   tenv* env = glfwGetWindowUserPointer(window);
   env->wnd->size[0] = width;
@@ -162,9 +233,9 @@ twindow* twindow_create(tenv* env, trender_func render_func,
   window->_closed = false;
   window->_event_func = NULL;
   window->env = env;
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-    SDL_Log("Vlither: SDL_Init failed: %s", SDL_GetError());
+    SDL_Log("Wyrm: SDL_Init failed: %s", SDL_GetError());
     free(window);
     return NULL;
   }
@@ -184,7 +255,7 @@ twindow* twindow_create(tenv* env, trender_func render_func,
       SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 #endif
   if (!window->handle) {
-    SDL_Log("Vlither: SDL_CreateWindow failed: %s", SDL_GetError());
+    SDL_Log("Wyrm: SDL_CreateWindow failed: %s", SDL_GetError());
     free(window);
     return NULL;
   }
@@ -260,7 +331,7 @@ twindow* twindow_create(tenv* env, trender_func render_func,
 }
 
 static void apply_pending_window_change(twindow* window) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   /* A lost device cannot be rebuilt from here (tcontext_device_lost). */
   if (window->env->ctx && window->env->ctx->device_lost) {
     window->_refresh = false;
@@ -343,7 +414,7 @@ void twindow_poll_input(twindow* window) {
 #ifdef WYRM_DESKTOP
   wyrm_desktop_apply_size(window->handle);
 #endif
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   SDL_Event event;
   while (SDL_PollEvent(&event))
     process_android_event(window, &event);
@@ -353,7 +424,7 @@ void twindow_poll_input(twindow* window) {
   apply_pending_window_change(window);
 }
 void twindow_wait_input(twindow* window) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   SDL_Event event;
   /* A timeout guarantees that surface recovery is retried after Android has
      created the replacement SurfaceView even if no later input event arrives. */
@@ -369,7 +440,7 @@ void twindow_toggle_fullscreen(twindow* window) {
 #if defined(WYRM_DESKTOP)
   /* WYRM_DESKTOP: Compose owns full screen; the hidden window never goes. */
   (void)window;
-#elif defined(VLITHER_ANDROID)
+#elif defined(WYRM_SDL_JNI)
   SDL_SetWindowFullscreen(window->handle, true);
   window->env->config.fullscreen = true;
 #else
@@ -394,7 +465,10 @@ void twindow_toggle_fullscreen(twindow* window) {
 }
 
 bool twindow_key_down(twindow* window, int key) {
-#ifdef VLITHER_ANDROID
+#if defined(WYRM_DESKTOP)
+  (void)window;
+  return key >= 0 && key < WYRM_DESKTOP_KEY_SLOTS && desktop_held[key];
+#elif defined(WYRM_SDL_JNI)
   SDL_Scancode scancode = sdl_scancode_from_key(key);
   const bool* state = SDL_GetKeyboardState(NULL);
   return scancode != SDL_SCANCODE_UNKNOWN && state[scancode];
@@ -404,7 +478,7 @@ bool twindow_key_down(twindow* window, int key) {
 }
 
 bool twindow_button_down(twindow* window, int button) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   SDL_MouseButtonFlags state = SDL_GetMouseState(NULL, NULL);
   Uint8 sdl_button = button == GLFW_MOUSE_BUTTON_LEFT
                          ? SDL_BUTTON_LEFT
@@ -417,7 +491,7 @@ bool twindow_button_down(twindow* window, int button) {
 }
 
 bool twindow_closed(twindow* window) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   return window->_closed;
 #else
   return glfwWindowShouldClose(window->handle);
@@ -429,7 +503,7 @@ void twindow_set_event_handler(twindow* window, tevent_func event_func) {
 }
 
 void twindow_destroy(twindow* window) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   SDL_DestroyWindow(window->handle);
   SDL_Quit();
 #else

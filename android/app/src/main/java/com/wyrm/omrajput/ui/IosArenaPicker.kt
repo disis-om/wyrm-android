@@ -105,7 +105,7 @@ fun ArenaCountryBadge(country: String, modifier: Modifier = Modifier) {
 /** A saved or typed address as an arena row; a missing port is Slither's 444. */
 fun customArena(raw: String): Arena? {
     val trimmed = raw.trim()
-    val withPort = if (trimmed.contains(':')) trimmed else "$trimmed:444"
+    val withPort = ArenaDirectory.withDefaultPort(trimmed)
     if (!ArenaDirectory.isValidEndpoint(withPort)) return null
     val address = withPort.substringBeforeLast(':')
     val port = withPort.substringAfterLast(':').toIntOrNull() ?: return null
@@ -307,7 +307,7 @@ fun IosArenaPicker(
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            PickerField(customAddress, { customAddress = it }, "IPv4 address:port", KeyboardType.Uri, Modifier.weight(1f))
+                            PickerField(customAddress, { customAddress = it }, "IP address:port", KeyboardType.Uri, Modifier.weight(1f))
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 "Save",
@@ -320,7 +320,7 @@ fun IosArenaPicker(
                         }
                         if (addressError) {
                             Text(
-                                "Enter a valid IPv4 address and port (1–65535).",
+                                "Enter an IPv4 address or [IPv6] address and a port (1–65535).",
                                 fontFamily = Wyrm.Body,
                                 fontSize = 11.sp,
                                 color = Color(0xFFFF3B30),

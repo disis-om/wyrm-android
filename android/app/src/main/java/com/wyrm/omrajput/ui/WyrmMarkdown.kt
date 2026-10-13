@@ -276,7 +276,15 @@ private fun TaskMarker(checked: Boolean) {
 private fun CodeBlock(source: String, language: String) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         if (language.isNotBlank()) WyrmLabel(language.substringBefore(' '))
-        WyrmWell(modifier = Modifier.fillMaxWidth()) {
+        // The theme's well (OM, 2026-10-11): WyrmWell is the old dark glass,
+        // a grey smear on Paper and the colour themes.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(wyrmRounded(Wyrm.CornerSmall))
+                .background(Wyrm.Well)
+                .border(1.dp, Wyrm.Rule, wyrmRounded(Wyrm.CornerSmall)),
+        ) {
             Text(
                 text = source.trimEnd(),
                 fontFamily = FontFamily.Monospace,
@@ -314,8 +322,10 @@ private fun MarkdownTable(table: TableBlock, baseSize: TextUnit) {
                 modifier = Modifier
                     .width(tableWidth)
                     .clip(shape)
-                    .background(Wyrm.Carbon.copy(alpha = 0.88f))
-                    .border(1.dp, Wyrm.Line, shape),
+                    // The theme's card and rule (OM, 2026-10-11): fixed Carbon
+                    // drew a black table with faint text on light themes.
+                    .background(Wyrm.Card)
+                    .border(1.dp, Wyrm.Rule, shape),
             ) {
                 rows.forEachIndexed { rowIndex, row ->
                     val header = row.header
@@ -326,7 +336,7 @@ private fun MarkdownTable(table: TableBlock, baseSize: TextUnit) {
                             .background(
                                 when {
                                     header -> Wyrm.Well
-                                    rowIndex % 2 == 0 -> Color.White.copy(alpha = 0.025f)
+                                    rowIndex % 2 == 0 -> Wyrm.Ink.copy(alpha = 0.025f)
                                     else -> Color.Transparent
                                 }
                             ),
@@ -359,12 +369,12 @@ private fun MarkdownTable(table: TableBlock, baseSize: TextUnit) {
                                     modifier = Modifier
                                         .fillMaxHeight()
                                         .width(1.dp)
-                                        .background(Wyrm.Line)
+                                        .background(Wyrm.Rule)
                                 )
                             }
                         }
                     }
-                    if (rowIndex < rows.lastIndex) WyrmRule()
+                    if (rowIndex < rows.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
                 }
             }
         }

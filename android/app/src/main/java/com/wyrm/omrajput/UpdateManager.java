@@ -61,7 +61,7 @@ final class UpdateManager {
     private static final String GITHUB_HOST = "github.com";
     private static final String RAW_PATH_PREFIX = "/" + RELEASE_PATH + "/main/update/";
 
-    static final String PREFS_NAME = "vlither_update_state";
+    static final String PREFS_NAME = "wyrm_update_state";
     static final String PREF_LAST_SEEN_VERSION = "last_seen_version_code";
     static final String PREF_INSTALL_RESULT = "install_result";
     static final String PREF_INSTALL_MESSAGE = "install_message";
@@ -328,8 +328,8 @@ final class UpdateManager {
         if (!directory.exists() && !directory.mkdirs()) {
             throw new IllegalStateException("Could not create the secure update staging area");
         }
-        File partial = new File(directory, "vlither-" + manifest.versionCode + ".apk.part");
-        File complete = new File(directory, "vlither-" + manifest.versionCode + ".apk");
+        File partial = new File(directory, "wyrm-" + manifest.versionCode + ".apk.part");
+        File complete = new File(directory, "wyrm-" + manifest.versionCode + ".apk");
         if (complete.isFile() && complete.length() == manifest.apkSize) {
             return complete;
         }

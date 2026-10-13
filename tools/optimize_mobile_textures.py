@@ -1,4 +1,4 @@
-"""Deterministically rebuild Vlither Enhanced textures for mobile Vulkan.
+"""Deterministically rebuild Wyrm textures for mobile Vulkan.
 
 The atlas is resized cell-by-cell so Lanczos filtering never samples across
 unrelated sprites. The accessory block is processed at its finer 8x4 grid.
@@ -185,8 +185,7 @@ def main() -> None:
     root = arguments.root.resolve()
     texture_root = root / "app" / "res" / "textures"
     brand_logo = (
-        arguments.brand_logo
-        or root.parent / "vlither enhanced frontend" / "assets" / "vlither enhanced logo.png"
+        arguments.brand_logo or texture_root / "wyrm_logo.png"
     ).resolve()
     launcher_logo = (
         arguments.launcher_logo or root / "assets" / "VE app logo.png"
@@ -195,7 +194,7 @@ def main() -> None:
         "background": optimize_background(texture_root / "background_4k.png"),
         "atlas": optimize_atlas(texture_root / "tex_atlas_8k.png"),
         "brandLogo": install_brand_logo(
-            brand_logo, texture_root / "vlither_enhanced_logo.png"
+            brand_logo, texture_root / "wyrm_logo.png"
         ),
         "launcherIcons": rebuild_launcher_icons(
             launcher_logo, root / "android" / "app" / "src" / "main" / "res"

@@ -1,8 +1,10 @@
 #include <string.h>
 
 #include "../game/backgrounds.h"
+#include "../game/studio.h"
+#include <external/stb/stb_image.h>
 #include "../user.h"
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include "../platform/android_startup.h"
 #include "../platform/android_arrows.h"
 #include "../platform/android_look.h"
@@ -10,6 +12,13 @@
 
 #define BACKGROUND_LOGICAL_WIDTH 4096.0f
 #define BACKGROUND_LOGICAL_HEIGHT 3548.0f
+
+/* The arena floor's background swap (below renderer_set_background). */
+static void renderer_bg_swap_step(renderer* r, tcontext* ctx);
+static void renderer_bg_swap_destroy(renderer* r, tcontext* ctx);
+/* Skin Studio's atlas swap (below renderer_set_studio). */
+static void renderer_studio_swap_step(renderer* r, tcontext* ctx);
+static void renderer_studio_swap_destroy(renderer* r, tcontext* ctx);
 
 void _create_image_data(renderer* r, tcontext* ctx, ivec2 size) {
   glm_ivec2_copy(size, r->size);
@@ -106,7 +115,7 @@ renderer* renderer_create(tenv* env) {
   tcontext* ctx = env->ctx;
   tuser_data* usr = env->usr;
   renderer* r = calloc(1, sizeof(renderer));
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   android_startup_stage(8, "Uploading arena textures",
                         "Preparing background, sprite atlas and brand assets");
 #endif
@@ -165,18 +174,18 @@ renderer* renderer_create(tenv* env) {
   const background_def* bg = &BACKGROUNDS[r->background];
   r->bg_tex = create_mipmap_texture(
       ctx, bg->path ? bg->path : "app/res/textures/background_4k.png");
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   android_startup_texture("background", r->bg_tex->size[0], r->bg_tex->size[1],
                           1, 4);
 #endif
   r->tex_atlas = create_mipmap_texture(ctx, "app/res/textures/tex_atlas_8k.png");
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   android_startup_texture("atlas", r->tex_atlas->size[0], r->tex_atlas->size[1],
                           2, 4);
 #endif
   r->logo_tex =
-      create_mipmap_texture(ctx, "app/res/textures/vlither_enhanced_logo.png");
-#ifdef VLITHER_ANDROID
+      create_mipmap_texture(ctx, "app/res/textures/wyrm_logo.png");
+#ifdef WYRM_SDL_JNI
   android_startup_texture("logo", r->logo_tex->size[0], r->logo_tex->size[1],
                           3, 4);
 #endif
@@ -185,7 +194,7 @@ renderer* renderer_create(tenv* env) {
       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
   r->home_icons_tex =
       create_mipmap_texture(ctx, "app/res/textures/home_navigation_icons.png");
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   android_startup_texture("home-icons", r->home_icons_tex->size[0],
                           r->home_icons_tex->size[1], 4, 4);
 #endif
@@ -246,7 +255,7 @@ renderer* renderer_create(tenv* env) {
           .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
           .pNext = NULL,
           .flags = 0,
-          .bindingCount = 4,
+          .bindingCount = 5,
           .pBindings =
               (VkDescriptorSetLayoutBinding[]){
                   {.binding = 0,
@@ -263,6 +272,11 @@ renderer* renderer_create(tenv* env) {
                    .descriptorCount = 1,
                    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
                   {.binding = 3,
+                   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                   .descriptorCount = 1,
+                   .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+                  /* Skin Studio's atlas (OM, 2026-10-12). */
+                  {.binding = 4,
                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                    .descriptorCount = 1,
                    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT}}},
@@ -333,7 +347,7 @@ renderer* renderer_create(tenv* env) {
 
   for (int i = 0; i < ctx->fif; i++)
     vkUpdateDescriptorSets(
-        ctx->device, 4,
+        ctx->device, 5,
         (VkWriteDescriptorSet[]){
             {
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -385,6 +399,21 @@ renderer* renderer_create(tenv* env) {
                     &(VkDescriptorImageInfo){
                         r->nearest_sampler, r->mmr->minimap_tex[i]->view,
                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            },
+            {
+                /* Skin Studio: the game atlas until one is worn (never
+                   sampled then; a descriptor must point at something). */
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = NULL,
+                .dstSet = r->global_set[i],
+                .dstBinding = 4,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo =
+                    &(VkDescriptorImageInfo){
+                        r->atlas_sampler, r->tex_atlas->view,
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             }},
         0, NULL);
 
@@ -397,7 +426,7 @@ renderer* renderer_create(tenv* env) {
   r->astr = bp_renderer_create(ctx, 2, r->pipeline_layout, r->render_pass);
   r->cr = spr_renderer_create(ctx, 1, r->pipeline_layout, env->ctx->renderpass);
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   android_startup_stage(9, "Graphics pipelines assembled",
                         "Arena, sprites, food, minimap and UI pipelines are ready");
 #endif
@@ -410,6 +439,8 @@ void renderer_render(renderer* r, tcontext* ctx, vec4 clear_color) {
 
   r->global.viewport[0] = r->size[0];
   r->global.viewport[1] = r->size[1];
+  if (r->bg_swap) renderer_bg_swap_step(r, ctx);
+  if (r->studio_swap) renderer_studio_swap_step(r, ctx);
   memcpy(r->global_buffer[ctx->current_frame].data, &r->global,
          sizeof(r->global));
 
@@ -470,7 +501,165 @@ void renderer_render_cursor(renderer* r, tcontext* ctx) {
  * skipped by opacity elsewhere. What it must not do is keep the previous
  * background's tile size, or a later selection would inherit it.
  */
+/* 5 (OM, 2026-10-12, from the reference client): the arena floor changes without
+   a hitch. The PNG decodes on a worker thread, the GPU copy runs on its own
+   fence (texture_upload_*), and each frame in flight takes the new floor in
+   its descriptor set once its last use of the old one has finished: the
+   current frame (its fence was waited in tcontext_begin) or any frame whose
+   fence has signalled. The old floor is freed once every frame that could
+   still read it has been waited for. Before, the whole thing ran on the
+   engine thread and ended in vkDeviceWaitIdle. Driven by renderer_render(),
+   so a floor chosen while nothing is drawn applies with the next frame. */
+static void renderer_set_background_now(renderer* r, tcontext* ctx, int index);
+
+typedef struct bg_swap {
+  int want;              /* the floor asked for last */
+  int job;               /* the floor being decoded or uploaded, -1 none */
+  SDL_Thread* thread;
+  SDL_AtomicInt decoded; /* 1 once the worker has finished */
+  char path[512];
+  unsigned char* pixels;
+  int w, h;
+  texture_upload* upload;
+  texture* ready;        /* uploaded, being bound frame by frame */
+  int ready_index;
+  uint32_t bound;        /* frames whose set already shows `ready` */
+  texture* retired;      /* the old floor, until no frame can read it */
+  int retire_after;      /* renders left before it is freed */
+} bg_swap;
+
+static int bg_swap_decode(void* data) {
+  bg_swap* s = data;
+  int channels = 0;
+  s->pixels = stbi_load(s->path, &s->w, &s->h, &channels, 4);
+  SDL_SetAtomicInt(&s->decoded, 1);
+  return 0;
+}
+
+static void renderer_bind_background(renderer* r, tcontext* ctx, int frame,
+                                     texture* tex) {
+  vkUpdateDescriptorSets(
+      ctx->device, 1,
+      (VkWriteDescriptorSet[]){
+          {
+              .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+              .dstSet = r->global_set[frame],
+              .dstBinding = 2,
+              .dstArrayElement = 0,
+              .descriptorCount = 1,
+              .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+              .pImageInfo =
+                  &(VkDescriptorImageInfo){r->linear_sampler, tex->view,
+                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+          },
+      },
+      0, NULL);
+}
+
+static void renderer_bg_swap_step(renderer* r, tcontext* ctx) {
+  bg_swap* s = r->bg_swap;
+  int cur = ctx->current_frame;
+  int fif = ctx->fif < 32 ? ctx->fif : 32;
+  uint32_t all = fif >= 32 ? 0xFFFFFFFFu : ((1u << fif) - 1u);
+
+  if (s->retired && --s->retire_after <= 0) {
+    destroy_texture(ctx, s->retired);
+    s->retired = NULL;
+  }
+
+  if (s->ready) {
+    for (int i = 0; i < fif; ++i) {
+      if (s->bound & (1u << i)) continue;
+      if (i != cur &&
+          vkGetFenceStatus(ctx->device, ctx->frames[i].wait_fence) != VK_SUCCESS)
+        continue;
+      renderer_bind_background(r, ctx, i, s->ready);
+      s->bound |= 1u << i;
+    }
+    if ((s->bound & all) == all) {
+      s->retired = r->bg_tex;
+      s->retire_after = fif + 1;
+      r->bg_tex = s->ready;
+      r->background = s->ready_index;
+      s->ready = NULL;
+      s->bound = 0;
+    }
+  } else if (s->upload) {
+    texture* done = NULL;
+    if (texture_upload_poll(ctx, s->upload, &done)) {
+      s->upload = NULL;
+      if (done && s->job == s->want && s->want != r->background) {
+        s->ready = done;
+        s->ready_index = s->job;
+        s->bound = 0;
+      } else if (done) {
+        destroy_texture(ctx, done); /* chosen again meanwhile, or not needed */
+      }
+      s->job = -1;
+    }
+  } else if (s->thread) {
+    if (SDL_GetAtomicInt(&s->decoded)) {
+      SDL_WaitThread(s->thread, NULL);
+      s->thread = NULL;
+      if (s->pixels) {
+        if (s->job == s->want && s->want != r->background)
+          s->upload = texture_upload_begin(ctx, s->pixels, s->w, s->h);
+        stbi_image_free(s->pixels);
+        s->pixels = NULL;
+      } else {
+        SDL_Log("Wyrm floor: could not decode %s", s->path);
+      }
+      if (!s->upload) s->job = -1;
+    }
+  } else if (!s->retired && s->want != r->background) {
+    const background_def* bg = &BACKGROUNDS[s->want];
+    const char* path = bg->path ? bg->path : BACKGROUNDS[BACKGROUND_WYRM].path;
+    snprintf(s->path, sizeof(s->path), "%s", path);
+    s->job = s->want;
+    SDL_SetAtomicInt(&s->decoded, 0);
+    s->thread = SDL_CreateThread(bg_swap_decode, "wyrm-floor", s);
+    if (!s->thread) {
+      /* No worker: the old way, on this thread. */
+      s->job = -1;
+      renderer_set_background_now(r, ctx, s->want);
+    }
+  }
+
+  /* This frame's tile size follows the floor its own set shows. */
+  int shown = (s->ready && (s->bound & (1u << cur))) ? s->ready_index
+                                                     : r->background;
+  r->global.bg_size[0] = BACKGROUNDS[shown].tile_w;
+  r->global.bg_size[1] = BACKGROUNDS[shown].tile_h;
+}
+
+static void renderer_bg_swap_destroy(renderer* r, tcontext* ctx) {
+  bg_swap* s = r->bg_swap;
+  if (!s) return;
+  if (s->thread) SDL_WaitThread(s->thread, NULL);
+  if (s->pixels) stbi_image_free(s->pixels);
+  if (s->upload) texture_upload_cancel(ctx, s->upload);
+  if (s->ready) destroy_texture(ctx, s->ready);
+  if (s->retired) destroy_texture(ctx, s->retired);
+  free(s);
+  r->bg_swap = NULL;
+}
+
 void renderer_set_background(renderer* r, tcontext* ctx, int index) {
+  index = background_clamp(index);
+  if (!r->bg_swap) {
+    if (index == r->background) return;
+    r->bg_swap = calloc(1, sizeof(bg_swap));
+    if (!r->bg_swap) {
+      renderer_set_background_now(r, ctx, index);
+      return;
+    }
+    r->bg_swap->job = -1;
+    r->bg_swap->ready_index = -1;
+  }
+  r->bg_swap->want = index;
+}
+
+static void renderer_set_background_now(renderer* r, tcontext* ctx, int index) {
   index = background_clamp(index);
   if (index == r->background) return;
   const background_def* bg = &BACKGROUNDS[index];
@@ -508,6 +697,171 @@ void renderer_set_background(renderer* r, tcontext* ctx, int index) {
         0, NULL);
 }
 
+/* Skin Studio (OM, 2026-10-12): the player's own atlas, swapped the way the
+   arena floor is (renderer_bg_swap_step): the PNG decodes on a worker
+   thread, the GPU copy runs on its own fence, and each frame in flight takes
+   the new atlas on binding 4 once its last use of the old one has finished.
+   The skin that goes with it is worn (studio_commit) only when every frame
+   shows the new atlas, so a pattern never points into an old one. A newer
+   request supersedes an older one at every step. */
+typedef struct studio_swap {
+  int want;                 /* the newest request, by revision */
+  char want_path[512];      /* "" = off */
+  studio_skin want_skin;
+  int job;                  /* the revision decoding or uploading, -1 none */
+  studio_skin job_skin;
+  char path[512];
+  SDL_Thread* thread;
+  SDL_AtomicInt decoded;
+  unsigned char* pixels;
+  int w, h;
+  texture_upload* upload;
+  texture* ready;           /* uploaded, being bound frame by frame */
+  int ready_rev;
+  studio_skin ready_skin;
+  uint32_t bound;
+  texture* retired;         /* the old atlas, until no frame can read it */
+  int retire_after;
+  int shown;                /* the revision worn now, 0 none */
+} studio_swap;
+
+static int studio_swap_decode(void* data) {
+  studio_swap* s = data;
+  int channels = 0;
+  s->pixels = stbi_load(s->path, &s->w, &s->h, &channels, 4);
+  SDL_SetAtomicInt(&s->decoded, 1);
+  return 0;
+}
+
+static void renderer_bind_studio(renderer* r, tcontext* ctx, int frame,
+                                 texture* tex) {
+  vkUpdateDescriptorSets(
+      ctx->device, 1,
+      (VkWriteDescriptorSet[]){
+          {
+              .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+              .dstSet = r->global_set[frame],
+              .dstBinding = 4,
+              .dstArrayElement = 0,
+              .descriptorCount = 1,
+              .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+              .pImageInfo =
+                  &(VkDescriptorImageInfo){r->atlas_sampler, tex->view,
+                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+          },
+      },
+      0, NULL);
+}
+
+static void renderer_studio_swap_step(renderer* r, tcontext* ctx) {
+  studio_swap* s = r->studio_swap;
+  int cur = ctx->current_frame;
+  int fif = ctx->fif < 32 ? ctx->fif : 32;
+  uint32_t all = fif >= 32 ? 0xFFFFFFFFu : ((1u << fif) - 1u);
+
+  if (s->retired && --s->retire_after <= 0) {
+    destroy_texture(ctx, s->retired);
+    s->retired = NULL;
+  }
+
+  if (s->ready) {
+    for (int i = 0; i < fif; ++i) {
+      if (s->bound & (1u << i)) continue;
+      if (i != cur &&
+          vkGetFenceStatus(ctx->device, ctx->frames[i].wait_fence) != VK_SUCCESS)
+        continue;
+      renderer_bind_studio(r, ctx, i, s->ready);
+      s->bound |= 1u << i;
+    }
+    if ((s->bound & all) == all) {
+      if (r->studio_tex) {
+        s->retired = r->studio_tex;
+        s->retire_after = fif + 1;
+      }
+      r->studio_tex = s->ready;
+      if (s->ready_rev == s->want && s->want_path[0]) {
+        studio_commit(&s->ready_skin);
+        s->shown = s->ready_rev;
+      }
+      s->ready = NULL;
+      s->bound = 0;
+    }
+  } else if (s->upload) {
+    texture* done = NULL;
+    if (texture_upload_poll(ctx, s->upload, &done)) {
+      s->upload = NULL;
+      if (done && s->job == s->want && s->want_path[0]) {
+        s->ready = done;
+        s->ready_rev = s->job;
+        s->ready_skin = s->job_skin;
+        s->bound = 0;
+      } else if (done) {
+        destroy_texture(ctx, done); /* asked again meanwhile, or turned off */
+      }
+      s->job = -1;
+    }
+  } else if (s->thread) {
+    if (SDL_GetAtomicInt(&s->decoded)) {
+      SDL_WaitThread(s->thread, NULL);
+      s->thread = NULL;
+      if (s->pixels) {
+        if (s->job == s->want && s->want_path[0])
+          s->upload = texture_upload_begin(ctx, s->pixels, s->w, s->h);
+        stbi_image_free(s->pixels);
+        s->pixels = NULL;
+      } else {
+        SDL_Log("Wyrm studio: could not decode %s", s->path);
+      }
+      if (!s->upload) s->job = -1;
+    }
+  } else if (!s->retired && s->want_path[0] && s->want != s->shown) {
+    snprintf(s->path, sizeof(s->path), "%s", s->want_path);
+    s->job = s->want;
+    s->job_skin = s->want_skin;
+    SDL_SetAtomicInt(&s->decoded, 0);
+    s->thread = SDL_CreateThread(studio_swap_decode, "wyrm-studio", s);
+    if (!s->thread) {
+      SDL_Log("Wyrm studio: no worker thread");
+      s->job = -1;
+      s->shown = s->want; /* do not retry every frame */
+    }
+  }
+}
+
+static void renderer_studio_swap_destroy(renderer* r, tcontext* ctx) {
+  studio_swap* s = r->studio_swap;
+  if (!s) return;
+  if (s->thread) SDL_WaitThread(s->thread, NULL);
+  if (s->pixels) stbi_image_free(s->pixels);
+  if (s->upload) texture_upload_cancel(ctx, s->upload);
+  if (s->ready) destroy_texture(ctx, s->ready);
+  if (s->retired) destroy_texture(ctx, s->retired);
+  free(s);
+  r->studio_swap = NULL;
+}
+
+void renderer_set_studio(renderer* r, tcontext* ctx, const char* path,
+                         const studio_skin* skin) {
+  (void)ctx;
+  if (!r) return;
+  if (!r->studio_swap) {
+    r->studio_swap = calloc(1, sizeof(studio_swap));
+    if (!r->studio_swap) return;
+    r->studio_swap->job = -1;
+    r->studio_swap->ready_rev = -1;
+  }
+  studio_swap* s = r->studio_swap;
+  s->want += 1;
+  if (!path || !path[0] || !skin) {
+    s->want_path[0] = 0;
+    s->shown = 0;
+    studio_clear();
+    return;
+  }
+  snprintf(s->want_path, sizeof(s->want_path), "%s", path);
+  s->want_skin = *skin;
+}
+
 void renderer_destroy(renderer* r, tcontext* ctx) {
   spr_renderer_destroy(r->cr, ctx);
   bd_renderer_destroy(r->bdr, ctx);
@@ -536,6 +890,9 @@ void renderer_destroy(renderer* r, tcontext* ctx) {
   destroy_texture(ctx, r->tags_tex);
   destroy_texture(ctx, r->home_icons_tex);
   destroy_texture(ctx, r->logo_tex);
+  renderer_bg_swap_destroy(r, ctx);
+  renderer_studio_swap_destroy(r, ctx);
+  if (r->studio_tex) destroy_texture(ctx, r->studio_tex);
   destroy_texture(ctx, r->tex_atlas);
   destroy_texture(ctx, r->bg_tex);
   vkDestroySampler(ctx->device, r->nearest_sampler, NULL);

@@ -226,7 +226,7 @@ fun HomeScreen(
             }
             IosSectionLabel("Rooms & team")
             IosPaperCard {
-                IosListRow(
+                if (com.wyrm.omrajput.data.VOICE_ENABLED) IosListRow(
                     title = "Voice rooms",
                     detail = voiceRoomName.ifBlank { "Own and community rooms" },
                     value = "$voiceRoomsLive live",

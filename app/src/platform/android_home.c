@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include <jni.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_system.h>
@@ -38,7 +38,7 @@ static bool pending_editor_leaderboard_toggle = false;
 static char pending_nickname[MAX_NICKNAME_LEN + 1] = {0};
 static bool pending_nickname_save = false;
 static char pending_saved_nickname[MAX_NICKNAME_LEN + 1] = {0};
-static char pending_enter_arena[MAX_IPV4_LEN + 1] = {0};
+static char pending_enter_arena[MAX_ARENA_LEN + 1] = {0};
 static uint64_t pending_enter_id = 0;
 static uint64_t last_enter_id = 0;
 static int pending_screen = -1;
@@ -46,7 +46,7 @@ static bool pending_death_play = false;
 static bool pending_death_home = false;
 /* -1 nothing asked, 0 off, 1 on. Written by Compose from the card. */
 static int pending_auto_respawn = -1;
-static char pending_arena[MAX_IPV4_LEN + 1] = {0};
+static char pending_arena[MAX_ARENA_LEN + 1] = {0};
 
 /* Source death wait, then frame-scaled login fade. No automatic respawn. */
 static bool death_active = false;
@@ -212,7 +212,7 @@ void android_home_publish_state(tenv* env_ptr) {
   }
 
   jstring nickname = (*env)->NewStringUTF(env, settings->nickname);
-  jstring arena = (*env)->NewStringUTF(env, settings->ipv4);
+  jstring arena = (*env)->NewStringUTF(env, user_settings_arena(settings));
   /* Score and kills come along so the profile has something true to show even
    * before an account exists to sync them to. */
   (*env)->CallStaticVoidMethod(env, activity_class, method, nickname, arena,
@@ -406,8 +406,8 @@ static void arena_drop_report(tenv* env, const char* reason, int death_code) {
       ? (long long)(now - gdata->attempt_started_ms) : -1;
   long long dial_to_spawn = since_dial >= 0 ? since_dial - (long long)(life * 1000.0) : -1;
   if (dial_to_spawn < 0 && since_dial >= 0) dial_to_spawn = 0;
-  char arena[MAX_IPV4_LEN + 1];
-  drop_copy_text(arena, sizeof(arena), settings->ipv4, strlen(settings->ipv4));
+  char arena[MAX_ARENA_LEN + 1];
+  drop_copy_text(arena, sizeof(arena), user_settings_arena(settings), strlen(user_settings_arena(settings)));
   char persona[48];
   const char* persona_name = arena_persona_get(gdata->persona)->name;
   drop_copy_text(persona, sizeof(persona), persona_name,
@@ -429,6 +429,7 @@ static void arena_drop_report(tenv* env, const char* reason, int death_code) {
   drop_put_int(packed, sizeof(packed), &used, "length", length);
   drop_put_int(packed, sizeof(packed), &used, "kills", kills);
   drop_put_int(packed, sizeof(packed), &used, "pingMs", gdata->data.ping);
+  drop_put_int(packed, sizeof(packed), &used, "pingPeakMs", gdata->data.ping_peak);
   drop_put_int(packed, sizeof(packed), &used, "lagging",
                gdata->data.lagging ? 1 : 0);
   drop_put_int(packed, sizeof(packed), &used, "fps", gdata->data.fps);
@@ -481,8 +482,8 @@ void android_home_arena_prespawn_close(tenv* env, const char* phase) {
       ? (long long)(now - gdata->attempt_started_ms) : -1;
   const char* reason = drop_timed_out ? "prespawn_timeout"
                        : drop_errored ? "prespawn_error" : "prespawn_closed";
-  char arena[MAX_IPV4_LEN + 1];
-  drop_copy_text(arena, sizeof(arena), settings->ipv4, strlen(settings->ipv4));
+  char arena[MAX_ARENA_LEN + 1];
+  drop_copy_text(arena, sizeof(arena), user_settings_arena(settings), strlen(user_settings_arena(settings)));
   char persona[48];
   const char* persona_name = arena_persona_get(gdata->persona)->name;
   drop_copy_text(persona, sizeof(persona), persona_name,
@@ -744,8 +745,8 @@ void android_home_poll(tenv* env) {
   char nickname[MAX_NICKNAME_LEN + 1] = {0};
   bool save_nickname = false;
   char saved_nickname[MAX_NICKNAME_LEN + 1] = {0};
-  char arena[MAX_IPV4_LEN + 1] = {0};
-  char enter_arena[MAX_IPV4_LEN + 1] = {0};
+  char arena[MAX_ARENA_LEN + 1] = {0};
+  char enter_arena[MAX_ARENA_LEN + 1] = {0};
   uint64_t enter_id = 0;
   int requested = -1;
   bool death_play, death_home;
@@ -860,7 +861,7 @@ void android_home_poll(tenv* env) {
      * way into the match. */
     if (server_address_is_valid(arena)) {
       SDL_Log("Wyrm home: arena set to '%s'", arena);
-      snprintf(settings->ipv4, sizeof(settings->ipv4), "%s", arena);
+      user_settings_set_arena(settings, arena);
       save_user_settings(settings);
       android_home_publish_state(env);
     } else {
@@ -907,7 +908,7 @@ void android_home_poll(tenv* env) {
     /* Compose owns the name, so the engine takes it as given and persists it
      * before the match rather than after, in case the match never ends well. */
     snprintf(settings->nickname, sizeof(settings->nickname), "%s", nickname);
-    snprintf(settings->ipv4, sizeof(settings->ipv4), "%s", enter_arena);
+    user_settings_set_arena(settings, enter_arena);
     save_user_settings(settings);
 
     ui_lobby_play(env);

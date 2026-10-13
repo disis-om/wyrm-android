@@ -7,7 +7,7 @@
 #include "../game/arena_theme.h"
 #include "../user.h"
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include <SDL3/SDL.h>
 #endif
 
@@ -49,7 +49,7 @@ static void action_geometry(tenv* env, int action, float* cx, float* cy,
   *cy = clampf_local(y, 0.0f, 1.0f) * env->wnd->size[1];
   float* key_scale = user_settings_key_scale(&env->usr->usrs, action);
   float scale = button_scale(env) *
-                clampf_local(key_scale ? *key_scale : 1.0f, 0.65f, 1.60f);
+                clampf_local(key_scale ? *key_scale : 1.0f, 0.65f, 2.50f);
   *width = 104.0f * scale;
   *height = 54.0f * scale;
 }
@@ -84,7 +84,7 @@ bool mobile_hotkeys_pressed(tenv* env, int action) {
   return pressed;
 }
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 bool mobile_hotkeys_process_event(tenv* env, const void* raw_event) {
   const SDL_Event* event = raw_event;
   if (event->type == SDL_EVENT_WILL_ENTER_BACKGROUND ||
@@ -163,7 +163,7 @@ static bool action_active(tenv* env, int action) {
 }
 
 void mobile_hotkeys_draw_gameplay(tenv* env) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   if (env->usr->gdata.curr_screen != PLAYING ||
       (env->usr->gdata.conn != CONNECTED &&
        env->usr->gdata.conn != AI_CONNECTED))
@@ -315,6 +315,9 @@ int mobile_hotkey_get_key(const user_settings* settings, int action) {
   int direct = action - NUM_HOTKEYS;
   if (direct >= 0 && direct < NUM_MOBILE_DIRECT_HOTKEYS)
     return settings->mobile_hotkeys.direct_keys[direct];
+#ifdef WYRM_DESKTOP
+  if (action == MOBILE_HOTKEY_EYES_BACK) return settings->ext.eyes_back_key;
+#endif
   return GLFW_KEY_UNKNOWN;
 }
 
@@ -327,6 +330,10 @@ void mobile_hotkey_set_key(user_settings* settings, int action, int key) {
     int direct = action - NUM_HOTKEYS;
     if (direct >= 0 && direct < NUM_MOBILE_DIRECT_HOTKEYS)
       settings->mobile_hotkeys.direct_keys[direct] = key;
+#ifdef WYRM_DESKTOP
+    else if (action == MOBILE_HOTKEY_EYES_BACK)
+      settings->ext.eyes_back_key = key;
+#endif
   }
 }
 
@@ -347,8 +354,33 @@ const char* mobile_hotkey_key_name(const user_settings* settings, int action) {
       return "DOWN";
     case GLFW_KEY_F11:
       return "F11";
+#ifdef WYRM_DESKTOP
+    case GLFW_KEY_TAB:
+      return "TAB";
+    case GLFW_KEY_LEFT_SHIFT:
+      return "SHIFT";
+    case GLFW_KEY_LEFT_CONTROL:
+      return "CTRL";
+    case WYRM_KEY_MOUSE_RIGHT:
+      return "RIGHT CLICK";
+    case WYRM_KEY_MOUSE_MIDDLE:
+      return "MIDDLE CLICK";
+    case WYRM_KEY_MOUSE_BACK:
+      return "MOUSE 4";
+    case WYRM_KEY_MOUSE_FORWARD:
+      return "MOUSE 5";
+    case GLFW_KEY_UNKNOWN:
+      return "NONE";
+#endif
     default:
       slot = (slot + 1) % 4;
+#ifdef WYRM_DESKTOP
+      if ((key >= GLFW_KEY_F1 && key <= GLFW_KEY_F10) || key == GLFW_KEY_F12) {
+        snprintf(labels[slot], sizeof(labels[slot]), "F%d",
+                 key - GLFW_KEY_F1 + 1);
+        return labels[slot];
+      }
+#endif
       if ((key >= GLFW_KEY_0 && key <= GLFW_KEY_9) ||
           (key >= GLFW_KEY_A && key <= GLFW_KEY_Z)) {
         snprintf(labels[slot], sizeof(labels[slot]), "%c", (char)key);
@@ -401,3 +433,74 @@ void mobile_hotkey_set_layout(user_settings* settings, int action, bool visible,
     settings->ext.eyes_back_y = y;
   }
 }
+
+#ifdef WYRM_DESKTOP
+/* Wyrm Desktop (OM, 2026-10-11): every action is a key on a computer. These
+   are the keys it can take: the phone list plus the desktop's own (Tab,
+   Shift, Ctrl, F1-F12 but F11, the mouse's other buttons). F11 stays the
+   window's full screen key; Esc and Enter belong to the shell. */
+bool mobile_hotkey_key_bindable(int key) {
+  if ((key >= GLFW_KEY_0 && key <= GLFW_KEY_9) ||
+      (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) ||
+      (key >= GLFW_KEY_F1 && key <= GLFW_KEY_F10) ||
+      (key >= WYRM_KEY_MOUSE_RIGHT && key <= WYRM_KEY_MOUSE_FORWARD))
+    return true;
+  switch (key) {
+    case GLFW_KEY_SPACE:
+    case GLFW_KEY_LEFT:
+    case GLFW_KEY_RIGHT:
+    case GLFW_KEY_UP:
+    case GLFW_KEY_DOWN:
+    case GLFW_KEY_F11:
+    case GLFW_KEY_F12:
+    case GLFW_KEY_TAB:
+    case GLFW_KEY_LEFT_SHIFT:
+    case GLFW_KEY_LEFT_CONTROL:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/* Whether some action already uses this key. */
+static bool desktop_key_taken(const user_settings* settings, int key) {
+  for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action)
+    if (mobile_hotkey_get_key(settings, action) == key) return true;
+  return false;
+}
+
+/* Boost from the keyboard: the Boost key, and W and Up as well while no
+   other action has taken them. The left mouse button is mobile_controls'. */
+bool mobile_hotkeys_desktop_boost_down(tenv* env) {
+  const user_settings* settings = &env->usr->usrs;
+  if (twindow_key_down(env->wnd,
+                       mobile_hotkey_get_key(settings, MOBILE_HOTKEY_BOOST)))
+    return true;
+  if (!desktop_key_taken(settings, GLFW_KEY_W) &&
+      twindow_key_down(env->wnd, GLFW_KEY_W))
+    return true;
+  return !desktop_key_taken(settings, GLFW_KEY_UP) &&
+         twindow_key_down(env->wnd, GLFW_KEY_UP);
+}
+#endif
+
+#ifdef WYRM_DESKTOP
+/* A log line whenever a hotkey or boost changes, so a desktop run shows that
+   keys reached the game (OM, 2026-10-11: "no key works"). Human rate only. */
+void mobile_hotkeys_desktop_trace(tenv* env, bool boost) {
+  static bool known;
+  static bool last_active[NUM_HOTKEYS];
+  static bool last_boost;
+  const user_settings* settings = &env->usr->usrs;
+  for (int i = 0; i < NUM_HOTKEYS; ++i) {
+    bool active = settings->hotkeys[i].active;
+    if (known && active != last_active[i])
+      SDL_Log("Wyrm keys: %s %s", ACTION_NAMES[i], active ? "on" : "off");
+    last_active[i] = active;
+  }
+  if (known && boost != last_boost)
+    SDL_Log("Wyrm keys: boost %s", boost ? "on" : "off");
+  last_boost = boost;
+  known = true;
+}
+#endif

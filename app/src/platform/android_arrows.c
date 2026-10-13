@@ -7,7 +7,7 @@
  * come from Compose through atomics; nothing here touches steering, input or
  * the arena connection.
  */
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include "android_arrows.h"
 
 #include <jni.h>

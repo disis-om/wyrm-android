@@ -243,6 +243,16 @@ typedef struct game_data {
     float* fpsls;
     
     float pings[PING_SAMPLE_COUNT];
+    /* Ping the way NTL shows it (OM, 2026-10-12, from the reference client):
+       game/oef.c ping_mark_*. Timed on a high-resolution clock (ctm moves once
+       a frame), the shown number updated once a second, and the worst round
+       trip of the last 10 s. */
+    double ping_sent_ms;
+    double ping_avg_stamp;
+    double ping_accum_sum;
+    double ping_peak_stamp;
+    int ping_accum_count;
+    int ping_peak;
     float xfas[GD_EEZ];
     float afas[GD_AFC];
     float vfas[GD_VFC];
@@ -285,6 +295,13 @@ typedef struct game_data {
      a socket that is still open but has stopped sending is a frozen picture,
      and there is nothing to be gained by holding the card back over one. */
   uint64_t last_packet_ms;
+
+  /* Bytes of arena frames read so far, and when the last network poll ended
+     (network/server.c): a poll that read something is followed by another,
+     and a pong is timed against the end of the poll before the one that read
+     it. */
+  uint64_t network_rx_bytes;
+  double ping_poll_end_ms;
 } game_data;
 
 /* How long after opening a socket the next one may open. Both original clients

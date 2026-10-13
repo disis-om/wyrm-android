@@ -38,8 +38,10 @@ object NotificationPreferences {
     /** A new kind starts enabled so an older client preference file cannot hide it forever. */
     @JvmStatic
     fun isKindEnabled(context: Context, kind: String): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(kind, true)
+        // Voice hidden on every app (OM, 2026-10-12): no voice push either.
+        (VOICE_ENABLED || !kind.startsWith("voice_")) &&
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getBoolean(kind, true)
 
     fun enabledKinds(context: Context): Set<String> =
         knownKinds.filterTo(linkedSetOf()) { isKindEnabled(context, it) }

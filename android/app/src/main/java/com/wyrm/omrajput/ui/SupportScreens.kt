@@ -745,6 +745,8 @@ fun HelpCenterScreen(
     onReports: () -> Unit,
     /** Replays the app tour from its welcome (OM, 2026-10-05). */
     onReplayTour: () -> Unit = {},
+    /** Wyrm Desktop has no app tour (2026-10-12): its row is left out there. */
+    showTour: Boolean = true,
 ) {
     LaunchedEffect(Unit) { SupportStore.refresh() }
     var expanded by remember { mutableStateOf(-1) }
@@ -779,9 +781,11 @@ fun HelpCenterScreen(
                 badge = SupportStore.unseenReplies)
         }
 
-        SettingsSectionLabel("Getting started")
-        SettingsCard {
-            SettingsValueRow(title = "Replay the app tour", value = "", first = true, onOpen = { onReplayTour() })
+        if (showTour) {
+            SettingsSectionLabel("Getting started")
+            SettingsCard {
+                SettingsValueRow(title = "Replay the app tour", value = "", first = true, onOpen = { onReplayTour() })
+            }
         }
 
         // OM, 2026-10-01: the "Always send" switches live here only (moved

@@ -49,4 +49,10 @@ int mobile_hotkey_get_key(const user_settings* settings, int action);
 void mobile_hotkey_set_key(user_settings* settings, int action, int key);
 bool mobile_hotkey_is_hold_action(const user_settings* settings, int action);
 
+#ifdef WYRM_DESKTOP
+bool mobile_hotkey_key_bindable(int key);
+bool mobile_hotkeys_desktop_boost_down(tenv* env);
+void mobile_hotkeys_desktop_trace(tenv* env, bool boost);
+#endif
+
 #endif

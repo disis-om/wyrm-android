@@ -1,7 +1,7 @@
 #include "tassets.h"
 
 /* Wyrm Desktop reads app/res straight from disk. */
-#if defined(VLITHER_ANDROID) && !defined(WYRM_DESKTOP)
+#if defined(WYRM_SDL_JNI) && !defined(WYRM_DESKTOP)
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
@@ -78,7 +78,7 @@ static const char* packaged_assets[] = {
     "textures/arrow_skins.png",
     "textures/wyrm_accessories.png",
     "textures/tex_atlas_8k.png",
-    "textures/vlither_enhanced_logo.png",
+    "textures/wyrm_logo.png",
 };
 
 static bool copy_packaged_asset(const char* pref_path, const char* asset) {
@@ -91,7 +91,7 @@ static bool copy_packaged_asset(const char* pref_path, const char* asset) {
   if (separator) {
     *separator = '\0';
     if (!SDL_CreateDirectory(directory)) {
-      SDL_Log("Vlither: cannot create asset directory %s: %s", directory,
+      SDL_Log("Wyrm: cannot create asset directory %s: %s", directory,
               SDL_GetError());
       return false;
     }
@@ -99,7 +99,7 @@ static bool copy_packaged_asset(const char* pref_path, const char* asset) {
 
   SDL_IOStream* source = SDL_IOFromFile(asset, "rb");
   if (!source) {
-    SDL_Log("Vlither: packaged asset is missing: %s (%s)", asset,
+    SDL_Log("Wyrm: packaged asset is missing: %s (%s)", asset,
             SDL_GetError());
     return false;
   }
@@ -115,7 +115,7 @@ static bool copy_packaged_asset(const char* pref_path, const char* asset) {
 
   SDL_IOStream* target = SDL_IOFromFile(destination, "wb");
   if (!target) {
-    SDL_Log("Vlither: cannot write asset %s: %s", destination, SDL_GetError());
+    SDL_Log("Wyrm: cannot write asset %s: %s", destination, SDL_GetError());
     SDL_CloseIO(source);
     return false;
   }
@@ -134,15 +134,15 @@ static bool copy_packaged_asset(const char* pref_path, const char* asset) {
     ok = false;
   SDL_CloseIO(source);
   if (!ok)
-    SDL_Log("Vlither: failed while copying asset %s: %s", asset,
+    SDL_Log("Wyrm: failed while copying asset %s: %s", asset,
             SDL_GetError());
   return ok;
 }
 
 bool tassets_prepare_android(void) {
-  char* pref_path = SDL_GetPrefPath("Vlither", "VlitherEnhanced");
+  char* pref_path = SDL_GetPrefPath("Wyrm", "Wyrm");
   if (!pref_path) {
-    SDL_Log("Vlither: SDL_GetPrefPath failed: %s", SDL_GetError());
+    SDL_Log("Wyrm: SDL_GetPrefPath failed: %s", SDL_GetError());
     return false;
   }
 
@@ -155,7 +155,7 @@ bool tassets_prepare_android(void) {
   }
 
   if (ok && chdir(pref_path) != 0) {
-    SDL_Log("Vlither: cannot switch to internal storage path %s", pref_path);
+    SDL_Log("Wyrm: cannot switch to internal storage path %s", pref_path);
     ok = false;
   }
   SDL_free(pref_path);

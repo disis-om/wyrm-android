@@ -5,6 +5,7 @@
 
 #include "../user.h"
 #include "arena_trace.h"
+#include "../game/oef.h"
 #include "callback.h"
 
 void arena_send(struct mg_connection* c, const void* data, size_t len) {
@@ -64,7 +65,7 @@ bool server_connect(tenv* env) {
    */
   if (gdata->connection) {
     SDL_Log("Wyrm arena: '%s' still has a socket closing — waiting for it",
-            usrs->ipv4);
+            user_settings_arena(usrs));
     return false;
   }
 
@@ -76,7 +77,7 @@ bool server_connect(tenv* env) {
    * original client dials.
    */
   char url[256] = {};
-  snprintf(url, sizeof(url), "ws://%s/slither", usrs->ipv4);
+  snprintf(url, sizeof(url), "ws://%s/slither", user_settings_arena(usrs));
 
   /* Cleared first, so that nothing in the window below is holding the last
      arena's socket. Mongoose raises MG_EV_OPEN from inside the call, and the
@@ -106,28 +107,46 @@ bool server_connect(tenv* env) {
     mg_ws_connect(&gdata->network_manager, url, server_callback, env,
                   "Origin: https://slither.io\r\n");
   if (!gdata->connection) {
-    SDL_Log("Wyrm arena: could not open a socket to '%s'", usrs->ipv4);
+    SDL_Log("Wyrm arena: could not open a socket to '%s'", user_settings_arena(usrs));
     gdata->closed_by_us = false;
     gdata->closed = true;
     return true;
   }
 
-  /* Two immediate polls, from Vlither. A TLS handshake needs poll cycles
+  /* Two immediate polls, from the reference client. A TLS handshake needs poll cycles
      before the game loop's own first poll comes round, and the connect
      otherwise spends a frame doing nothing. */
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   mg_mgr_poll(&gdata->network_manager, 5);
   mg_mgr_poll(&gdata->network_manager, 5);
 #endif
   return true;
 }
 
+/* 2 (OM, 2026-10-12, from the reference client): Mongoose reads a socket once a
+   poll, so a burst the arena queued behind a slow frame waited for the next
+   frames. After a poll that read something, up to three more 0 ms polls
+   catch up; an idle socket costs one poll as before, and nothing sleeps
+   longer than before. Then the poll's end is noted for the ping. */
+static void server_poll_drain(tenv* env, int first_wait_ms) {
+  game_data* gdata = &env->usr->gdata;
+  uint64_t before = gdata->network_rx_bytes;
+  mg_mgr_poll(&gdata->network_manager, first_wait_ms);
+  for (int pass = 1; pass < 4; ++pass) {
+    if (!gdata->connection || gdata->closed) break;
+    if (gdata->network_rx_bytes == before) break;
+    before = gdata->network_rx_bytes;
+    mg_mgr_poll(&gdata->network_manager, 0);
+  }
+  ping_poll_done(env);
+}
+
 void server_poll(tenv* env) {
   tuser_data* usr = env->usr;
   game_data* gdata = &usr->gdata;
 
-#ifdef VLITHER_ANDROID
-  /* Phase 3 G (OM, 2026-10-01). Vlither blocked 5 ms here on every frame; its
+#ifdef WYRM_SDL_JNI
+  /* Phase 3 G (OM, 2026-10-01). The reference client blocked 5 ms here on every frame; its
      reason was TLS, but the arena socket is plain `ws://` now (see
      server_connect), so there is no record to assemble. While the socket is
      still connecting, upgrading or answering the challenge (until the arena's
@@ -144,7 +163,7 @@ void server_poll(tenv* env) {
                  !gdata->closed)
                     ? WYRM_NET_POLL_OPEN_MS : 5;
   Uint64 started = SDL_GetTicksNS();
-  mg_mgr_poll(&gdata->network_manager, wait_ms);
+  server_poll_drain(env, wait_ms);
   Uint64 ended = SDL_GetTicksNS();
 
   /* Measurement for OM's before/after check: every 10 s while a WebSocket is
@@ -178,7 +197,7 @@ void server_poll(tenv* env) {
     frames = 0;
   }
 #else
-  mg_mgr_poll(&gdata->network_manager, 0);
+  server_poll_drain(env, 0);
 #endif
 }
 
@@ -190,7 +209,29 @@ void server_destroy(tenv* env) {
 }
 
 bool server_address_is_valid(const char* address) {
-  if (!address || !address[0] || strlen(address) > MAX_IPV4_LEN) return false;
+  if (!address || !address[0]) return false;
+  /* IPv6 (OM, 2026-10-12, as the reference client): "[2001:db8::1]:444". Hex
+     digits and colons (a dotted IPv4 tail allowed) inside the brackets, then
+     a port. Mongoose is built with MG_ENABLE_IPV6. */
+  if (address[0] == '[') {
+    const char* close = strchr(address, ']');
+    if (!close || close[1] != ':' || strlen(address) > MAX_ARENA_LEN) return false;
+    int colons = 0;
+    for (const char* p = address + 1; p < close; ++p) {
+      char ch = *p;
+      if (ch == ':') colons++;
+      else if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
+                 (ch >= 'A' && ch <= 'F') || ch == '.'))
+        return false;
+    }
+    if (colons < 2 || close - address - 1 > 45) return false;
+    unsigned int v6_port;
+    char v6_tail = 0;
+    return close[2] >= '0' && close[2] <= '9' &&
+           sscanf(close + 2, "%u%c", &v6_port, &v6_tail) == 1 && v6_port > 0 &&
+           v6_port <= 65535;
+  }
+  if (strlen(address) > MAX_IPV4_LEN) return false;
   unsigned int a, b, c, d, port;
   char tail = 0;
   int matched = sscanf(address, "%u.%u.%u.%u:%u%c", &a, &b, &c, &d, &port,

@@ -310,7 +310,7 @@ object DropWatch {
 
     private val NATIVE_KEYS = listOf(
         "dropReason", "deathPacket", "dialToSpawnMs", "closeCode", "closeReason", "errorText", "lifeSec", "score", "length", "kills",
-        "pingMs", "lagging", "fps", "lastPacketAgoMs", "connectsLastMin", "persona", "protocol", "arena",
+        "pingMs", "pingPeakMs", "lagging", "fps", "lastPacketAgoMs", "connectsLastMin", "persona", "protocol", "arena",
         // Pre-spawn reports: where the handshake died and what the join carried.
         "phase", "msSinceDial", "joinSent", "joinBytes", "customSkin", "skinBytes", "skinRuns", "nickBytes", "trace",
     )

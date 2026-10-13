@@ -143,6 +143,20 @@ typedef struct user_settings_ext {
   /* Modes › Snake shadow (OM, 2026-10-09), normal and assist: the AIR
      client's `ksmc_t` under every snake. */
   bool snake_shadow[2];
+#ifdef WYRM_DESKTOP
+  /* Wyrm Desktop (OM, 2026-10-11): Eyes Back's key (action 15), default E.
+     Starts at offset 44: bytes 42-43 were padding in every file written
+     before. Desktop only, so the phone files keep their size. */
+  int32_t eyes_back_key;
+#endif
+#ifndef WYRM_DESKTOP
+  /* Bytes 42-43 were padding in every phone file written before: never read. */
+  uint8_t reserved_42[2];
+#endif
+  /* The arena, any address (OM, 2026-10-12): IPv6 does not fit the old `ipv4`
+     field. Phones: offset 44; Wyrm Desktop: 48 (after eyes_back_key). Read and
+     written only through user_settings_arena / user_settings_set_arena. */
+  char arena[MAX_ARENA_LEN + 1];
 } user_settings_ext;
 
 typedef struct user_settings {
@@ -291,6 +305,12 @@ typedef struct user_settings {
 } user_settings;
 
 void user_settings_ext_default(user_settings_ext* ext);
+
+/* The arena to dial (OM, 2026-10-12): an IPv6 address from ext.arena, else
+   `ipv4`. Setting one writes ext.arena, and `ipv4` too when it is IPv4 (older
+   builds read that field). */
+const char* user_settings_arena(const user_settings* settings);
+void user_settings_set_arena(user_settings* settings, const char* address);
 /* True when a missing or damaged ext field was put back, so the caller saves. */
 bool user_settings_ext_fix(user_settings* settings, size_t bytes_read);
 /* A key's own size and opacity: actions 0-14 in the stored arrays, Eyes Back

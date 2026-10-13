@@ -14,7 +14,7 @@
  *              head, so a ponytail or pigtails swing as the snake turns.
  * Order: flows, cap, ears, glasses. Hair takes the chosen tint.
  */
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include "android_look.h"
 
 #include <jni.h>

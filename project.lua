@@ -1,6 +1,6 @@
 vk_path = os.getenv("VULKAN_SDK")
 
-workspace "vlither"
+workspace "wyrm"
   location "build/makefiles"
   configurations { "debug", "release" }
   platforms { "linux", "windows" }

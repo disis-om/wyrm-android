@@ -141,7 +141,7 @@ object ArenaDirectory {
     private val COUNTRY = Regex("""(?:^|/)([a-z]{2})(?:\.png)?$""")
 
     suspend fun loadCountries(addresses: Collection<String>) {
-        val missing = addresses.filter { isValidEndpoint("$it:1") && it !in countries }.distinct()
+        val missing = addresses.filter { !it.startsWith("[") && isValidEndpoint("$it:1") && it !in countries }.distinct()
         val now = System.currentTimeMillis()
         if (missing.isEmpty() || now - countriesAt < COUNTRIES_EVERY_MS) return
         countriesAt = now
@@ -184,15 +184,37 @@ object ArenaDirectory {
     /** A ping that never came back. Sorted last, drawn as a dash. */
     const val UNREACHABLE = -1
 
-    /** The native client only dials numeric IPv4 arenas. Keep invalid manual
-     * input out of both its settings file and the entry state machine. */
+    /** The native client dials numeric arenas only: IPv4 `1.2.3.4:444`, or
+     * IPv6 in brackets `[2001:db8::1]:444` (OM, 2026-10-12; the engine's
+     * server_address_is_valid says the same). Keep invalid manual input out of
+     * both its settings file and the entry state machine. */
     fun isValidEndpoint(endpoint: String): Boolean {
+        if (endpoint.startsWith("[")) {
+            val close = endpoint.indexOf(']')
+            if (close < 0 || endpoint.length > 63 || endpoint.getOrNull(close + 1) != ':') return false
+            val inner = endpoint.substring(1, close)
+            val port = endpoint.substring(close + 2).takeIf { it.all(Char::isDigit) }?.toIntOrNull() ?: return false
+            return port in 1..65535 && inner.length in 2..45 && inner.count { it == ':' } >= 2 &&
+                inner.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '.' }
+        }
         val pieces = endpoint.split(':')
         if (pieces.size != 2) return false
         val port = pieces[1].toIntOrNull() ?: return false
         val octets = pieces[0].split('.')
         return port in 1..65535 && octets.size == 4 &&
             octets.all { part -> part.toIntOrNull()?.let { it in 0..255 } == true }
+    }
+
+    /** A typed address with Slither's 444 when no port was given; a bare IPv6
+     * address (`2001:db8::1`) gets its brackets. */
+    fun withDefaultPort(raw: String): String {
+        val trimmed = raw.trim()
+        return when {
+            trimmed.startsWith("[") -> if (trimmed.endsWith("]")) "$trimmed:444" else trimmed
+            trimmed.count { it == ':' } >= 2 -> "[$trimmed]:444"
+            trimmed.contains(':') -> trimmed
+            else -> "$trimmed:444"
+        }
     }
 
     /**

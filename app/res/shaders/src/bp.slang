@@ -16,6 +16,8 @@ struct vs_output {
 
 [[vk::binding(0, 0)]] ConstantBuffer<Global> global;
 [[vk::binding(1, 0)]] Sampler2D tex_atlas;
+/* Skin Studio (OM, 2026-10-12): the player's own atlas. */
+[[vk::binding(4, 0)]] Sampler2D studio_tex;
 
 vs_output vs_main(vs_input input) {
   vs_output output;
@@ -40,7 +42,17 @@ vs_output vs_main(vs_input input) {
 }
 
 float4 fs_main(vs_output input) {
-  float4 c = tex_atlas.Sample(input.uv2).rgba;
+  /* A uv shifted right by 4 samples the Studio atlas (game/studio.h).
+     The gradients are taken before the branch, so the mip choice stays
+     defined whichever texture a sprite reads. */
+  float2 uv = input.uv2;
+  float2 gx = ddx(uv);
+  float2 gy = ddy(uv);
+  float4 c;
+  if (uv.x >= 3.0)
+    c = studio_tex.SampleGrad(uv - float2(4.0, 0.0), gx, gy).rgba;
+  else
+    c = tex_atlas.SampleGrad(uv, gx, gy).rgba;
   float d = length(2 * input.uv - 1);
   float p = length(float2(ddx(d), ddy(d)));
   float a = smoothstep(0.0, EDGE_SOFTNESS, (1 - d) / p);

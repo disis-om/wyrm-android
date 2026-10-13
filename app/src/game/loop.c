@@ -10,6 +10,9 @@
 #include "../network/arena_protocol.h"
 #include "../user.h"
 #include "input.h"
+#ifdef WYRM_DESKTOP
+#include "arena_theme.h"
+#endif
 #include "oef.h"
 #include "redraw.h"
 #include "ui_overlay.h"
@@ -29,10 +32,19 @@ static void draw_connecting(tenv* env) {
   tcontext* ctx = env->ctx;
   ImDrawList* draw = igGetWindowDrawList();
 
+#ifdef WYRM_DESKTOP
+  /* Wyrm Desktop (OM, 2026-10-11): the app's theme (Paper, dark and the
+     colour themes, arena_theme_set from Settings › Themes), not Paper only. */
+  const ImU32 paper = arena_theme_colour(ARENA_THEME_PAPER, 1);
+  const ImU32 ink = arena_theme_colour(ARENA_THEME_INK, 1);
+  const ImU32 rule = arena_theme_colour(ARENA_THEME_RULE, 1);
+  const ImU32 faint = arena_theme_colour(ARENA_THEME_QUIET, 1);
+#else
   const ImU32 paper = igColorConvertFloat4ToU32((ImVec4){0.969f, 0.965f, 0.953f, 1});
   const ImU32 ink = igColorConvertFloat4ToU32((ImVec4){0.216f, 0.208f, 0.184f, 1});
   const ImU32 rule = igColorConvertFloat4ToU32((ImVec4){0.216f, 0.208f, 0.184f, .08f});
   const ImU32 faint = igColorConvertFloat4ToU32((ImVec4){0.471f, 0.467f, 0.455f, 1});
+#endif
 
   float shorter = ctx->size[0] < ctx->size[1] ? ctx->size[0] : ctx->size[1];
   float cx = ctx->size[0] * 0.5f;
@@ -54,7 +66,11 @@ static void draw_connecting(tenv* env) {
   igCalcTextSize(&wordmark_size, "WYRM", NULL, false, -1);
   igPopFont();
   float wordmark_y = top + h + h * 0.30f;
+#ifdef WYRM_DESKTOP
+  const ImU32 dim = arena_theme_colour(ARENA_THEME_INK, 0.20f);
+#else
   const ImU32 dim = igColorConvertFloat4ToU32((ImVec4){0.216f, 0.208f, 0.184f, 0.20f});
+#endif
   ImDrawList_AddText_FontPtr(draw, wordmark, wordmark->LegacySize,
                              (ImVec2){cx - wordmark_size.x * 0.5f, wordmark_y},
                              dim, "WYRM", NULL, 0.0f, NULL);
@@ -105,11 +121,26 @@ static bool draw_connecting_back_button(tcontext* ctx) {
   igSetCursorPos((ImVec2){ctx->size[0] * .5f - 80, ctx->size[1] * .72f});
   igPushStyleVar_Float(ImGuiStyleVar_FrameRounding, 11.0f);
   igPushStyleVar_Float(ImGuiStyleVar_FrameBorderSize, 1.0f);
+#ifdef WYRM_DESKTOP
+  /* The theme's card, ink and rule (OM, 2026-10-11), as the screen behind. */
+  ImVec4 card, well, track, ink, rule;
+  igColorConvertU32ToFloat4(&card, arena_theme_colour(ARENA_THEME_CARD, 1));
+  igColorConvertU32ToFloat4(&well, arena_theme_colour(ARENA_THEME_WELL, 1));
+  igColorConvertU32ToFloat4(&track, arena_theme_colour(ARENA_THEME_TRACK, 1));
+  igColorConvertU32ToFloat4(&ink, arena_theme_colour(ARENA_THEME_INK, 1));
+  igColorConvertU32ToFloat4(&rule, arena_theme_colour(ARENA_THEME_RULE, 1));
+  igPushStyleColor_Vec4(ImGuiCol_Text, ink);
+  igPushStyleColor_Vec4(ImGuiCol_Button, card);
+  igPushStyleColor_Vec4(ImGuiCol_ButtonHovered, well);
+  igPushStyleColor_Vec4(ImGuiCol_ButtonActive, track);
+  igPushStyleColor_Vec4(ImGuiCol_Border, rule);
+#else
   igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4){.216f, .208f, .184f, 1});
   igPushStyleColor_Vec4(ImGuiCol_Button, (ImVec4){1, 1, 1, 1});
   igPushStyleColor_Vec4(ImGuiCol_ButtonHovered, (ImVec4){.941f, .933f, .914f, 1});
   igPushStyleColor_Vec4(ImGuiCol_ButtonActive, (ImVec4){.910f, .898f, .871f, 1});
   igPushStyleColor_Vec4(ImGuiCol_Border, (ImVec4){.216f, .208f, .184f, .10f});
+#endif
   bool pressed = igButton("Back to lobby", (ImVec2){160, 40});
   igPopStyleColor(5);
   igPopStyleVar(2);
@@ -158,15 +189,15 @@ void game_loop(tenv* env) {
       } else {
         /* 'a' ends connecting in the web client, even before our snake
            exists: keepalives start then (input below). The attempt itself is
-           given up as Vlither gives it up (OM, 2026-10-09): no snake within
+           given up as the reference client gives it up (OM, 2026-10-09): no snake within
            TIMEOUT, 5 s from the dial (`ARENA_CONNECT_TIMEOUT_MS`). Until
            2026-10-09 Android stopped at 3.333 s and only before 'a'; iOS
-           already used Vlither's 5 s. */
+           already used the reference client's 5 s. */
         if (gdata->connection && !gdata->connection->is_closing &&
             SDL_GetTicks() - gdata->attempt_started_ms > ARENA_CONNECT_TIMEOUT_MS) {
-          arena_taint_mark(usrs->ipv4);
+          arena_taint_mark(user_settings_arena(usrs));
           android_home_arena_refused(
-              usrs->ipv4, (int)(arena_taint_remaining(usrs->ipv4) / 1000));
+              user_settings_arena(usrs), (int)(arena_taint_remaining(user_settings_arena(usrs)) / 1000));
           /* Ours, not the arena's: a report must say it was a timeout. */
           android_home_arena_note_timeout();
           game_fail_connection(gdata, "configuration timeout");
@@ -183,9 +214,9 @@ void game_loop(tenv* env) {
           /* Report this attempt's refusal and return to the lobby. A new
              endpoint may be chosen there only by the player; one Play must
              not silently create another arena connection. */
-          arena_taint_mark(usrs->ipv4);
+          arena_taint_mark(user_settings_arena(usrs));
           android_home_arena_refused(
-              usrs->ipv4, (int)(arena_taint_remaining(usrs->ipv4) / 1000));
+              user_settings_arena(usrs), (int)(arena_taint_remaining(user_settings_arena(usrs)) / 1000));
           game_data_reset(env);
           gdata->conn = DISCONNECTED;
           gdata->curr_screen = LOBBY;

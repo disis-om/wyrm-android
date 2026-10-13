@@ -164,9 +164,9 @@ void ntl_net_tick(tenv* env) {
 
   if (!announced) {
     char nick[MAX_NICKNAME_LEN * 2 + 4];
-    char srv[MAX_IPV4_LEN * 2 + 4];
+    char srv[MAX_ARENA_LEN * 2 + 4];
     json_string(nick, sizeof(nick), usrs->nickname);
-    json_string(srv, sizeof(srv), usrs->ipv4);
+    json_string(srv, sizeof(srv), user_settings_arena(usrs));
 
     /* The tag and its password stay empty. Wyrm never claims a private tag on
        this socket — the one it wears travels on the team endpoint — and saying

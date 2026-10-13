@@ -59,6 +59,9 @@ void tags_clear_network(void);
  * about.
  */
 void tags_draw(tenv* env, snake* o, bool mine, bool teammate);
+/* Tags that let go of a dead snake's head (OM, 2026-10-13): advanced and
+   drawn once a frame, after tags_tick. */
+void tags_draw_flying(tenv* env);
 
 /**
  * Draws the player's own tag on the skin editor's preview snake.

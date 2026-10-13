@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include <jni.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_system.h>
@@ -113,11 +113,14 @@ enum {
   STYLE_TEAM_PANEL,
   STYLE_CHAT_PANEL,
   STYLE_STATS_PANEL, /* the stats panel's plate (OM, 2026-10-05) */
+  STYLE_STATS_TEXT,  /* the stats panel's text colour, 0 = theme (OM, 2026-10-11) */
+  STYLE_LB_WIDTH,    /* the leaderboard's width, x its own (OM, 2026-10-13) */
+  STYLE_LB_HEIGHT,   /* its row height, x its own; 1.75+ = two-line names */
   STYLE_COUNT
 };
 static float hud_style[STYLE_COUNT] = {1.0f,   1.0f, 340.0f, 210.0f, 0.0f, 0.0f,
                                        400.0f, 270.0f, 0.0f, 0.0f,   1.0f, 1.0f,
-                                       1.0f};
+                                       1.0f,   0.0f,   1.0f, 1.0f};
 
 #define TEAM_CHAT_MAX 80
 typedef struct team_chat_line {
@@ -284,6 +287,24 @@ void android_team_set_hud_style(const float* values, int count) {
    0..1; the text keeps its own OPACITY. Drawn by ui_overlay.c. */
 float android_team_stats_panel(void) {
   return hud_clamp(hud_style[STYLE_STATS_PANEL], 0.0f, 1.0f);
+}
+
+/* The stats panel's text (OM, 2026-10-11): one of the nine colours the roster
+   and chat offer (0 keeps the theme's [role], as before), for the server line,
+   the labels and the values. */
+unsigned int android_team_stats_colour(int role, float alpha) {
+  return hud_text_colour((int)hud_style[STYLE_STATS_TEXT],
+                         (arena_theme_role)role, alpha);
+}
+
+/* The leaderboard's WIDTH and HEIGHT (OM, 2026-10-13), drawn by
+   ui_overlay.c: multiples of the board's own width and row height. */
+float android_team_lb_width(void) {
+  return hud_clamp(hud_style[STYLE_LB_WIDTH], 0.7f, 2.2f);
+}
+
+float android_team_lb_height(void) {
+  return hud_clamp(hud_style[STYLE_LB_HEIGHT], 1.0f, 2.2f);
 }
 
 void android_team_set_chat(const char* packed) {
@@ -461,7 +482,7 @@ void android_team_poll(tenv* env) {
   snprintf(line, sizeof(line), "%s\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t%d",
            usr->usrs.nickname, playing ? game->data.score : 0, x, y,
            playing && usr->usrs.hotkeys[HOTKEY_BOT].active ? 1 : 0,
-           playing ? usr->usrs.ipv4 : "_GAME_MENU_",
+           playing ? user_settings_arena(&usr->usrs) : "_GAME_MENU_",
            playing ? game->data.rank : 0, sid, tag);
 
   SDL_LockMutex(team_mutex);
@@ -508,6 +529,46 @@ static bool team_member_is_me(tenv* env, const team_member* member) {
   return true;
 }
 
+/* Is this teammate in the arena this player is in, right now?
+ *
+ * The app decides `present` when its poll goes out, from where the engine was
+ * at that moment. A poll taken while this player was dead or between lives
+ * said "menu", so every teammate fell off the map for a whole poll (4 s) after
+ * each respawn; iOS also wanted a non-zero NTL snake id, which a Wyrm player
+ * without packet S never has. The member's arena travels with the row (field
+ * 10), so the map compares it with the arena being played, every frame. Same
+ * address written two ways ("ws://", "/slither", case, spaces) is the same
+ * arena. (OM, 2026-10-09: teammates came and went on the minimap.) */
+static size_t arena_key(const char* in, char* out, size_t cap) {
+  if (!in || !out || cap == 0) return 0;
+  while (*in == ' ') ++in;
+  const char* p = in;
+  const char* scheme = strstr(p, "://");
+  if (scheme) p = scheme + 3;
+  size_t n = 0;
+  for (; *p && *p != '/' && n + 1 < cap; ++p) {
+    char c = *p;
+    if (c == ' ') continue;
+    if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+    out[n++] = c;
+  }
+  out[n] = '\0';
+  return n;
+}
+
+static bool team_member_here(tenv* env, const team_member* member) {
+  /* The member's own arena decides whenever it is known (OM, 2026-10-11:
+     teammates in other arenas showed on the map). `present` is the app's
+     answer from its last poll, up to 4 s old: it said "here" for a teammate
+     who had since moved, or while this player had moved, so it is only the
+     answer for a row that carries no arena. */
+  if (!member->server[0]) return member->present;
+  char a[64], b[64];
+  if (!arena_key(member->server, a, sizeof(a))) return false;
+  if (!arena_key(user_settings_arena(&env->usr->usrs), b, sizeof(b))) return false;
+  return strcmp(a, b) == 0;
+}
+
 void android_team_draw_minimap(tenv* env, float left, float top,
                                float diameter) {
   int count = frame_member_count;
@@ -525,7 +586,7 @@ void android_team_draw_minimap(tenv* env, float left, float top,
 
   ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
   for (int i = 0; i < count; ++i) {
-    if (!frame_members[i].present) continue;
+    if (!team_member_here(env, frame_members + i)) continue;
     if (frame_members[i].x == 0 && frame_members[i].y == 0) continue;
     if (team_member_is_me(env, frame_members + i)) continue;
 
@@ -614,7 +675,7 @@ float android_team_draw_roster_centered(tenv* env, float centre_x,
     const char* name = preview ? "Player name" : frame_members[i].name;
     const char* owner = preview ? "Key name" : frame_members[i].owner;
     const char* server = preview ? "IP address" : frame_members[i].server;
-    bool present = preview ? true : frame_members[i].present;
+    bool present = preview ? true : team_member_here(env, frame_members + i);
     char score_text[16];
     if (preview)
       snprintf(score_text, sizeof(score_text), "Score");
@@ -782,14 +843,6 @@ void android_team_set_chat_centre(float centre_x, float centre_y) {
 }
 
 void android_team_draw_chat_button(tenv* env) {
-#ifdef WYRM_DESKTOP
-  /* WYRM_DESKTOP: no team chat button (team and chat come later). */
-  (void)env;
-  chat_anchored = false;
-  chat_button[2] = 0.0f;
-  chat_button[3] = 0.0f;
-  return;
-#endif
   /* The chat window (OM, 2026-10-04): the team chat, the same messages the
      app's Team page shows, open or folded to a pill, played through while
      open. Tap the header to fold it, the message box to write. */
@@ -1061,6 +1114,47 @@ bool android_team_hud_touch(tenv* env, int type, unsigned long long finger,
   }
   return false;
 }
+
+#ifdef WYRM_DESKTOP
+/* Wyrm Desktop (OM, 2026-10-11): the wheel over the roster or the chat
+   window scrolls it, as a finger drag does; anywhere else it zooms. Wheel up
+   is a drag down: the older lines come into view. */
+bool android_team_hud_wheel(tenv* env, float x, float y, float notches) {
+  if (!env || env->usr->gdata.curr_screen != PLAYING ||
+      env->usr->gdata.conn != CONNECTED)
+    return false;
+  const float step = 42.0f;
+  if (hud_inside(chat_rect, x, y)) {
+    if (chat_openness > 0.5f) chat_scroll += notches * step;
+    return true;
+  }
+  if (hud_inside(roster_rect, x, y)) {
+    roster_scroll -= notches * step;
+    return true;
+  }
+  return false;
+}
+
+/* Whether a press at (x, y) lands on the roster or the chat window. */
+bool android_team_hud_contains(float x, float y) {
+  return hud_inside(chat_rect, x, y) || hud_inside(roster_rect, x, y);
+}
+
+/* Where the roster and the chat window were drawn last frame, in pixels:
+   x, y, width, height of each (zero width when not drawn). The desktop's
+   arena UI editor grabs them by these, so its hit boxes are the engine's. */
+JNIEXPORT jfloatArray JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeDesktopTeamRects(JNIEnv* env,
+                                                           jclass clazz) {
+  (void)clazz;
+  float out[8];
+  memcpy(out, roster_rect, sizeof(float) * 4);
+  memcpy(out + 4, chat_rect, sizeof(float) * 4);
+  jfloatArray result = (*env)->NewFloatArray(env, 8);
+  if (result) (*env)->SetFloatArrayRegion(env, result, 0, 8, out);
+  return result;
+}
+#endif
 
 /* ------------------------------------------------- auto respawn, in the arena
  *
@@ -1432,6 +1526,8 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeSetTeamHudStyle(JNIEnv* env,
 
 #else
 
+#include "../game/arena_theme.h"
+
 void android_team_bind_env(tenv* env) { (void)env; }
 void android_team_poll(tenv* env) { (void)env; }
 void android_team_begin_frame(void) {}
@@ -1457,6 +1553,9 @@ void android_team_set_chat_centre(float centre_x, float centre_y) {
 }
 bool android_team_chat_open(void) { return false; }
 float android_team_stats_panel(void) { return 1.0f; }
+unsigned int android_team_stats_colour(int role, float alpha) {
+  return arena_theme_colour((arena_theme_role)role, alpha);
+}
 void android_team_set_chat(const char* packed) { (void)packed; }
 void android_team_set_hud_style(const float* values, int count) {
   (void)values;

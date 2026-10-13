@@ -4,13 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include <jni.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_system.h>
 
 #include "../game/backgrounds.h"
 #include "../rendering/renderer.h"
+#include "../game/studio.h"
 #include "../ui/skin_editor.h"
 #include "../user.h"
 
@@ -32,6 +33,10 @@ static int pending_postcard = -1;
  * instead of opening the editor, and saves each change as it is made. */
 static bool pending_sync = false;
 static bool pending_sync_save = false;
+/* Skin Studio (OM, 2026-10-12): 1 wear (path + text), 2 off. */
+static int pending_studio = 0;
+static char pending_studio_path[512] = {0};
+static char pending_studio_text[8192] = {0};
 
 static bool get_activity(JNIEnv** out_env, jclass* out_class) {
   *out_env = (JNIEnv*)SDL_GetAndroidJNIEnv();
@@ -173,7 +178,7 @@ void android_skin_publish_state(tenv* env_ptr) {
 #define ARENA_SKIN_SETTLE_MS 250
 
 static int published_snake_id = -1;
-static char published_arena[MAX_IPV4_LEN + 1] = {0};
+static char published_arena[MAX_ARENA_LEN + 1] = {0};
 static uint64_t playing_since_ms = 0;
 static uint64_t next_request_ms = 0;
 
@@ -187,7 +192,7 @@ static void publish_arena_identity(tenv* env) {
                  gdata->connection && !gdata->connection->is_closing &&
                  !gdata->data.dead && gdata->data.snake_id >= 0;
   int snake_id = playing ? gdata->data.snake_id : -1;
-  const char* arena = playing ? usr->usrs.ipv4 : "";
+  const char* arena = playing ? user_settings_arena(&usr->usrs) : "";
 
   if (snake_id == published_snake_id && strcmp(arena, published_arena) == 0)
     return;
@@ -364,6 +369,54 @@ void android_skin_poll(tenv* env) {
    * Skin tab just changed and tells Compose what is now worn. */
   if (skin_sync_save) save_user_settings(settings);
   if (skin_sync) android_skin_publish_state(env);
+
+  /* Skin Studio: parsed here, worn once the atlas is on screen. */
+  int studio = 0;
+  static char studio_path[512];
+  static char studio_text[8192];
+  SDL_LockMutex(skin_mutex);
+  studio = pending_studio;
+  if (studio == 1) {
+    memcpy(studio_path, pending_studio_path, sizeof(studio_path));
+    memcpy(studio_text, pending_studio_text, sizeof(studio_text));
+  }
+  pending_studio = 0;
+  SDL_UnlockMutex(skin_mutex);
+  if (studio == 1) {
+    static studio_skin parsed;
+    if (studio_parse(studio_text, &parsed))
+      renderer_set_studio(env->usr->r, env->ctx, studio_path, &parsed);
+    else {
+      SDL_Log("Wyrm studio: the skin text was not valid");
+      renderer_set_studio(env->usr->r, env->ctx, NULL, NULL);
+    }
+  } else if (studio == 2) {
+    renderer_set_studio(env->usr->r, env->ctx, NULL, NULL);
+  }
+}
+
+/* Skin Studio (OM, 2026-10-12): wear the atlas at [path] with [text]
+   (game/studio.h); an empty path takes it off. */
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeStudioSet(JNIEnv* env, jclass clazz,
+                                                    jstring path,
+                                                    jstring text) {
+  (void)clazz;
+  if (!skin_mutex) return;
+  const char* p = path ? (*env)->GetStringUTFChars(env, path, NULL) : NULL;
+  const char* t = text ? (*env)->GetStringUTFChars(env, text, NULL) : NULL;
+  SDL_LockMutex(skin_mutex);
+  if (p && p[0] && t && t[0] && strlen(t) < sizeof(pending_studio_text) &&
+      strlen(p) < sizeof(pending_studio_path)) {
+    snprintf(pending_studio_path, sizeof(pending_studio_path), "%s", p);
+    snprintf(pending_studio_text, sizeof(pending_studio_text), "%s", t);
+    pending_studio = 1;
+  } else {
+    pending_studio = 2;
+  }
+  SDL_UnlockMutex(skin_mutex);
+  if (p) (*env)->ReleaseStringUTFChars(env, path, p);
+  if (t) (*env)->ReleaseStringUTFChars(env, text, t);
 }
 
 JNIEXPORT void JNICALL

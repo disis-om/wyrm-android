@@ -1,7 +1,7 @@
 #ifndef ANDROID_LOOK_H
 #define ANDROID_LOOK_H
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include "../user.h"
 
 void android_look_create(renderer* r, tcontext* ctx);

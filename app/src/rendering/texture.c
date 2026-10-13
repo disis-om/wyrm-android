@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include "../platform/android_startup.h"
 #endif
 
@@ -15,7 +15,7 @@ static const char* texture_display_name(const char* filename) {
 }
 
 static void texture_startup_step(const char* filename, const char* action) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   char title[128];
   char detail[256];
   const char* name = texture_display_name(filename);
@@ -29,8 +29,8 @@ static void texture_startup_step(const char* filename, const char* action) {
 }
 
 static void texture_terminal_failure(const char* title, const char* detail) {
-  SDL_Log("Vlither: %s: %s", title, detail);
-#ifdef VLITHER_ANDROID
+  SDL_Log("Wyrm: %s: %s", title, detail);
+#ifdef WYRM_SDL_JNI
   android_startup_failure(8, title, detail);
   // Keep the Java diagnostic surface alive. Returning an incomplete Vulkan
   // image would only turn the useful error screen into a native crash.
@@ -58,7 +58,7 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
   };
   bool using_fallback = false;
   if (!data || w <= 0 || h <= 0) {
-    SDL_Log("Vlither: texture decode failed for %s: %s; using fallback",
+    SDL_Log("Wyrm: texture decode failed for %s: %s; using fallback",
             filename, stbi_failure_reason());
     data = fallback;
     w = 2;
@@ -67,7 +67,7 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
     using_fallback = true;
   }
   texture_startup_step(filename, "image decoded");
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   VkPhysicalDeviceProperties gpu_properties = {0};
   vkGetPhysicalDeviceProperties(ctx->ph_device, &gpu_properties);
   if ((uint32_t)w > gpu_properties.limits.maxImageDimension2D ||
@@ -86,7 +86,7 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
   }
 #endif
   bool generate_mipmaps = strstr(filename, "tex_atlas") == NULL;
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   // Several Android Mali drivers terminate the device when asked to blit a
   // freshly uploaded image through a full mip chain. Keep the original source
   // resolution, but use a single sampled level on Mali so the upload remains
@@ -109,7 +109,7 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
         VK_FORMAT_FEATURE_BLIT_DST_BIT |
         VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
     if ((format_properties.optimalTilingFeatures & required) != required) {
-      SDL_Log("Vlither: linear mip blits unavailable for %s; using base level",
+      SDL_Log("Wyrm: linear mip blits unavailable for %s; using base level",
               filename);
       mip_levels = 1;
     }
@@ -430,6 +430,260 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
   r->size[1] = h;
 
   return r;
+}
+
+/* A texture uploading in the background (OM, 2026-10-12, from
+   the reference client): the same copy and mip chain as create_mipmap_texture(),
+   recorded on a command buffer of its own and submitted on a fence of its
+   own, so nothing waits on the GPU. texture_upload_poll() finishes it once
+   the fence has signalled. Engine thread only (the command pool and the
+   queue are the frame's). */
+struct texture_upload {
+  texture* tex;
+  VkBuffer staging;
+  VmaAllocation staging_memory;
+  VkCommandBuffer cmd;
+  VkFence fence;
+  int mip_levels;
+};
+
+static void texture_upload_release(tcontext* ctx, texture_upload* up) {
+  if (up->cmd) vkFreeCommandBuffers(ctx->device, ctx->cmd_pool, 1, &up->cmd);
+  if (up->fence) vkDestroyFence(ctx->device, up->fence, NULL);
+  if (up->staging) vmaDestroyBuffer(ctx->allocator, up->staging, up->staging_memory);
+  free(up);
+}
+
+static void texture_upload_drop_image(tcontext* ctx, texture_upload* up) {
+  if (up->tex) {
+    if (up->tex->image) vmaDestroyImage(ctx->allocator, up->tex->image, up->tex->memory);
+    free(up->tex);
+    up->tex = NULL;
+  }
+}
+
+static void texture_barrier(VkCommandBuffer cmd, VkImage image, int level,
+                            int levels, VkImageLayout from, VkImageLayout to,
+                            VkAccessFlags src, VkAccessFlags dst,
+                            VkPipelineStageFlags src_stage,
+                            VkPipelineStageFlags dst_stage) {
+  vkCmdPipelineBarrier(
+      cmd, src_stage, dst_stage, 0, 0, NULL, 0, NULL, 1,
+      &(VkImageMemoryBarrier){
+          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+          .srcAccessMask = src,
+          .dstAccessMask = dst,
+          .oldLayout = from,
+          .newLayout = to,
+          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+          .image = image,
+          .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                               .baseMipLevel = level,
+                               .levelCount = levels,
+                               .baseArrayLayer = 0,
+                               .layerCount = 1}});
+}
+
+texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
+                                     int w, int h) {
+  if (!ctx || !rgba || w <= 0 || h <= 0) return NULL;
+  VkPhysicalDeviceProperties gpu = {0};
+  vkGetPhysicalDeviceProperties(ctx->ph_device, &gpu);
+  if ((uint32_t)w > gpu.limits.maxImageDimension2D ||
+      (uint32_t)h > gpu.limits.maxImageDimension2D) {
+    SDL_Log("Wyrm texture: %d x %d is over this GPU's %u px", w, h,
+            gpu.limits.maxImageDimension2D);
+    return NULL;
+  }
+  /* As create_mipmap_texture(): no mip blits on Mali, nor where the format
+     cannot be blitted. */
+  int mip_levels = (int)(floorf(log2f((float)GLM_MAX(w, h))) + 1);
+  if (strstr(gpu.deviceName, "Mali") != NULL) mip_levels = 1;
+  if (mip_levels > 1) {
+    VkFormatProperties format = {0};
+    vkGetPhysicalDeviceFormatProperties(ctx->ph_device, VK_FORMAT_R8G8B8A8_UNORM,
+                                        &format);
+    const VkFormatFeatureFlags need = VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+                                      VK_FORMAT_FEATURE_BLIT_DST_BIT |
+                                      VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    if ((format.optimalTilingFeatures & need) != need) mip_levels = 1;
+  }
+
+  texture_upload* up = calloc(1, sizeof(*up));
+  if (!up) return NULL;
+  up->tex = calloc(1, sizeof(texture));
+  if (!up->tex) { free(up); return NULL; }
+  up->mip_levels = mip_levels;
+
+  const VkDeviceSize bytes = (VkDeviceSize)w * (VkDeviceSize)h * 4;
+  VmaAllocationInfo info = {0};
+  if (vmaCreateBuffer(
+          ctx->allocator,
+          &(VkBufferCreateInfo){.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                .size = bytes,
+                                .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE},
+          &(VmaAllocationCreateInfo){
+              .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                       VMA_ALLOCATION_CREATE_MAPPED_BIT,
+              .usage = VMA_MEMORY_USAGE_AUTO},
+          &up->staging, &up->staging_memory, &info) != VK_SUCCESS ||
+      !info.pMappedData) {
+    up->staging = VK_NULL_HANDLE;
+    texture_upload_drop_image(ctx, up);
+    texture_upload_release(ctx, up);
+    return NULL;
+  }
+  memcpy(info.pMappedData, rgba, (size_t)bytes);
+  vmaFlushAllocation(ctx->allocator, up->staging_memory, 0, bytes);
+
+  texture* t = up->tex;
+  if (vmaCreateImage(
+          ctx->allocator,
+          &(VkImageCreateInfo){
+              .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+              .imageType = VK_IMAGE_TYPE_2D,
+              .format = VK_FORMAT_R8G8B8A8_UNORM,
+              .extent = {w, h, 1},
+              .mipLevels = mip_levels,
+              .arrayLayers = 1,
+              .samples = VK_SAMPLE_COUNT_1_BIT,
+              .tiling = VK_IMAGE_TILING_OPTIMAL,
+              .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                       (mip_levels > 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0),
+              .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+              .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED},
+          &(VmaAllocationCreateInfo){.usage = VMA_MEMORY_USAGE_AUTO, .priority = 1.0f},
+          &t->image, &t->memory, NULL) != VK_SUCCESS) {
+    t->image = VK_NULL_HANDLE;
+    texture_upload_drop_image(ctx, up);
+    texture_upload_release(ctx, up);
+    return NULL;
+  }
+  t->size[0] = w;
+  t->size[1] = h;
+
+  if (vkAllocateCommandBuffers(
+          ctx->device,
+          &(VkCommandBufferAllocateInfo){
+              .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+              .commandPool = ctx->cmd_pool,
+              .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+              .commandBufferCount = 1},
+          &up->cmd) != VK_SUCCESS ||
+      vkCreateFence(ctx->device,
+                    &(VkFenceCreateInfo){.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO},
+                    NULL, &up->fence) != VK_SUCCESS) {
+    texture_upload_drop_image(ctx, up);
+    texture_upload_release(ctx, up);
+    return NULL;
+  }
+
+  VkCommandBuffer cmd = up->cmd;
+  vkBeginCommandBuffer(cmd, &(VkCommandBufferBeginInfo){
+                                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
+  texture_barrier(cmd, t->image, 0, 1, VK_IMAGE_LAYOUT_UNDEFINED,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_NONE,
+                  VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT);
+  vkCmdCopyBufferToImage(
+      cmd, up->staging, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+      &(VkBufferImageCopy){
+          .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                               .mipLevel = 0,
+                               .baseArrayLayer = 0,
+                               .layerCount = 1},
+          .imageExtent = {w, h, 1}});
+  if (mip_levels > 1) {
+    texture_barrier(cmd, t->image, 0, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    for (int i = 1; i < mip_levels; i++) {
+      texture_barrier(cmd, t->image, i, 1, VK_IMAGE_LAYOUT_UNDEFINED,
+                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_NONE,
+                      VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                      VK_PIPELINE_STAGE_TRANSFER_BIT);
+      const int32_t src_w = GLM_MAX(1, w >> (i - 1));
+      const int32_t src_h = GLM_MAX(1, h >> (i - 1));
+      const int32_t dst_w = GLM_MAX(1, w >> i);
+      const int32_t dst_h = GLM_MAX(1, h >> i);
+      vkCmdBlitImage(cmd, t->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                     t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                     &(VkImageBlit){
+                         .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, i - 1, 0, 1},
+                         .srcOffsets = {{0, 0, 0}, {src_w, src_h, 1}},
+                         .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, i, 0, 1},
+                         .dstOffsets = {{0, 0, 0}, {dst_w, dst_h, 1}}},
+                     VK_FILTER_LINEAR);
+      texture_barrier(cmd, t->image, i, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                      VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                      VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    }
+    texture_barrier(cmd, t->image, 0, mip_levels,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+  } else {
+    texture_barrier(cmd, t->image, 0, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+  }
+  if (vkEndCommandBuffer(cmd) != VK_SUCCESS ||
+      vkQueueSubmit(ctx->queue, 1,
+                    &(VkSubmitInfo){.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                                    .commandBufferCount = 1,
+                                    .pCommandBuffers = &cmd},
+                    up->fence) != VK_SUCCESS) {
+    texture_upload_drop_image(ctx, up);
+    texture_upload_release(ctx, up);
+    return NULL;
+  }
+  return up;
+}
+
+bool texture_upload_poll(tcontext* ctx, texture_upload* up, texture** out) {
+  *out = NULL;
+  VkResult status = vkGetFenceStatus(ctx->device, up->fence);
+  if (status == VK_NOT_READY) return false;
+  if (status == VK_SUCCESS &&
+      vkCreateImageView(
+          ctx->device,
+          &(VkImageViewCreateInfo){
+              .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+              .image = up->tex->image,
+              .viewType = VK_IMAGE_VIEW_TYPE_2D,
+              .format = VK_FORMAT_R8G8B8A8_UNORM,
+              .components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                             VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY},
+              .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                   .baseMipLevel = 0,
+                                   .levelCount = up->mip_levels,
+                                   .baseArrayLayer = 0,
+                                   .layerCount = 1}},
+          NULL, &up->tex->view) == VK_SUCCESS) {
+    *out = up->tex;
+    up->tex = NULL;
+  } else {
+    SDL_Log("Wyrm texture: background upload failed (Vulkan result %d)", status);
+    texture_upload_drop_image(ctx, up);
+  }
+  texture_upload_release(ctx, up);
+  return true;
+}
+
+void texture_upload_cancel(tcontext* ctx, texture_upload* up) {
+  if (!up) return;
+  vkWaitForFences(ctx->device, 1, &up->fence, VK_TRUE, UINT64_MAX);
+  texture_upload_drop_image(ctx, up);
+  texture_upload_release(ctx, up);
 }
 
 texture* create_minimap_texture(tcontext* ctx, int width) {

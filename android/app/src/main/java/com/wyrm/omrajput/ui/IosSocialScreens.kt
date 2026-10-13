@@ -126,6 +126,13 @@ fun iosChatError(code: String): String = when (code) {
 
 /* ---------------------------------------------------------------- chrome */
 
+/**
+ * Wyrm Desktop shows these pages inside its own sections, under its own
+ * header, so it turns the phone's "Back · Title" bar off. Android never sets
+ * it (2026-10-12).
+ */
+val LocalPageChromeHidden = androidx.compose.runtime.staticCompositionLocalOf { false }
+
 @Composable
 fun IosPageChrome(
     title: String,
@@ -135,6 +142,10 @@ fun IosPageChrome(
     onAction: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (LocalPageChromeHidden.current) {
+        Column(Modifier.fillMaxSize().padding(top = insetTop)) { content() }
+        return
+    }
     Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
         Box(Modifier.fillMaxWidth().height(52.dp).background(Wyrm.Paper).padding(horizontal = 18.dp)) {
             Row(
@@ -426,6 +437,7 @@ fun IosThreadScreen(
     /** The other player's activity (2026-10-09), "Active now" / "Playing in …" + Join. */
     activity: FriendActivity? = null,
     onJoin: ((String) -> Unit)? = null,
+    onDelete: ((ChatMessage) -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
         Row(
@@ -482,6 +494,7 @@ fun IosThreadScreen(
             peer = peer,
             onPeer = onPeer,
             direct = true,
+            onDelete = onDelete,
         )
     }
 }
@@ -574,6 +587,7 @@ fun IosGlobalChatScreen(
     onBack: () -> Unit,
     onOpenAuthor: (String) -> Unit,
     onReport: (ChatMessage, String) -> Unit,
+    onDelete: ((ChatMessage) -> Unit)? = null,
 ) {
     var reporting by remember { mutableStateOf<ChatMessage?>(null) }
     Box(Modifier.fillMaxSize()) {
@@ -594,6 +608,7 @@ fun IosGlobalChatScreen(
                 onSend = onSend,
                 onAuthor = onOpenAuthor,
                 onReport = { reporting = it },
+                onDelete = onDelete,
             )
         }
         reporting?.let { message ->
@@ -629,12 +644,13 @@ internal fun ColumnScope.IosChatPage(
     peer: ApiPlayer? = null,
     onPeer: () -> Unit = {},
     direct: Boolean = false,
+    onDelete: ((ChatMessage) -> Unit)? = null,
 ) {
     val backdrop = rememberLayerBackdrop()
     val imeUp = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Column(Modifier.weight(1f).fillMaxWidth().imePadding()) {
         Box(Modifier.weight(1f).fillMaxWidth().layerBackdrop(backdrop)) {
-            IosChatTranscript(messages, meId, showsAuthors, emptyTitle, emptyNote, onAuthor, onReport, peer, onPeer, direct)
+            IosChatTranscript(messages, meId, showsAuthors, emptyTitle, emptyNote, onAuthor, onReport, peer, onPeer, direct, onDelete)
         }
         AnimatedVisibility(error.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
             Text(
@@ -676,6 +692,7 @@ fun IosChatTranscript(
     peer: ApiPlayer? = null,
     onPeer: () -> Unit = {},
     direct: Boolean = false,
+    onDelete: ((ChatMessage) -> Unit)? = null,
 ) {
     val listState = rememberLazyListState()
     val seen = remember { mutableSetOf<String>() }
@@ -722,6 +739,7 @@ fun IosChatTranscript(
                 animateIn = fresh,
                 onAuthor = onAuthor,
                 onReport = onReport,
+                onDelete = onDelete,
                 modifier = Modifier.animateItem(),
                 showTime = !direct,
                 leading = if (direct && !mine) ({
@@ -756,6 +774,7 @@ private fun ChatRow(
     animateIn: Boolean,
     onAuthor: ((String) -> Unit)?,
     onReport: ((ChatMessage) -> Unit)?,
+    onDelete: ((ChatMessage) -> Unit)?,
     modifier: Modifier = Modifier,
     showTime: Boolean = true,
     leading: (@Composable () -> Unit)? = null,
@@ -844,6 +863,12 @@ private fun ChatRow(
                         menu = false
                     },
                 )
+                if (mine && onDelete != null) {
+                    DropdownMenuItem(
+                        text = { Text("Delete", fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Blood) },
+                        onClick = { menu = false; onDelete(message) },
+                    )
+                }
                 if (!mine && onReport != null) {
                     DropdownMenuItem(
                         text = { Text("Report", fontFamily = Wyrm.Body, fontSize = 15.sp, color = Color(0xFFFF3B30)) },

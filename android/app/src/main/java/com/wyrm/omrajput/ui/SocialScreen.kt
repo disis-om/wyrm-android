@@ -139,7 +139,7 @@ fun SocialScreen(
                     tint = Wyrm.Link,
                     badge = unreadGlobal,
                 ) { onOpenGlobalChat(Rect.Zero) }
-                IosListRow(
+                if (com.wyrm.omrajput.data.VOICE_ENABLED) IosListRow(
                     title = "Voice rooms",
                     detail = if (voiceBadge > 0) "$voiceBadge invitation${if (voiceBadge == 1) "" else "s"} · $liveRooms live" else "$liveRooms live",
                     glyph = IosGlyph.MIC,

@@ -295,6 +295,19 @@ fun ControlsScreen(
                     }
                 }
             }
+            // Joystick knob (OM, 2026-10-13): follows the snake, or back to the centre.
+            if (!arrowSteering && !nearOriginal && !portraitPlay) {
+                Box(Modifier.settingAnchor("app.joystick-knob")) { SettingsEnumBlock(
+                    title = "Joystick knob",
+                    detail = if (PlayFeelStore.knobCentre)
+                        "At rest the knob goes back to the centre, and a new touch starts with it in the middle."
+                    else "At rest the knob points where your snake is going, and a new touch starts there.",
+                    options = listOf("Follows the snake", "Back to centre"),
+                    selected = if (PlayFeelStore.knobCentre) 1 else 0,
+                    first = false,
+                    onSelect = { PlayFeelStore.applyKnobCentre(it == 1) },
+                ) }
+            }
             // Upright there is no left or right hand (OM, 2026-10-02): the row
             // hides; the stored choice stays for sideways play.
             handedness?.takeIf { !portraitPlay }?.let { setting ->

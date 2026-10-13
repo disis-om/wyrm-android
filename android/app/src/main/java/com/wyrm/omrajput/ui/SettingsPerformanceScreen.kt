@@ -66,7 +66,7 @@ private val MODES = listOf(
     ModeCopy(WyrmPerformance.Mode.BALANCED, LucideR.drawable.lucide_ic_leaf,
         "Steady 60 FPS with vsync. A cooler phone and a longer battery."),
     ModeCopy(WyrmPerformance.Mode.PERFORMANCE, LucideR.drawable.lucide_ic_zap,
-        "Highest frame rate, vsync off, least input delay. The phone runs warmer."),
+        "The display's highest refresh rate, every frame on its vsync. The phone runs warmer."),
 )
 
 @Composable
@@ -172,7 +172,7 @@ private fun NowCard(policy: WyrmPerformance.Policy) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             StatusChip(LucideR.drawable.lucide_ic_monitor, "${policy.displayHz} Hz display")
-            StatusChip(LucideR.drawable.lucide_ic_activity, if (policy.vsync) "Vsync on" else "Vsync off")
+            StatusChip(LucideR.drawable.lucide_ic_activity, "Vsync on")
             val heat = WyrmPerformance.heat
             StatusChip(
                 if (heat == WyrmPerformance.Heat.COOL) LucideR.drawable.lucide_ic_thermometer else LucideR.drawable.lucide_ic_thermometer_sun,

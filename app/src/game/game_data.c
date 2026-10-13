@@ -741,6 +741,12 @@ void game_data_reset(tenv* env) {
   gdata->data.fps = 0;
   gdata->data.cping = 0;
   gdata->data.ping = 0;
+  gdata->data.ping_sent_ms = 0;
+  gdata->data.ping_avg_stamp = 0;
+  gdata->data.ping_accum_sum = 0;
+  gdata->data.ping_accum_count = 0;
+  gdata->data.ping_peak = 0;
+  gdata->data.ping_peak_stamp = 0;
   gdata->data.lb_pos = 0;
   gdata->data.score = 0;
   gdata->data.rank = 0;

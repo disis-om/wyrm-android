@@ -60,6 +60,9 @@ bool mobile_controls_get_arrow_position(tenv* env, float* x, float* y);
    style (0 the slider, 1 the spring). */
 void mobile_controls_set_play_feel(bool original_arrow, bool look_ahead,
                                    int zoom_style);
+/* Controls › Joystick knob (OM, 2026-10-13): true = back to the centre,
+   false = follows the snake. */
+void mobile_controls_set_knob_centre(bool centre);
 /* Look ahead: step it once a frame (redraw), then read the camera's offset
    in screen pixels (the snake is drawn this far the other way). */
 void mobile_controls_look_ahead_step(tenv* env);

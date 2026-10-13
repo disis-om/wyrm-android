@@ -21,9 +21,15 @@ import kotlin.math.roundToInt
  * Three modes and a frame limit. Only how often the engine draws changes:
  * never the protocol, never the game.
  *
- *  - **Performance**: vsync off (IMMEDIATE where the phone offers it), no cap,
- *    the display asked for its highest refresh. Most frames, least input delay,
- *    and the phone runs warmer.
+ *  - **Performance**: the display asked for its highest refresh, no cap. Most
+ *    frames, and the phone runs warmer.
+ *
+ * Vsync is on in every mode (OM, 2026-10-12, "same as the reference client"): FIFO
+ * only, never IMMEDIATE (tearing read as flicker). The rate is held by the
+ * display, not by a sleep on top of vsync: a limit below the display's rate
+ * asks the display for that rate (`CHANGE_FRAME_RATE_ALWAYS`, WyrmActivity),
+ * and the engine's own cap only steps in while the display still runs faster
+ * than the limit (a phone that refuses the switch).
  *  - **Balanced**: vsync on, 60 FPS. Steady and cool.
  *  - **Auto** (the default): vsync on and the display's full refresh while the
  *    phone is cool; 60 FPS when it warms up, or when Battery Saver or the
@@ -244,11 +250,11 @@ object WyrmPerformance {
             Mode.PERFORMANCE -> {
                 val cap = chosen ?: 0
                 Policy(
-                    vsync = false,
+                    vsync = true,
                     cap = cap,
                     displayHz = if (cap > 0) cap else max,
-                    reason = if (cap > 0) "Vsync off, held at $cap FPS on a $max Hz display."
-                    else "Vsync off and no cap: as many frames as the phone can draw on its $max Hz display, with the least input delay. The phone runs warmer.",
+                    reason = if (cap > 0) "Vsync on, held at $cap FPS on a $max Hz display."
+                    else "Vsync on at the display's full $max Hz: every frame the display can show. The phone runs warmer.",
                 )
             }
             Mode.BALANCED -> {

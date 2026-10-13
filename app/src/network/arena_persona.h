@@ -7,7 +7,7 @@
 
 /*
  * Which slither client Wyrm claims to be on the wire: the web client only
- * (`game1107241958.js`, version 291), byte for byte as Vlither sends it.
+ * (`game1107241958.js`, version 291), byte for byte as the reference client sends it.
  *
  * Wyrm used to carry a second identity, the Android AIR client (version 294,
  * its own fingerprint, a CRC32 challenge answer and a settings `c` packet),

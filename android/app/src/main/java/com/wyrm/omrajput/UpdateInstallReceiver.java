@@ -42,6 +42,7 @@ public final class UpdateInstallReceiver extends BroadcastReceiver {
     }
 
     private static void saveResult(Context context, int status, String message) {
+        com.wyrm.omrajput.data.LegacyPrefs.migrate(context);
         SharedPreferences preferences = context.getSharedPreferences(
                 UpdateManager.PREFS_NAME, Context.MODE_PRIVATE);
         preferences.edit()

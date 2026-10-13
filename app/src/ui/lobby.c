@@ -12,7 +12,7 @@
 #include "../user.h"
 #include "ui_theme.h"
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include <SDL3/SDL.h>
 #endif
 

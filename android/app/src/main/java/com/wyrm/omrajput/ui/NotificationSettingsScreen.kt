@@ -37,7 +37,7 @@ internal val notificationGroups = listOfNotNull(
             NotificationChoice("dm", "Direct messages", "New thread or reply."),
             NotificationChoice("voice_invite", "Voice invitations", "Private invitations to verified voice rooms."),
             NotificationChoice("follow", "New followers", "When another player starts following you."),
-        ),
+        ).filter { it.kind != "voice_invite" || com.wyrm.omrajput.data.VOICE_ENABLED },
     ),
     NotificationGroup(
         "Trails",

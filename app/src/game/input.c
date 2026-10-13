@@ -7,6 +7,7 @@
 #include "../mobile/mobile_hotkeys.h"
 #include "../network/server.h"
 #include "../network/arena_protocol.h"
+#include "oef.h"
 #include "../user.h"
 
 /*
@@ -242,6 +243,7 @@ static void input_with_policy(tenv* env, bool team_protected,
     if (gdata->data.ctm - gdata->data.last_ping_mtm > ARENA_PING_MS) {
       gdata->data.last_ping_mtm = gdata->data.ctm;
       gdata->data.wfpr = true;
+      ping_mark_sent(env);
       arena_send(connection, (uint8_t[]){gdata->data.protocol_version >= 5 ? 251 : 112}, 1);
     }
   }
@@ -313,7 +315,7 @@ static void input_with_policy(tenv* env, bool team_protected,
     // SDL turns Android touches into compatibility mouse events so ImGui stays
     // touchable. Never treat that synthetic left mouse as gameplay boost: the
     // mobile controls layer owns boost using an explicit finger ID.
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
     gdata->data.wmd =
         team_protected
             ? (usrs->hotkeys[HOTKEY_BOT].active && gdata->bot.output.accel)
@@ -327,7 +329,12 @@ static void input_with_policy(tenv* env, bool team_protected,
                twindow_key_down(env->wnd, mobile_hotkey_get_key(
                                               usrs, MOBILE_HOTKEY_BOOST)) ||
 #endif
+#ifdef WYRM_DESKTOP
+               /* The Boost key, and W / Up while no action took them. */
+               mobile_hotkeys_desktop_boost_down(env) ||
+#else
                twindow_key_down(env->wnd, GLFW_KEY_UP) ||
+#endif
                mobile_controls_boost_down(env) ||
                mobile_hotkeys_down(env, MOBILE_HOTKEY_BOOST) ||
                gdata->bot.output.accel);
@@ -438,8 +445,17 @@ static void input_with_policy(tenv* env, bool team_protected,
   if (mobile_hotkeys_pressed(env, MOBILE_HOTKEY_EYES_BACK))
     eyes_back_toggle(gdata);
 #ifdef WYRM_DESKTOP
-  /* WYRM_DESKTOP: E is Eyes Back's key (no on-screen keys on a desktop). */
-  if (tkeyboard_key_pressed(env->kb, GLFW_KEY_E)) eyes_back_toggle(gdata);
+  /* WYRM_DESKTOP: no on-screen keys on a desktop, so Eyes Back and Auto
+     restart answer their bound keys (default E and V; Settings › Controls). */
+  if (tkeyboard_key_pressed(
+          env->kb, mobile_hotkey_get_key(usrs, MOBILE_HOTKEY_EYES_BACK)))
+    eyes_back_toggle(gdata);
+  if (!WYRM_EXPERIMENTAL_ROPE_MODE &&
+      tkeyboard_key_pressed(
+          env->kb, mobile_hotkey_get_key(usrs, MOBILE_HOTKEY_ROPE_MODE))) {
+    usrs->auto_respawn = usrs->auto_respawn ? 0 : 1;
+    save_user_settings(usrs);
+  }
 #endif
 
   /* A restart used to be thrown away once the snake was worth more than a
@@ -448,7 +464,9 @@ static void input_with_policy(tenv* env, bool team_protected,
      snake is big, and the tap simply did nothing. The button is a tap now, and
      a tap does what it says. (It also indexed the last snake without checking
      there was one, which is the same crash that was fixed in got_packet.) */
-
+#ifdef WYRM_DESKTOP
+  mobile_hotkeys_desktop_trace(env, gdata->data.wmd);
+#endif
 }
 
 void input(tenv* env) { input_with_policy(env, false, false); }

@@ -3,8 +3,9 @@
 #include "../user.h"
 #include "backgrounds.h"
 #include "tags.h"
+#include "studio.h"
 #include "../mobile/mobile_controls.h"
-#if defined(VLITHER_ANDROID)
+#if defined(WYRM_SDL_JNI)
 #include "../platform/android_look.h"
 #endif
 
@@ -50,6 +51,9 @@ void minimap_float_to_u8(const float* src, uint8_t* dst, int mmsz) {
 static uint32_t built_skin_rgba(tenv* env, snake* o, int index) {
   tuser_data* usr = env->usr;
   if (!o->cusk || index < 0 || index >= MAX_SKIN_CODE_LEN) return 0;
+  /* Skin Studio (OM, 2026-10-12): the bead's own colour, opaque. */
+  if (o->id == usr->gdata.data.snake_id && studio_on())
+    return 0xFF000000u | studio_rgb_at(index);
   if (o->id == usr->gdata.data.snake_id)
     return WYRM_BUILT_BEADS_IN_ARENA ? usr->usrs.skin_rgba[index] : 0;
 
@@ -174,6 +178,12 @@ static void apple_air_shadow(tenv* env, int point, float half, float alpha,
   game_data* gdata = &env->usr->gdata;
   float fix = (gdata->data.pbx[point] - gdata->data.view_xx) * gdata->data.gsc + mww2;
   float fiy = (gdata->data.pby[point] - gdata->data.view_yy) * gdata->data.gsc + mhh2;
+  /* Only a stamp that shows (OM, 2026-10-12): on screen, and not faded to
+     nothing where the points bunch up. */
+  if (alpha < 1.0f / 255.0f) return;
+  if (fix + half < 0 || fiy + half < 0 || fix - half > 2 * mww2 ||
+      fiy - half > 2 * mhh2)
+    return;
   bp_renderer_push(env->usr->r->bpr,
                    &(bp_instance){{fix - half, fiy - half, 2 * half, 0},
                                   apple_air_shadow_uv(),
@@ -236,6 +246,76 @@ static float food_shape(const food* fo, int style) {
   hash *= UINT64_C(0xff51afd7ed558ccd);
   hash ^= hash >> 33;
   return (float)(hash % UINT64_C(8));
+}
+
+/* Skin Studio (OM, 2026-10-12): the player's own snake, on this phone. */
+static bool studio_own(tenv* env, snake* o) {
+  return studio_on() && o->id == env->usr->gdata.data.snake_id;
+}
+
+/* Which bead a body point wears: the Studio's pattern for the player's own
+   snake, else the arena's skin. */
+static int studio_slot(tenv* env, snake* o, int point, int cusk_len) {
+  if (studio_own(env, o)) {
+    int len = studio_current()->pattern_len;
+    return len > 0 ? point % len : 0;
+  }
+  return cusk_len > 0 ? point % cusk_len : 0;
+}
+
+/* A Studio cell as a sprite uv: shifted right, so bp.slang samples the
+   Studio atlas. */
+static vec4s studio_cell_uv(int cell) {
+  float g = 1.0f / STUDIO_GRID;
+  return (vec4s){{STUDIO_UV_SHIFT + (cell % STUDIO_GRID) * g,
+                  (cell / STUDIO_GRID) * g, g, g}};
+}
+
+/* The boost glow of a Studio bead: its own colour. */
+static vec3s* studio_glow_for(tenv* env, snake* o, int point, vec3s* scratch,
+                              vec3s* fallback) {
+  if (!studio_own(env, o)) return fallback;
+  uint32_t rgb = studio_rgb_at(studio_slot(env, o, point, 1));
+  scratch->r = ((rgb >> 16) & 0xFF) / 255.0f;
+  scratch->g = ((rgb >> 8) & 0xFF) / 255.0f;
+  scratch->b = (rgb & 0xFF) / 255.0f;
+  return scratch;
+}
+
+/* The Studio's eyes: any number, anywhere on the head, each a white and a
+   pupil from the atlas, turned with the head. The pupil sits half a unit
+   forward and follows where the snake looks (rex/rey) as slither's does. */
+static void studio_draw_eyes(tenv* env, snake* o, float fang, float hx,
+                             float hy, float ssc, float ea, float mww2,
+                             float mhh2) {
+  game_data* gdata = &env->usr->gdata;
+  const studio_skin* s = studio_current();
+  float c = cosf(fang), sn = sinf(fang);
+  for (int i = 0; i < s->eye_count; ++i) {
+    const studio_eye* e = s->eyes + i;
+    float ex = (c * e->fwd - sn * e->side) * ssc;
+    float ey = (sn * e->fwd + c * e->side) * ssc;
+    float wr = e->white_r * ssc * gdata->data.gsc;
+    if (wr > 0.0f) {
+      float cx = mww2 + (ex + hx - gdata->data.view_xx) * gdata->data.gsc;
+      float cy = mhh2 + (ey + hy - gdata->data.view_yy) * gdata->data.gsc;
+      bp_renderer_push(env->usr->r->bpr,
+                       &(bp_instance){{cx - wr, cy - wr, wr * 2, fang},
+                                      studio_cell_uv(e->white_cell),
+                                      {1, 1, 1, ea}});
+    }
+    float pr = e->pupil_r * ssc * gdata->data.gsc;
+    if (pr > 0.0f) {
+      float px = ex + c * 0.5f + o->rex * ssc * e->look;
+      float py = ey + sn * 0.5f + o->rey * ssc * e->look;
+      float cx = mww2 + (px + hx - gdata->data.view_xx) * gdata->data.gsc;
+      float cy = mhh2 + (py + hy - gdata->data.view_yy) * gdata->data.gsc;
+      bp_renderer_push(env->usr->r->bpr,
+                       &(bp_instance){{cx - pr, cy - pr, pr * 2, fang},
+                                      studio_cell_uv(e->pupil_cell),
+                                      {1, 1, 1, ea}});
+    }
+  }
 }
 
 int arp(snake* o, int q, float xx, float yy) {
@@ -536,7 +616,7 @@ static void draw_skinless_run(ImDrawList* draw, ImVec2* buf, int n, ImU32 col,
     float step;
     for (j = 1; j < n; ++j)
       length += hypotf(buf[j].x - buf[j - 1].x, buf[j].y - buf[j - 1].y);
-    step = fmaxf(1.5f, r * 0.35f);
+    step = fmaxf(3.0f, r * 0.35f); /* 3 px (was 1.5): lighter (2026-10-12) */
     step = fmaxf(step, length / (float)(SKINLESS_DENSE - 2 * n - 64));
     m = skinless_sample(buf, n, step);
   }
@@ -676,9 +756,10 @@ static void draw_skinless_strip(tenv* env, snake* o, int bp, float cx, float cy,
 }
 
 /* A spine wider than the thread is drawn on the skinless mesh, so it does
-   not fold where the body coils tight (a thick ImGui polyline mitres). */
-static void draw_spine_mesh(tenv* env, int bp, float cx, float cy, ImU32 under,
-                            float under_w, ImU32 over, float over_w) {
+   not fold where the body coils tight (a thick ImGui polyline mitres). One
+   layer (OM, 2026-10-12). */
+static void draw_spine_mesh(tenv* env, int bp, float cx, float cy, ImU32 over,
+                            float over_w) {
   game_data* gdata = &env->usr->gdata;
   ImDrawList* draw = igGetWindowDrawList();
   ImVec2 buf[SKINLESS_RUN];
@@ -692,10 +773,8 @@ static void draw_spine_mesh(tenv* env, int bp, float cx, float cy, ImU32 under,
       n += 1;
       if (n < SKINLESS_RUN) continue;
     }
-    if (n >= 1) {
-      draw_skinless_run(draw, buf, n, under, under_w, !continued, !live);
+    if (n >= 1)
       draw_skinless_run(draw, buf, n, over, over_w, !continued, !live);
-    }
     if (live) {
       buf[0] = buf[n > 0 ? n - 1 : 0];
       n = 1;
@@ -707,26 +786,61 @@ static void draw_spine_mesh(tenv* env, int bp, float cx, float cy, ImU32 under,
   }
 }
 
+/* The reference client's centre line (OM, 2026-10-12): one straight line per segment,
+   skipped when neither end is within 8 px of the screen. */
+static void draw_spine_lines(tenv* env, int bp, float cx, float cy, ImU32 col,
+                             float width) {
+  game_data* gdata = &env->usr->gdata;
+  ImDrawList* draw = igGetWindowDrawList();
+  const float margin = 8.0f;
+  const float right = 2.0f * cx + margin;
+  const float bottom = 2.0f * cy + margin;
+  ImVec2 last = {0.0f, 0.0f};
+  int have = 0;
+  int i;
+  for (i = 1; i < bp; ++i) {
+    ImVec2 at;
+    int seen;
+    if (gdata->data.pbu[i] < 1) {
+      have = 0;
+      continue;
+    }
+    snake_screen_point(gdata, i, cx, cy, &at);
+    seen = (at.x >= -margin && at.y >= -margin && at.x <= right && at.y <= bottom) ||
+           (last.x >= -margin && last.y >= -margin && last.x <= right &&
+            last.y <= bottom);
+    if (have && seen) ImDrawList_AddLine(draw, last, at, col, width);
+    last = at;
+    have = 1;
+  }
+}
+
 /* Spine width (OM, 2026-10-09): the slider is a share of the body's width
    (`body_w`, the bead's diameter on screen): 0 draws nothing, 1 is as wide as
-   the snake, smooth in between. The dark edge is 2 dpi, or as wide as the
-   white line when that is thinner, so a hairline stays a hairline. Up to
-   2 dpi the anti-aliased ImGui line draws it; wider, the skinless mesh. */
-static void draw_snake_spine(tenv* env, int bp, float cx, float cy, float alpha,
-                             float body_w, float width) {
+   the snake, smooth in between. Light like the reference client's centre line (OM,
+   2026-10-12): one colour, white, or black on a very light snake (the reference client's
+   luminance rule); up to 2 dpi one line per segment, wider the skinless mesh
+   in one layer. Returns 1 when the mesh was drawn (it can cover the head, so
+   the eyes go on top). */
+static int draw_snake_spine(tenv* env, snake* o, int bp, float cx, float cy,
+                            float alpha, float body_w, float width) {
   float dpi = snake_line_dpi(env);
   float over_w;
-  float edge;
-  ImU32 dark = igColorConvertFloat4ToU32((ImVec4){0.0f, 0.0f, 0.0f, 0.35f * alpha});
-  ImU32 white = igColorConvertFloat4ToU32((ImVec4){1.0f, 1.0f, 1.0f, 0.8f * alpha});
-  if (!(width > 0.0f) || !(body_w > 0.0f)) return;
+  float red, green, blue;
+  float ink;
+  ImU32 col;
+  if (!(width > 0.0f) || !(body_w > 0.0f)) return 0;
   if (width > 1.0f) width = 1.0f;
   over_w = body_w * width;
-  edge = over_w < 2.0f * dpi ? over_w : 2.0f * dpi;
-  if (over_w <= 2.0f * dpi)
-    draw_body_line(env, bp, 1, cx, cy, dark, over_w + edge, white, over_w);
-  else
-    draw_spine_mesh(env, bp, cx, cy, dark, over_w + edge, white, over_w);
+  snake_strip_colour(env, o, &red, &green, &blue);
+  ink = red * 0.2126f + green * 0.7152f + blue * 0.0722f > 0.82f ? 0.0f : 1.0f;
+  col = igColorConvertFloat4ToU32((ImVec4){ink, ink, ink, 0.8f * alpha});
+  if (over_w <= 2.0f * dpi) {
+    draw_spine_lines(env, bp, cx, cy, col, over_w);
+    return 0;
+  }
+  draw_spine_mesh(env, bp, cx, cy, col, over_w);
+  return 1;
 }
 
 static void draw_snake_imgui_eyes(tenv* env, snake* o, float fang, float hx,
@@ -746,19 +860,21 @@ static void draw_snake_imgui_eyes(tenv* env, snake* o, float fang, float hx,
   float ex;
   float ey;
   ImVec2 at;
+  /* Only for a head on screen (OM, 2026-10-12). */
+  if (!point_in_snake_view(gdata, hx, hy)) return;
   for (side = -1.0f; side <= 1.0f; side += 2.0f) {
     ex = cosf(fang) * ed + cosf(fang + side * (PI / 2)) * (esp + 0.5f);
     ey = sinf(fang) * ed + sinf(fang + side * (PI / 2)) * (esp + 0.5f);
     at.x = cx + (ex + hx - gdata->data.view_xx) * gdata->data.gsc;
     at.y = cy + (ey + hy - gdata->data.view_yy) * gdata->data.gsc;
-    ImDrawList_AddCircleFilled(draw, at, iris_r, iris, 16);
+    ImDrawList_AddCircleFilled(draw, at, iris_r, iris, 0);
     ex = cosf(fang) * (ed + 0.5f) + o->rex * ssc +
          cosf(fang + side * (PI / 2)) * esp;
     ey = sinf(fang) * (ed + 0.5f) + o->rey * ssc +
          sinf(fang + side * (PI / 2)) * esp;
     at.x = cx + (ex + hx - gdata->data.view_xx) * gdata->data.gsc;
     at.y = cy + (ey + hy - gdata->data.view_yy) * gdata->data.gsc;
-    ImDrawList_AddCircleFilled(draw, at, pupil_r, pupil, 12);
+    ImDrawList_AddCircleFilled(draw, at, pupil_r, pupil, 0);
   }
 }
 
@@ -772,6 +888,8 @@ void redraw(tenv* env) {
      amount of time rather than by whatever the clock said when its snake
      happened to be drawn. */
   tags_tick(env);
+  /* Tags flying off dead snakes (OM, 2026-10-13). */
+  tags_draw_flying(env);
 
   float lvx = gdata->data.view_xx;
   float lvy = gdata->data.view_xx;
@@ -949,6 +1067,19 @@ void redraw(tenv* env) {
   ImDrawList* snake_name_draw_list =
       igGetForegroundDrawList_ViewportPtr(igGetMainViewport());
 #endif
+#if defined(__ANDROID__) || defined(WYRM_MOBILE)
+  /* Names (OM, 2026-10-12): the font atlas is bound once for the whole snake
+     loop, so every name joins one draw command (the reference client draws them in one
+     batch; a push/pop per name made each its own). Direct world-space text
+     does not go through ImGui's widget path, and with the dynamic font atlas
+     this list can otherwise have an unrelated texture bound: Adreno then
+     samples the glyph UVs from it (opaque black strips behind remote snakes).
+     The spine, skinless strip and ImGui eyes in this loop use the atlas's
+     white pixel, so they want the atlas bound too. */
+  ImDrawList* name_draw_list = igGetWindowDrawList();
+  ImDrawList_PushTexture(name_draw_list,
+                         snake_name_font->ContainerAtlas->TexRef);
+#endif
   for (int i = snakes_len - 1; i >= 0; i--) {
     snake* o = gdata->data.snakes + i;
     int sct = o->sct + o->rsc;
@@ -1004,23 +1135,13 @@ void redraw(tenv* env) {
           nty = nty + 32 + 11 * o->sc * gdata->data.gsc;
 
 #if defined(__ANDROID__)
-          // Direct world-space text does not go through ImGui's normal widget
-          // path. With the dynamic font atlas this draw list can therefore
-          // still have a different texture descriptor active. Adreno then
-          // samples the glyph UVs from that unrelated texture, producing the
-          // opaque black strips seen behind every remote snake. Bind the font
-          // atlas explicitly for this label and restore the previous texture
-          // immediately afterwards.
-          ImDrawList* name_draw_list = igGetWindowDrawList();
-          ImDrawList_PushTexture(name_draw_list,
-                                 snake_name_font->ContainerAtlas->TexRef);
+          // The font atlas is bound once around the snake loop (above).
           ImDrawList_AddText_FontPtr(
               name_draw_list, snake_name_font, snake_name_font->LegacySize,
               (ImVec2){ntx, nty},
               igColorConvertFloat4ToU32(
                   (ImVec4){ncolor[0], ncolor[1], ncolor[2], a}),
               usrs->snake_scores ? nk_label_buff : o->nk, NULL, 0, NULL);
-          ImDrawList_PopTexture(name_draw_list);
 #else
           if (mode->player_names_outline) {
             const ImVec2 shadow_offsets[] = {
@@ -1418,7 +1539,7 @@ void redraw(tenv* env) {
 
         if (!rope_mode) {
           bool show_snake_shadows = mode->show_shadows;
-#if defined(VLITHER_ANDROID)
+#if defined(WYRM_SDL_JNI)
           // Dense private servers can put hundreds of tiny remote snakes in the
           // viewport. Their four atlas-based desktop shadow stamps overlap into
           // opaque black capsules on mobile GPUs. Keep the useful local-player
@@ -1544,10 +1665,20 @@ void redraw(tenv* env) {
                   float fiy =
                       ((py - gdata->data.view_yy) * gdata->data.gsc) + mhh2;
 
-                  int slot = (int)j % o->cusk_len;
-                  int cg_id = o->cusk_data[slot];
+                  int slot = studio_slot(env, o, (int)j, o->cusk_len);
+                  int cg_id = o->cusk_data[(int)j % o->cusk_len];
                   uint32_t built = built_skin_rgba(env, o, slot);
 
+                  if (studio_own(env, o))
+                    bp_renderer_push(
+                        usr->r->bpr,
+                        &(bp_instance){
+                            {fix - (gdata->data.gsc * lsz),
+                             fiy - (gdata->data.gsc * lsz),
+                             gdata->data.gsc * 2 * lsz, gdata->data.pba[(int)j]},
+                            studio_cell_uv(studio_cell_at(slot)),
+                            {1, 1, 1, a}});
+                  else
                   bp_renderer_push(
                       usr->r->bpr,
                       &(bp_instance){
@@ -1687,8 +1818,8 @@ void redraw(tenv* env) {
                   float fiy =
                       ((py - gdata->data.view_yy) * gdata->data.gsc) + mhh2;
 
-                  int slot = (int)j % o->cusk_len;
-                  int cg_id = o->cusk_data[slot];
+                  int slot = studio_slot(env, o, (int)j, o->cusk_len);
+                  int cg_id = o->cusk_data[(int)j % o->cusk_len];
                   vec3s* cg_col = gdata->cg_colors + cg_id;
                   uint32_t built = built_skin_rgba(env, o, slot);
 
@@ -1993,7 +2124,9 @@ void redraw(tenv* env) {
                       float alpha = strength * d2 * a * mr * .38 *
                                     (.6 + .4 * cosf(j / 4 - 1.15 * o->sfr));
                       int cg_id = o->cusk_data[0];
-                      vec3s* shc = gdata->cg_glow_colors + cg_id;
+                      vec3s studio_glow;
+                      vec3s* shc = studio_glow_for(env, o, 0, &studio_glow,
+                                                   gdata->cg_glow_colors + cg_id);
 
                       bst_renderer_push(
                           usr->r->bstb,
@@ -2068,7 +2201,9 @@ void redraw(tenv* env) {
                       float alpha = strength * d2 * a * om *
                                     (.5 + .5 * cosf(j / 4 - o->sfr));
                       int cg_id = o->cusk_data[0];
-                      vec3s* shc = gdata->cg_glow_colors + cg_id;
+                      vec3s studio_glow;
+                      vec3s* shc = studio_glow_for(env, o, 0, &studio_glow,
+                                                   gdata->cg_glow_colors + cg_id);
 
                       bst_renderer_push(
                           usr->r->bsta,
@@ -2149,7 +2284,9 @@ void redraw(tenv* env) {
                       float alpha = strength * d2 * a * mr * .38 *
                                     (.6 + .4 * cosf(j / 4 - 1.15 * o->sfr));
                       int cg_id = o->cusk_data[(int)j % o->cusk_len];
-                      vec3s* shc = gdata->cg_glow_colors + cg_id;
+                      vec3s studio_glow;
+                      vec3s* shc = studio_glow_for(env, o, (int)j, &studio_glow,
+                                                   gdata->cg_glow_colors + cg_id);
 
                       bst_renderer_push(
                           usr->r->bstb,
@@ -2226,7 +2363,9 @@ void redraw(tenv* env) {
                       float alpha = strength * d2 * a * om *
                                     (.5 + .5 * cosf(j / 4 - o->sfr));
                       int cg_id = o->cusk_data[(int)j % o->cusk_len];
-                      vec3s* shc = gdata->cg_glow_colors + cg_id;
+                      vec3s studio_glow;
+                      vec3s* shc = studio_glow_for(env, o, (int)j, &studio_glow,
+                                                   gdata->cg_glow_colors + cg_id);
 
                       bst_renderer_push(
                           usr->r->bsta,
@@ -2297,12 +2436,17 @@ void redraw(tenv* env) {
           {
             int assist_on = usrs->hotkeys[HOTKEY_ASSIST].active ? 1 : 0;
             int spine_on = usrs->ext.spine[assist_on] ? 1 : 0;
+            int spine_mesh = 0;
             if (spine_on)
-              draw_snake_spine(env, bp, mww2, mhh2, a,
-                               2.0f * lsz * gdata->data.gsc,
-                               usrs->ext.spine_width[assist_on]);
-            if (mode->render_mode == 3 || spine_on)
+              spine_mesh = draw_snake_spine(env, o, bp, mww2, mhh2, a,
+                                            2.0f * lsz * gdata->data.gsc,
+                                            usrs->ext.spine_width[assist_on]);
+            /* A thin spine starts a point behind the head and leaves the
+               sprite eyes uncovered (OM, 2026-10-12). */
+            if (mode->render_mode == 3 || spine_mesh)
               draw_snake_imgui_eyes(env, o, fang, hx, hy, ssc, ea, mww2, mhh2);
+            else if (studio_own(env, o))
+              studio_draw_eyes(env, o, fang, hx, hy, ssc, ea, mww2, mhh2);
             else {
           bp_renderer_push(
               usr->r->bpr,
@@ -2389,7 +2533,7 @@ void redraw(tenv* env) {
                 &(bp_instance){
                     {acx - m, acy - m, m * 2, fang}, acc->uv, {1, 1, 1, ea}});
           }
-#if defined(VLITHER_ANDROID)
+#if defined(WYRM_SDL_JNI)
           // Wyrm's own hair, ears and glasses: the player's snake only, and
           // only on this phone (platform/android_look.c).
           if (!hide_own_cosmetics && o->id == gdata->data.snake_id)
@@ -2436,6 +2580,9 @@ void redraw(tenv* env) {
     }
   }
 
+#if defined(__ANDROID__) || defined(WYRM_MOBILE)
+  ImDrawList_PopTexture(name_draw_list);
+#endif
   igPopFont();
 
   usr->r->global.view[0] = gdata->data.view_xx;
@@ -2515,18 +2662,10 @@ void redraw(tenv* env) {
     gdata->data.fps_ltm = gdata->data.ctm;
   }
 
-  // ping calc
-  float sum = 0;
-  for (int i = 0; i < PING_SAMPLE_COUNT; i++) {
-    sum += gdata->data.pings[i];
-  }
-  sum /= PING_SAMPLE_COUNT;
-
-  gdata->data.ping_follow = glm_lerp(gdata->data.ping_follow,
-                                     GLM_MAX(GOOD_PING, GLM_MIN(sum, BAD_PING)),
-                                     0.1f * gdata->data.vfr);
-
-  if (gdata->data.cping == PING_SAMPLE_COUNT - 1) {
-    gdata->data.ping = (int)roundf(sum);
-  }
+  // ping: measured per pong in oef.c (ping_mark_received, OM 2026-10-12);
+  // this only eases the colour towards it.
+  gdata->data.ping_follow = glm_lerp(
+      gdata->data.ping_follow,
+      GLM_MAX(GOOD_PING, GLM_MIN((float)gdata->data.ping, BAD_PING)),
+      0.1f * gdata->data.vfr);
 }

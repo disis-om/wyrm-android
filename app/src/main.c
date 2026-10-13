@@ -45,9 +45,11 @@ void tlaunch(tenv* env) {
 
   read_user_settings(usrs);
 
-  env->config.vsync = usrs->vsync;
+  /* Vsync always (OM, 2026-10-12, "same as the reference client"): FIFO only.
+     The settings file's `vsync` is no longer read. */
+  env->config.vsync = true;
   env->config.fullscreen = false;
-  env->config.title = "Vlither";
+  env->config.title = "Wyrm";
 }
 
 void tinit(tenv* env) {
@@ -157,16 +159,22 @@ static bool wyrm_engine_visible(tenv* env) {
 #include <SDL3/SDL.h>
 
 /*
- * Settings › Performance (OM, 2026-10-01), set by WyrmActivity: the present
- * mode (vsync on = FIFO, off = IMMEDIATE where the phone offers it) and a frame
- * cap (0 = none). Only how often a frame is drawn changes.
+ * Settings › Performance (OM, 2026-10-01), set by WyrmActivity / Wyrm
+ * Desktop: a frame cap (0 = none). Vsync is on always (OM, 2026-10-12, "same
+ * to same the reference client"): FIFO only, never IMMEDIATE, whatever `vsync` says. A cap
+ * is a sleep on a second clock next to the display's, which made a heavy
+ * frame miss its slot and show twice, so Android sends one only while the
+ * display runs faster than the player's limit (the display is asked for the
+ * limit first); Wyrm Desktop's hidden window does not wait for the monitor,
+ * so there the cap is the only clock.
  */
-static atomic_int wyrm_policy_vsync = -1;
+static atomic_int wyrm_policy_vsync = 1;
 static atomic_int wyrm_policy_cap = 0;
 
 /* Any thread. */
 void wyrm_set_frame_policy(int vsync, int cap) {
-  atomic_store(&wyrm_policy_vsync, vsync ? 1 : 0);
+  (void)vsync;
+  atomic_store(&wyrm_policy_vsync, 1);
   atomic_store(&wyrm_policy_cap, cap > 0 ? cap : 0);
 }
 
@@ -221,6 +229,66 @@ static void wyrm_pace(bool drew) {
   if (next == 0 || now > next + period) next = now;
   else if (now < next) SDL_DelayPrecise(next - now);
   next += period;
+}
+#endif
+
+/*
+ * Background play (OM, 2026-10-13): in the background the match carries on —
+ * the socket, the game and the bot — but nothing is drawn. iOS kills GPU work
+ * sent from the background (that was the "GPU lost" card after coming back);
+ * Android has no surface there. Set by the apps: Android WyrmActivity onStop /
+ * onStart, iOS Main.m on resign active / become active.
+ */
+#include <stdatomic.h>
+static atomic_int wyrm_background_on = 0;
+static bool wyrm_background_seen = false;
+
+void wyrm_set_background(bool on) {
+  atomic_store(&wyrm_background_on, on ? 1 : 0);
+}
+
+bool wyrm_background(void) { return atomic_load(&wyrm_background_on) != 0; }
+
+/* Engine thread. One background pass; false when the app is in front. */
+bool wyrm_background_tick(tenv* env) {
+  if (!wyrm_background()) {
+    wyrm_background_seen = false;
+    return false;
+  }
+  if (!wyrm_background_seen) {
+    wyrm_background_seen = true;
+    /* A finger down when the app went away never comes up: let it go, so a
+       held boost or joystick does not stay on in the background. */
+    env->usr->mobile_controls.joystick_down = false;
+    env->usr->mobile_controls.boost_down = false;
+    env->usr->mobile_controls.zoom_down = false;
+    env->usr->mobile_controls.aim_valid = false;
+    SDL_Log("Wyrm background: %s", env->usr->gdata.curr_screen == PLAYING
+                                       ? "the match keeps running"
+                                       : "waiting");
+  }
+  game_data* gdata = &env->usr->gdata;
+  if (gdata->curr_screen == PLAYING || gdata->connection) {
+    trender(env);
+  } else {
+#ifdef WYRM_SDL_JNI
+    /* Android's own loop: rest. iOS calls this from a timer on its main
+       thread, which must never sleep. */
+    SDL_Delay(100);
+#endif
+  }
+  return true;
+}
+
+#ifdef WYRM_SDL_JNI
+#include <jni.h>
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetBackgroundPlay(JNIEnv* jenv,
+                                                            jclass clazz,
+                                                            jboolean on) {
+  (void)jenv;
+  (void)clazz;
+  wyrm_set_background(on);
 }
 #endif
 
@@ -283,7 +351,7 @@ void trender(tenv* env) {
   // render end
 
   igRender();
-  bool draw = wyrm_engine_visible(env);
+  bool draw = !wyrm_background() && wyrm_engine_visible(env);
   if (draw && tcontext_begin(ctx)) {
     // On the Compose-owned screens this clear *is* the background the player
     // sees: the interface above it is transparent so the skin preview and the

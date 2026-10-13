@@ -13,7 +13,7 @@
 #include "../platform/android_home.h"
 #include "../user.h"
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 #include <SDL3/SDL.h>
 #endif
 
@@ -270,7 +270,7 @@ static void process_ui_scroll_touch(mobile_controls_state* state,
 
 void mobile_controls_init(tenv* env) {
   memset(&env->usr->mobile_controls, 0, sizeof(env->usr->mobile_controls));
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   /* UI and gameplay consume SDL finger events directly. Do not ask SDL to
      generate duplicate mouse events for each touch. */
   SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
@@ -324,6 +324,29 @@ void mobile_controls_finish_editor(tenv* env, bool save) {
  * unchanged: the first frame of a new touch aims exactly where the snake
  * already goes, and moving the finger steers from there.
  */
+/* Controls › Joystick knob (OM, 2026-10-13): back to the centre instead of
+   following the snake. Any thread; read each frame. Near Original draws
+   slither's own joystick and is not touched. */
+static volatile int knob_centre = 0;
+
+void mobile_controls_set_knob_centre(bool centre) { knob_centre = centre ? 1 : 0; }
+
+static bool knob_follows_snake(void) {
+  return !knob_centre || android_home_near_original();
+}
+
+#ifdef WYRM_SDL_JNI
+#include <jni.h>
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetJoystickKnob(JNIEnv* jenv,
+                                                          jclass clazz,
+                                                          jboolean centre) {
+  (void)jenv;
+  (void)clazz;
+  mobile_controls_set_knob_centre(centre == JNI_TRUE);
+}
+#endif
+
 static bool joystick_heading(tenv* env, float* hx, float* hy) {
   game_data* gdata = &env->usr->gdata;
   snake* own = get_snake(gdata, gdata->data.snake_id);
@@ -333,7 +356,7 @@ static bool joystick_heading(tenv* env, float* hx, float* hy) {
   return true;
 }
 
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
 static void update_joystick(tenv* env, float x, float y) {
   mobile_controls_state* state = &env->usr->mobile_controls;
   mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
@@ -565,7 +588,43 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
 
 #ifdef WYRM_DESKTOP
   /* WYRM_DESKTOP: the snake follows the mouse from the middle of the game
-     area; left click, Space, W or Up boosts. ImGui still sees every event. */
+     area; the left button boosts. The keys (boost, turns, hotkeys) are read
+     from their bindings by input.c and ai_mode.c. ImGui still sees every
+     event. The AI arena's first card closes with a click on its button or
+     Enter, and takes every click while it is up (it could only be tapped,
+     so on a computer it never closed and held boost and keys off). */
+  if (ai_mode_notice_process_event(env, raw_event)) return true;
+  /* The team roster and chat window take the left button as a finger: a
+     click on the chat header folds it, on its message box opens the composer,
+     a drag scrolls. A press there never boosts; the wheel over them scrolls. */
+  {
+    static bool panel_drag;
+    if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+        event->button.button == SDL_BUTTON_LEFT &&
+        android_team_hud_touch(env, SDL_EVENT_FINGER_DOWN, 1ull,
+                               event->button.x, event->button.y)) {
+      panel_drag = true;
+      return true;
+    }
+    if (panel_drag && event->type == SDL_EVENT_MOUSE_MOTION) {
+      android_team_hud_touch(env, SDL_EVENT_FINGER_MOTION, 1ull,
+                             event->motion.x, event->motion.y);
+      return true;
+    }
+    if (panel_drag && event->type == SDL_EVENT_MOUSE_BUTTON_UP &&
+        event->button.button == SDL_BUTTON_LEFT) {
+      panel_drag = false;
+      android_team_hud_touch(env, SDL_EVENT_FINGER_UP, 1ull, event->button.x,
+                             event->button.y);
+      return true;
+    }
+    if (event->type == SDL_EVENT_MOUSE_WHEEL &&
+        android_team_hud_wheel(env, event->wheel.mouse_x,
+                               event->wheel.mouse_y, event->wheel.y)) {
+      twindow_desktop_take_wheel();
+      return true;
+    }
+  }
   if (event->type == SDL_EVENT_MOUSE_MOTION) {
     float dx = event->motion.x - env->wnd->size[0] * 0.5f;
     float dy = event->motion.y - env->wnd->size[1] * 0.5f;
@@ -582,13 +641,6 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
       event->button.button == SDL_BUTTON_LEFT) {
     state->boost_down = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
     return false;
-  }
-  if ((event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) &&
-      (event->key.scancode == SDL_SCANCODE_SPACE ||
-       event->key.scancode == SDL_SCANCODE_W ||
-       event->key.scancode == SDL_SCANCODE_UP)) {
-    state->boost_down = event->type == SDL_EVENT_KEY_DOWN;
-    return true;
   }
   if (event->type == SDL_EVENT_KEY_DOWN &&
       event->key.scancode == SDL_SCANCODE_AC_BACK) {
@@ -779,7 +831,7 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
       /* The base is placed so the finger holds the knob on the snake's side:
          the stick starts where the snake is going, not in the centre. */
       float hx, hy;
-      if (joystick_heading(env, &hx, &hy)) {
+      if (knob_follows_snake() && joystick_heading(env, &hx, &hy)) {
         float reach = 92.0f * control_scale(env) * cfg->joystick_size;
         state->joystick_origin[0] = x - hx * reach;
         state->joystick_origin[1] = y - hy * reach;
@@ -962,7 +1014,7 @@ void mobile_controls_update(tenv* env) {
 }
 
 bool mobile_controls_get_aim(tenv* env, int* x, int* y) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   mobile_controls_state* state = &env->usr->mobile_controls;
   if (!state->aim_valid) return false;
   *x = (int)(state->joystick_axis[0] * 1000.0f);
@@ -977,7 +1029,7 @@ bool mobile_controls_get_aim(tenv* env, int* x, int* y) {
 }
 
 bool mobile_controls_boost_down(tenv* env) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   return env->usr->mobile_controls.boost_down;
 #else
   (void)env;
@@ -1019,7 +1071,16 @@ static bool arrow_geometry(tenv* env, float* ax, float* ay, float* dx,
 }
 
 bool mobile_controls_get_arrow_position(tenv* env, float* x, float* y) {
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_DESKTOP
+  /* Wyrm Desktop (OM, 2026-10-11): the pointer is the arrow, so assist's
+     laser runs from the head to it, as Android's arrow laser runs to the
+     arrow (and as the reference client's PC laser did). */
+  if (!x || !y || !env->usr->mobile_controls.aim_valid) return false;
+  *x = env->ms->pos[0];
+  *y = env->ms->pos[1];
+  return true;
+#endif
+#ifdef WYRM_SDL_JNI
   float dx, dy, length, width;
   return x && y && arrow_geometry(env, x, y, &dx, &dy, &length, &width);
 #else
@@ -1080,7 +1141,8 @@ static void draw_joystick(tenv* env, ImDrawList* dl, float cx, float cy,
   float ay = state->joystick_axis[1];
   /* At rest (or held in the dead zone) the knob shows where the snake goes. */
   float hx, hy;
-  if (!editor && (!active || (fabsf(ax) < 0.08f && fabsf(ay) < 0.08f)) &&
+  if (!editor && knob_follows_snake() &&
+      (!active || (fabsf(ax) < 0.08f && fabsf(ay) < 0.08f)) &&
       joystick_heading(env, &hx, &hy)) {
     ax = hx;
     ay = hy;
@@ -1537,7 +1599,7 @@ void mobile_controls_draw_gameplay(tenv* env) {
   (void)env;
   return;
 #endif
-#ifdef VLITHER_ANDROID
+#ifdef WYRM_SDL_JNI
   if (env->usr->gdata.curr_screen != PLAYING ||
       (env->usr->gdata.conn != CONNECTED &&
        env->usr->gdata.conn != AI_CONNECTED))

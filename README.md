@@ -17,8 +17,8 @@ signature before they trust a single field in it.
 | Beta | `update/beta.json` (+ `.sig`) | players who turn on **Settings › Backup › Beta updates**; they are offered whichever of the two is newer |
 
 Every release is a tagged GitHub release with the APK attached. Betas step the
-patch number (8.0.1, 8.0.2…) and say "(beta)" in their title. Latest release:
-**8.0.0 (800)** stable (2026-10-14). It brings arena chat with TEAM, GLOBAL and
+patch number (8.1.1, 8.1.2…) and say "(beta)" in their title. Latest release:
+**8.1.0 (810)** stable (2026-10-14). 8.0.0 brought arena chat with TEAM, GLOBAL and
 ONLINE tabs, Snakey Rain built in, Skin Studio and saved skins, Wyrm skins,
 bigger and recolourable on-screen buttons, background play, joystick knob
 modes, free in-game names, message deletion, and NTL's bot again.

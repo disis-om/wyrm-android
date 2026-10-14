@@ -17,11 +17,11 @@ signature before they trust a single field in it.
 | Beta | `update/beta.json` (+ `.sig`) | players who turn on **Settings › Backup › Beta updates**; they are offered whichever of the two is newer |
 
 Every release is a tagged GitHub release with the APK attached. Betas step the
-patch number (7.1.1, 7.1.2…) and say "(beta)" in their title. Released: **7.1.0 (710)** stable (2026-10-09).
-Current source/test version: **7.1.5 (715)**, not released. It includes Skin
-Studio and saved skins, NTL-compatible bot, background play, joystick knob modes,
-phone Back routing, larger on-screen keys, flying tags and message deletion.
-Build and device verification are recorded separately in `AGENTS.md`.
+patch number (8.0.1, 8.0.2…) and say "(beta)" in their title. Latest release:
+**8.0.0 (800)** stable (2026-10-14). It brings arena chat with TEAM, GLOBAL and
+ONLINE tabs, Snakey Rain built in, Skin Studio and saved skins, Wyrm skins,
+bigger and recolourable on-screen buttons, background play, joystick knob
+modes, free in-game names, message deletion, and NTL's bot again.
 
 ## Features
 
@@ -30,6 +30,13 @@ Build and device verification are recorded separately in `AGENTS.md`.
   all through the Wyrm backend.
 - **Delete messages:** touch and hold your own Global or direct message, then
   Delete; the active server row is removed and connected clients drop it live.
+- **Arena chat:** the chat window in a match has TEAM, GLOBAL and ONLINE tabs.
+  Global chat can be read and answered without leaving the match; ONLINE lists
+  players seen on Wyrm lately with their in-game name, username and arena
+  (players who turn off "Show my activity to friends" are left out). Each tab
+  counts its own unread messages.
+- **Snakey Rain:** built in, with its own page, an on-screen key and a movable,
+  resizable arena panel.
 - **Observatory:** the separate hosted operator dashboard includes a Live
   presence page that can be opened with its own read-only password.
 - **Online arenas:** slither protocol 19, a live arena directory, arena codes,
@@ -39,7 +46,7 @@ Build and device verification are recorded separately in `AGENTS.md`.
   - One arena connection per Play. A refused entry returns to the lobby with no
     automatic retry.
 - **Offline play:** Play with AI, with local bots. The assist bot follows NTL's
-  grow/circle behavior and keeps Wyrm's border guard.
+  grow/circle behavior, exactly like NTL's bot.
 - **Skin Studio:** presets, a pattern builder with the slither.io colour wheel,
   Wyrm beads, accessories, Wyrm looks (hair, ears, glasses) and arena
   backgrounds. A custom skin is sent to the arena in at most 146 colour runs

@@ -3,15 +3,15 @@
   "source": "github",
   "productName": "Wyrm",
   "packageName": "com.wyrm.omrajput",
-  "versionCode": 800,
-  "versionName": "8.0.0",
+  "versionCode": 810,
+  "versionName": "8.1.0",
   "minimumVersionCode": 0,
   "mandatory": false,
-  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v8.0.0/Wyrm-v8.0.0.apk",
-  "apkSize": 72897809,
-  "sha256": "890da78ed6f924e5e652ab00cfff4a3f3c3a14faee39657cc0a178c3dd2f400f",
-  "publishedAt": "2026-10-14T16:18:47Z",
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v8.1.0/Wyrm-v8.1.0.apk",
+  "apkSize": 72897453,
+  "sha256": "8145627a216836f8cb9a277abe9e0e512893d52b8b6298ea6a891b76511efe88",
+  "publishedAt": "2026-10-14T17:25:39Z",
   "headline": "A new version of Wyrm",
   "author": "OM Rajput",
-  "releaseNotes": ["Arena chat with TEAM, GLOBAL and ONLINE tabs: read and reply to global chat without leaving the match.", "See who's online, their username and the arena they play in.", "Snakey Rain is built in, with its own page, an on-screen key and a panel you can move and resize.", "Skin Studio: build your snake bead by bead.", "Saved skins and 38 new Wyrm skins with a live preview.", "On-screen buttons up to 5x bigger, with your own colours.", "Play in the background, and a joystick knob that can go back to the centre.", "Any in-game name you like, changed any time.", "The bot plays like NTL's bot again; boost reacts faster.", "Fixed: Android FPS drop, stutter with many snakes, Back button, and a crash after Recents."]
+  "releaseNotes": ["Fixed a known bug."]
 }

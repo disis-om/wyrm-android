@@ -3,15 +3,15 @@
   "source": "github",
   "productName": "Wyrm",
   "packageName": "com.wyrm.omrajput",
-  "versionCode": 810,
-  "versionName": "8.1.0",
+  "versionCode": 830,
+  "versionName": "8.3.0",
   "minimumVersionCode": 0,
   "mandatory": false,
-  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v8.1.0/Wyrm-v8.1.0.apk",
-  "apkSize": 72897453,
-  "sha256": "8145627a216836f8cb9a277abe9e0e512893d52b8b6298ea6a891b76511efe88",
-  "publishedAt": "2026-10-14T17:25:39Z",
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v8.3.0/Wyrm-v8.3.0.apk",
+  "apkSize": 79498193,
+  "sha256": "1ef364ec4f6dd6c35db05544ac7458fe2186d17c9b42ba2d4cdf013376069748",
+  "publishedAt": "2026-10-18T19:15:35Z",
   "headline": "A new version of Wyrm",
   "author": "OM Rajput",
-  "releaseNotes": ["Fixed a known bug."]
+  "releaseNotes": ["Smoother frame rate in crowded arenas", "Always runs at your screen's fastest refresh rate", "Shed: fresh skins from a short recipe", "19 new arena backgrounds", "Arena chat: Team, Global and Online tabs", "Show the boost on your snake only or on everyone's", "Arrow Sensitivity from 0% (original) to 100%", "Snake names readable on every background", "Trails: new camera, editor and cropper", "Fixed frame drops on some backgrounds"]
 }

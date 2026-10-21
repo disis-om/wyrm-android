@@ -362,11 +362,11 @@ fun ControlsScreen(
                     ArrowStyleRow(arrowStyleSetting, arrowColor, first = true) { arrowPickerOpen = true }
                 }
                 // Customise arrow movement (OM, 2026-10-05): on, the start distance
-                // and lag below are the player's; off, the arrow moves exactly like
+                // and sensitivity below are the player's; off, the arrow moves exactly like
                 // slither's and they fold away. Near Original always moves like slither's.
                 if (!nearOriginal) SettingsBoolRow(
                     title = "Customise arrow movement",
-                    detail = if (PlayFeelStore.customArrow) "Your own start distance and lag."
+                    detail = if (PlayFeelStore.customArrow) "Your own start distance and sensitivity."
                     else "Off: the arrow moves exactly like slither's, from the start distance to the drift.",
                     on = PlayFeelStore.customArrow,
                     first = false,
@@ -375,7 +375,7 @@ fun ControlsScreen(
                 arrowRows.filter { it.id != "arrow.style" && it.id != "arrow.color" }
                     .filter { !nearOriginal || it.id == "arrow.size" }
                     .forEach { setting ->
-                        val movement = setting.id == "arrow.separation" || setting.id == "arrow.smoothness"
+                        val movement = setting.id == "arrow.separation" || setting.id == "arrow.sensitivity"
                         AnimatedVisibility(
                             visible = !movement || PlayFeelStore.customArrow,
                             enter = fadeIn() + expandVertically(),

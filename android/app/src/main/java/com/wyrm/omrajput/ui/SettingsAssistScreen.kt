@@ -71,7 +71,9 @@ fun SettingsAssistScreen(
     val foodIds = setOf("food_type", "food_scale", "food_float", "food_flicker",
         "const_food_scale", "uniform_food_color", "food_color")
     val dotIds = setOf("show_crosshair", "head_dot_size", "head_dot_color")
-    val snakeIds = setOf("render_mode", "spine", "spine_width", "snake_shadow", "hide_cosmetics")
+    val snakeIds = setOf("render_mode", "spine", "spine_mine", "spine_width", "snake_shadow", "hide_cosmetics")
+    // Boost has its own card (OM, 2026-10-18); its strength slider is gone.
+    val boostIds = setOf("show_boost", "boost_type", "boost_own")
     val laser = listOfNotNull(
         settings.named("general.laser_thickness"),
         settings.named("general.laser_color"),
@@ -144,7 +146,7 @@ fun SettingsAssistScreen(
             val headDotSize = modeSettings.firstOrNull { it.id.substringAfter('.') == "head_dot_size" }
             val headDotColor = modeSettings.firstOrNull { it.id.substringAfter('.') == "head_dot_color" }
             val rest = modeSettings.filter {
-                it !in colours && it.id.substringAfter('.') !in foodIds + dotIds + snakeIds + "bg_scale"
+                it !in colours && it.id.substringAfter('.') !in foodIds + dotIds + snakeIds + boostIds + "bg_scale"
             }
             val backgroundScale = modeSettings.firstOrNull { it.id.substringAfter('.') == "bg_scale" }
 
@@ -171,6 +173,25 @@ fun SettingsAssistScreen(
                     }
                     spineOn?.let { setting ->
                         SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                    }
+                    // Whose spine (OM, 2026-10-14): only mine, or every snake's.
+                    // No label (it is a choice under Spine), so not in modeSettings.
+                    settings.firstOrNull { it.id == "$group.spine_mine" }?.let { setting ->
+                        AnimatedVisibility(
+                            visible = spineOn?.enabled == true,
+                            enter = expandVertically(tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(180)),
+                            exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(120)),
+                        ) {
+                            Box(Modifier.settingAnchor(setting.id)) {
+                                SettingsEnumBlock(
+                                    title = "Show spine on",
+                                    detail = "Mine shows it on your snake only",
+                                    options = listOf("Mine", "Everyone"),
+                                    selected = if (setting.enabled) 0 else 1,
+                                    first = false,
+                                ) { onChange(setting, listOf(if (it == 0) 1f else 0f)) }
+                            }
+                        }
                     }
                     // Spine width (OM, 2026-10-09): comes out from under the
                     // switch while the spine is on; each mode keeps its own.
@@ -204,6 +225,39 @@ fun SettingsAssistScreen(
                     }
                 }
                 SettingsCaption("Skinless keeps the plain snake's width and length. Only the skin turns see-through. Spine is a white line down every snake; its width goes from hidden to the snake's own. Snake shadow is the original app's shadow under every snake.")
+
+                // Boost (OM, 2026-10-18): on/off, its style, and whose boost shows.
+                val boostOn = modeSettings.firstOrNull { it.id.substringAfter('.') == "show_boost" }
+                val boostType = modeSettings.firstOrNull { it.id.substringAfter('.') == "boost_type" }
+                val boostOwn = settings.firstOrNull { it.id == "$group.boost_own" }
+                if (boostOn != null) {
+                    SettingsSectionLabel("Boost")
+                    SettingsCard {
+                        SettingTypedRow(setting = boostOn, first = true, onChange = onChange)
+                        AnimatedVisibility(
+                            visible = boostOn.enabled,
+                            enter = expandVertically(tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(180)),
+                            exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(120)),
+                        ) {
+                            Column {
+                                boostType?.let { setting ->
+                                    SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                                }
+                                boostOwn?.let { setting ->
+                                    Box(Modifier.settingAnchor(setting.id)) {
+                                        SettingsEnumBlock(
+                                            title = "Show boost on",
+                                            detail = "Mine shows only your own boost",
+                                            options = listOf("Mine", "Everyone"),
+                                            selected = if (setting.enabled) 0 else 1,
+                                            first = false,
+                                        ) { onChange(setting, listOf(if (it == 0) 1f else 0f)) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Only when a colour is left to set here (food and the head dot
                 // have their own): an empty card under a heading read as broken

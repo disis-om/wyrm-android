@@ -7,6 +7,7 @@
 #include "../mobile/mobile_hotkeys.h"
 #include "../network/server.h"
 #include "../network/arena_protocol.h"
+#include "../platform/rain_bridge.h"
 #include "oef.h"
 #include "../user.h"
 
@@ -189,7 +190,47 @@ static void eb_send(game_data* gdata, struct mg_connection* connection,
   }
 }
 
-static void eyes_back_toggle(game_data* gdata) {
+/*
+ * Eyes Back locked arenas (OM, 2026-10-13, as NTL VANCED): arenas that ban
+ * players for Eyes Back. There it never runs, and the player is told for 5 s
+ * at the top of the screen (ui_overlay.c, eyes_back_lock_message).
+ */
+static const char* const EB_LOCKED_ARENAS[] = {"139.84.170.60:444"};
+#define EB_LOCK_MESSAGE_MS 5000
+static Uint64 eb_lock_until;
+
+static bool eyes_back_locked_here(const user_settings* usrs) {
+  const char* arena = user_settings_arena(usrs);
+  if (!arena || !arena[0]) return false;
+  for (size_t i = 0; i < sizeof(EB_LOCKED_ARENAS) / sizeof(*EB_LOCKED_ARENAS);
+       i++) {
+    const char* a = arena;
+    const char* b = EB_LOCKED_ARENAS[i];
+    while (*a && *b &&
+           (*a == *b || (*a >= 'A' && *a <= 'Z' && *a + 32 == *b))) {
+      a++;
+      b++;
+    }
+    if (!*a && !*b) return true;
+  }
+  return false;
+}
+
+static void eyes_back_say_locked(void) {
+  eb_lock_until = SDL_GetTicks() + EB_LOCK_MESSAGE_MS;
+}
+
+/* The message while it shows, else NULL. */
+const char* eyes_back_lock_message(void) {
+  if (eb_lock_until == 0 || SDL_GetTicks() >= eb_lock_until) return NULL;
+  return "Eyes Back is disabled in this arena, so this server does not ban you";
+}
+
+static void eyes_back_toggle(game_data* gdata, const user_settings* usrs) {
+  if (!eb.on && eyes_back_locked_here(usrs)) {
+    eyes_back_say_locked();
+    return;
+  }
   eb.on = !eb.on;
   eb_reset();
   /* Off: the real heading goes out on the next tick even if the stick has
@@ -364,10 +405,16 @@ static void input_with_policy(tenv* env, bool team_protected,
       gdata->data.want_e = true;
     me->eang = atan2f(ym, xm);
     /* Eyes Back (OM, 2026-10-06) owns the heading byte while it is on. */
-    bool eyes_back = eb.on && gdata->data.protocol_version >= 5;
+    /* A locked arena turns it off, and says why (OM, 2026-10-13). */
+    if (eb.on && eyes_back_locked_here(usrs)) {
+      eyes_back_toggle(gdata, usrs);
+      eyes_back_say_locked();
+    }
+    bool rain_rotating = wyrm_rain_rotating();
+    bool eyes_back = eb.on && gdata->data.protocol_version >= 5 && !rain_rotating;
     if (eyes_back) eb_send(gdata, connection, me, xm, ym);
     float ang;
-    if (!eyes_back && gdata->data.want_e &&
+    if (!eyes_back && !rain_rotating && gdata->data.want_e &&
         gdata->data.ctm - gdata->data.last_e_mtm > ARENA_AIM_MS) {
       gdata->data.want_e = false;
       gdata->data.last_e_mtm = gdata->data.ctm;
@@ -443,13 +490,15 @@ static void input_with_policy(tenv* env, bool team_protected,
   /* Eyes Back (OM, 2026-10-06): the on-screen key turns it on and off. It
      stays on through deaths for the session, as NTL VANCED's does. */
   if (mobile_hotkeys_pressed(env, MOBILE_HOTKEY_EYES_BACK))
-    eyes_back_toggle(gdata);
+    eyes_back_toggle(gdata, usrs);
+  /* Snakey Rain (OM, 2026-10-14): the Rain key opens the app's Rain panel. */
+  if (mobile_hotkeys_pressed(env, MOBILE_HOTKEY_RAIN)) wyrm_rain_key_press();
 #ifdef WYRM_DESKTOP
   /* WYRM_DESKTOP: no on-screen keys on a desktop, so Eyes Back and Auto
      restart answer their bound keys (default E and V; Settings › Controls). */
   if (tkeyboard_key_pressed(
           env->kb, mobile_hotkey_get_key(usrs, MOBILE_HOTKEY_EYES_BACK)))
-    eyes_back_toggle(gdata);
+    eyes_back_toggle(gdata, usrs);
   if (!WYRM_EXPERIMENTAL_ROPE_MODE &&
       tkeyboard_key_pressed(
           env->kb, mobile_hotkey_get_key(usrs, MOBILE_HOTKEY_ROPE_MODE))) {

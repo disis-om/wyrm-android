@@ -56,10 +56,13 @@ fun WyrmAvatar(
     /** A friend with Wyrm open (2026-10-09): a green dot on the corner. */
     online: Boolean = false,
 ) {
-    var image by remember(url) { mutableStateOf(AvatarImages.peek(url)) }
+    // The profile's big face gets the 256 px copy; every smaller place asks the
+    // server for the 128 px one (OM, 2026-10-14, Discord-style).
+    val source = remember(url, size) { avatarSource(url, big = size >= 72.dp) }
+    var image by remember(source) { mutableStateOf(AvatarImages.peek(source)) }
 
-    LaunchedEffect(url) {
-        image = if (url.isBlank()) null else AvatarImages.load(url)
+    LaunchedEffect(source) {
+        image = if (source.isBlank()) null else AvatarImages.load(source)
     }
 
     Box(modifier.size(size)) {
@@ -106,6 +109,16 @@ fun WyrmAvatar(
         )
     }
     }
+}
+
+/**
+ * Wyrm's own avatar addresses (`/v1/players/<id>/avatar?v=…`) get
+ * `size=small` unless [big]; anything else (a flag, an outside picture) is
+ * left as it is. A server before 2026-10-14 ignores the extra parameter.
+ */
+fun avatarSource(url: String, big: Boolean): String {
+    if (big || url.isBlank() || !url.contains("/avatar") || url.contains("size=")) return url
+    return url + (if (url.contains('?')) "&" else "?") + "size=small"
 }
 
 /**

@@ -370,14 +370,21 @@ fun PaperKey(
     modifier: Modifier = Modifier,
     opacity: Float = 1f,
     scale: Float = 1f,
+    /** Label and border: a team-roster colour index (OM, 2026-10-14); 0 = white. */
+    colour: Int = 0,
+    /** The fill, the same palette; 0 = the theme's paper. */
+    fill: Int = 9,
 ) {
+    fun swatchOf(index: Int) = TeamHudStore.COLOUR_SWATCHES.getOrNull(index)?.takeIf { index > 0 && it != Color.Unspecified }
+    val ink = swatchOf(colour) ?: Color.White
+    val swatch = if (fill == 9) Color(0xFF808080) else swatchOf(fill)
     Box(
         modifier = modifier
             .width((104 * scale).dp)
             .height((54 * scale).dp)
             .clip(RoundedCornerShape((14 * scale).dp))
-            .background(Wyrm.Card.copy(alpha = opacity.coerceIn(0f, 1f)))
-            .border(1.25.dp, Wyrm.Ink, RoundedCornerShape((14 * scale).dp)),
+            .background((swatch ?: Wyrm.Card).copy(alpha = opacity.coerceIn(0f, 1f)))
+            .border(1.25.dp, ink, RoundedCornerShape((14 * scale).dp)),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -386,7 +393,7 @@ fun PaperKey(
             fontWeight = FontWeight.SemiBold,
             fontSize = (12 * scale).sp,
             letterSpacing = 0.7.sp,
-            color = Wyrm.Ink,
+            color = ink,
         )
     }
 }

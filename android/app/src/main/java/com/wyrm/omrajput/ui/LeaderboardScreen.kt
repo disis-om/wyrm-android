@@ -182,6 +182,7 @@ fun LeaderboardScreen(
                                     player = player,
                                     sort = sort,
                                     first = index == 0,
+                                    mine = player.id == meId,
                                     onClick = { onOpenPlayer(player.id) },
                                 )
                             }
@@ -249,7 +250,8 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
             .height(38.dp)
             .clip(shape)
             .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(Wyrm.Live.copy(alpha = 0.12f))
+            .border(1.dp, Wyrm.Live.copy(alpha = 0.3f), shape)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -344,6 +346,8 @@ private fun BoardRow(
     player: ApiPlayer,
     sort: LeaderboardSort,
     first: Boolean,
+    /** My own row (OM, 2026-10-14): a light Wyrm-green wash so I can find it. */
+    mine: Boolean = false,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -364,6 +368,7 @@ private fun BoardRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 60.dp)
+                .background(if (mine) Wyrm.Live.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
                 .scale(pressScale(pressed))
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 9.dp),
@@ -395,14 +400,19 @@ private fun BoardPerson(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Ranks past 99 overflowed a 22 dp column (OM, 2026-10-14): room for
+        // three digits, smaller type from four on, never wrapped.
+        val digits = rank.toString().length
         Text(
             text = rank.toString(),
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 13.sp,
+            fontSize = if (digits >= 5) 9.5.sp else if (digits == 4) 11.sp else 13.sp,
             color = Wyrm.Quiet,
             style = nums,
-            modifier = Modifier.width(22.dp),
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.width(34.dp),
         )
         Spacer(Modifier.width(11.dp))
         WyrmAvatar(

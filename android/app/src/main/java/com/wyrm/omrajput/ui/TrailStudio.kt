@@ -35,6 +35,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -102,6 +103,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -118,6 +120,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.wyrm.omrajput.R
+import com.composables.icons.lucide.R as LucideR
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -133,11 +136,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /*
- * The Trails studio (OM, 2026-09-28), as Wyrm iOS draws it (`WyrmTrailStudio.swift`):
+ * The Trails studio (OM, 2026-09-28), as Wyrm iOS draws it (`WyrmTrailStudio.swift`).
+ * Since 2026-10-17 it opens on the camera (`TrailCamera.kt`), Instagram's way,
+ * with PHOTO · VIDEO · TEXT · CANVAS under it and the gallery in its corner.
  *
- *   Photo   — live camera on top, recent photos below. A picked or taken photo
- *             opens in the editor: crop (Original, Free, 1:1, 4:5, 16:9), text,
- *             drawing.
+ *   Photo   — a taken or picked photo opens in the editor: crop (Original,
+ *             Free, 1:1, 4:5, 16:9), text, drawing, stickers, looks.
  *   Text    — words only; posted as a text trail.
  *   Canvas  — a plain colour to write and draw on.
  *
@@ -244,6 +248,13 @@ internal data class LastRun(
 internal data class ShareRunInput(val run: LastRun?, val skin: SkinState, val look: WyrmLookSpec, val tagId: Int = -1)
 
 internal enum class ShareLayer { SKIN, SCREENSHOT }
+
+/** What a Share crop starts from (OM, 2026-10-18): the canvas and everything on it. */
+internal class ShareCropSnapshot(
+    val w: Float, val h: Float,
+    val texts: List<StudioText>, val emojis: List<StudioEmoji>, val stickers: List<StudioSticker>,
+    val strokes: List<StudioStroke>, val shotRect: RectF?,
+)
 
 internal enum class StickerKind { SKIN, STATS }
 
@@ -581,6 +592,19 @@ internal class StudioDraft {
         ink++
     }
 
+    /**
+     * The canvas changed size (a crop, a turn of the phone): words, stickers
+     * and strokes keep their place on the picture (OM, 2026-10-17).
+     */
+    fun rescale(sx: Float, sy: Float) {
+        if (sx == 1f && sy == 1f) return
+        fun move(p: Offset) = Offset(p.x * sx, p.y * sy)
+        for (i in texts.indices) texts[i] = texts[i].copy(center = move(texts[i].center))
+        for (i in emojis.indices) emojis[i] = emojis[i].copy(center = move(emojis[i].center))
+        for (s in strokes) for (i in s.points.indices) s.points[i] = move(s.points[i])
+        ink++
+    }
+
     /** A Share editor: 4:5, the screenshot behind if there is one, else the theme's paper. */
     fun startShare(input: ShareRunInput, paper: Int) {
         reset(StudioMode.CANVAS)
@@ -704,7 +728,7 @@ internal class StudioDraft {
     }
 
     /** Everything on a canvas of [w] x [h] pixels; the editor and the export both call this. */
-    fun paint(canvas: android.graphics.Canvas, w: Float, h: Float, type: StudioType, live: StudioStroke? = null) {
+    fun paint(canvas: android.graphics.Canvas, w: Float, h: Float, type: StudioType, live: StudioStroke? = null, clip: Boolean = true) {
         val bitmap = image
         if (video) {
             // The clip plays under the canvas; only what is on top is painted.
@@ -719,12 +743,12 @@ internal class StudioDraft {
             // A shared run's screenshot: over the colour, clipped to the canvas.
             shot?.let { screenshot ->
                 canvas.save()
-                canvas.clipRect(0f, 0f, w, h)
+                if (clip) canvas.clipRect(0f, 0f, w, h)
                 canvas.drawBitmap(screenshot, null, shotRect(w, h), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
                 canvas.restore()
             }
         }
-        val layer = canvas.saveLayer(0f, 0f, w, h, null)
+        val layer = if (clip) canvas.saveLayer(0f, 0f, w, h, null) else canvas.saveLayer(null as RectF?, null)
         StudioInk.draw(canvas, strokes, multiply = !video)
         live?.let { StudioInk.draw(canvas, it, multiply = !video) }
         canvas.restoreToCount(layer)
@@ -761,6 +785,67 @@ internal class StudioDraft {
         return out
     }
 
+    /**
+     * Share run / Share skin crop (OM, 2026-10-18), like a photo's: the whole
+     * board (a square as big as the canvas's long side, the canvas in its
+     * middle) is shown with a box over it; the box becomes the new frame and
+     * everything on it moves and scales with it. Built from what the canvas
+     * held when cropping started, so the chips' own resets change nothing.
+     */
+    fun shareCropSnapshot(w: Float, h: Float) = ShareCropSnapshot(
+        w, h, texts.toList(), emojis.toList(), stickers.toList(),
+        strokes.map { StudioStroke(it.points.toMutableList(), it.rgb, it.width, it.brush) },
+        shot?.let { shotRect(w, h) },
+    )
+
+    fun shareBoard(s: ShareCropSnapshot, type: StudioType): Bitmap {
+        val side = max(max(s.w, s.h), 1f)
+        val k = 1080f / side
+        val out = Bitmap.createBitmap(1080, 1080, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        canvas.scale(k, k)
+        canvas.translate((side - s.w) / 2, (side - s.h) / 2)
+        paint(canvas, s.w, s.h, type, clip = false)
+        return out
+    }
+
+    /** The canvas as a box on its board. */
+    fun shareStart(s: ShareCropSnapshot): CropFrac {
+        val side = max(max(s.w, s.h), 1f)
+        val l = (side - s.w) / 2 / side
+        val t = (side - s.h) / 2 / side
+        return CropFrac(l, t, l + s.w / side, t + s.h / side)
+    }
+
+    fun applyShareCrop(s: ShareCropSnapshot, c: CropFrac, widthPx: Float, maxHeightPx: Float) {
+        val side = max(max(s.w, s.h), 1f)
+        val bx = c.l * side - (side - s.w) / 2
+        val by = c.t * side - (side - s.h) / 2
+        val bw = c.w * side
+        val bh = c.h * side
+        if (bw <= 1f || bh <= 1f) return
+        if (aspect == StudioAspect.FREE) freeRatio = (bw / bh).coerceIn(0.5f, 2f)
+        val r = ratio
+        val nh = min(widthPx / r, maxHeightPx)
+        val nw = nh * r
+        val k = nw / bw
+        fun move(p: Offset) = Offset((p.x - bx) * k, (p.y - by) * k)
+        texts.clear(); texts += s.texts.map { it.copy(center = move(it.center), scale = it.scale * k) }
+        emojis.clear(); emojis += s.emojis.map { it.copy(center = move(it.center), scale = it.scale * k) }
+        stickers.clear(); stickers += s.stickers.map { it.copy(center = move(it.center), scale = it.scale * k) }
+        strokes.clear(); strokes += s.strokes.map { StudioStroke(it.points.map(::move).toMutableList(), it.rgb, it.width * k, it.brush) }
+        val rect = s.shotRect
+        val bitmap = shot
+        if (rect != null && bitmap != null) {
+            val rw = rect.width() * k
+            val rh = rect.height() * k
+            val cover = max(nw / bitmap.width, nh / bitmap.height)
+            shotScale = rw / (bitmap.width * cover)
+            shotOffset = Offset((rect.left - bx) * k + rw / 2 - nw / 2, (rect.top - by) * k + rh / 2 - nh / 2)
+        }
+        ink++
+    }
+
     /** The finished picture, 1440 px wide. */
     fun render(w: Float, h: Float, type: StudioType): Bitmap {
         val k = 1440f / max(w, 1f)
@@ -780,21 +865,7 @@ private object StudioThumbs {
     }
 }
 
-private fun recentPhotos(context: Context): List<Uri> = runCatching {
-    val uris = mutableListOf<Uri>()
-    context.contentResolver.query(
-        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, arrayOf(MediaStore.Images.Media._ID), null, null,
-        "${MediaStore.Images.Media.DATE_ADDED} DESC",
-    )?.use { cursor ->
-        val id = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-        while (cursor.moveToNext() && uris.size < 300) {
-            uris += ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cursor.getLong(id))
-        }
-    }
-    uris
-}.getOrDefault(emptyList())
-
-private fun thumbnail(context: Context, uri: Uri): Bitmap? = runCatching {
+internal fun studioThumbnail(context: Context, uri: Uri): Bitmap? = runCatching {
     val key = ContentUris.parseId(uri)
     StudioThumbs.cache.get(key) ?: (if (Build.VERSION.SDK_INT >= 29) {
         context.contentResolver.loadThumbnail(uri, Size(256, 256), null)
@@ -804,7 +875,7 @@ private fun thumbnail(context: Context, uri: Uri): Bitmap? = runCatching {
 }.getOrNull()
 
 /** A picked photo at most 2400 px on its long side, upright, in software memory. */
-private fun loadPhoto(context: Context, uri: Uri): Bitmap? = runCatching {
+internal fun loadPhoto(context: Context, uri: Uri): Bitmap? = runCatching {
     if (Build.VERSION.SDK_INT >= 28) {
         ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
@@ -825,7 +896,7 @@ private fun loadPhoto(context: Context, uri: Uri): Bitmap? = runCatching {
     }
 }.getOrNull()
 
-private fun hasPhotoAccess(context: Context): Boolean {
+internal fun hasPhotoAccess(context: Context): Boolean {
     val granted = { p: String -> ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED }
     return when {
         Build.VERSION.SDK_INT >= 34 -> granted(Manifest.permission.READ_MEDIA_IMAGES) || granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
@@ -834,32 +905,25 @@ private fun hasPhotoAccess(context: Context): Boolean {
     }
 }
 
-private fun photoPermissions(): Array<String> = when {
+internal fun photoPermissions(): Array<String> = when {
     Build.VERSION.SDK_INT >= 34 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
     Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
     else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-}
-
-private fun ImageProxy.upright(front: Boolean): Bitmap {
-    val raw = toBitmap()
-    val matrix = Matrix().apply {
-        postRotate(imageInfo.rotationDegrees.toFloat())
-        if (front) postScale(-1f, 1f)
-    }
-    return Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
 }
 
 // ----------------------------------------------------------------- studio
 
 private enum class StudioStep { PICK, EDIT, CAPTION }
 
-/** What the editor is doing: nothing (move and pinch), writing, drawing or cropping. */
-private enum class EditorTool { NONE, TEXT, DRAW, CROP, EMOJI, LOOKS }
+/** What the editor is doing: nothing (move and pinch), writing, drawing, cropping, stickers, looks or the cover. */
+private enum class EditorTool { NONE, TEXT, DRAW, CROP, EMOJI, LOOKS, COVER }
 
 /**
- * The studio. With [share] it is the Share editor for the last run: it opens
- * straight on the canvas, closes with [onClose] and, once posted, leaves
- * through [onPosted].
+ * The studio (redesigned OM, 2026-10-17, Instagram's flow): the camera first
+ * with the modes under it, the gallery from its corner, then the editor on a
+ * dark stage, then the caption. With [share] it is the Share editor for the
+ * last run: it opens straight on the canvas, closes with [onClose] and, once
+ * posted, leaves through [onPosted].
  */
 @Composable
 internal fun TrailStudioScreen(
@@ -877,6 +941,9 @@ internal fun TrailStudioScreen(
     val draft = remember { StudioDraft().also { d -> share?.let { d.startShare(it, paper) } } }
     val type = remember(density) { StudioType(context, density) }
     var step by remember { mutableStateOf(if (share != null) StudioStep.EDIT else StudioStep.PICK) }
+    /** The page under the modes: the camera (Photo, Video), Text or Canvas. */
+    var pickMode by remember { mutableStateOf(StudioMode.PHOTO) }
+    var gallery by remember { mutableStateOf(false) }
     var canvasPx by remember { mutableStateOf(0f to 0f) }
     var rendered by remember { mutableStateOf<Bitmap?>(null) }
     var loadingPhoto by remember { mutableStateOf(false) }
@@ -886,9 +953,11 @@ internal fun TrailStudioScreen(
     val textures by rememberSkinTextures()
     val sharing = share != null
     val skinOnly = share != null && share.run == null
-    /** The clip being edited on the Video page (OM, 2026-10-05). */
+    /** The clip being edited (OM, 2026-10-05; its cut 2026-10-17). */
     var videoSession by remember { mutableStateOf<TrailVideoSession?>(null) }
     var openingClip by remember { mutableStateOf(false) }
+    // Video stays out of the modes while `TRAIL_VIDEO_ENABLED` is off (OM, 2026-10-05).
+    val shownModes = remember { StudioMode.entries.filter { it != StudioMode.VIDEO || com.wyrm.omrajput.data.TRAIL_VIDEO_ENABLED } }
     DisposableEffect(Unit) { onDispose { videoSession?.release() } }
     // The player previews the look the export will burn in.
     LaunchedEffect(videoSession, draft.look, draft.adjust) {
@@ -896,7 +965,12 @@ internal fun TrailStudioScreen(
     }
     // It plays while being edited and rests on the caption.
     LaunchedEffect(step, videoSession) {
-        videoSession?.player?.let { if (step == StudioStep.EDIT) it.play() else it.pause() }
+        videoSession?.let { if (step == StudioStep.EDIT) it.play() else it.pause() }
+    }
+    // The canvas takes the video's crop shape, so what is drawn lands on the same spot of every frame.
+    LaunchedEffect(videoSession) {
+        val session = videoSession ?: return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { session.edit.crop.ratio(session.clip) }.collect { draft.videoAspect = it }
     }
 
     LaunchedEffect(Unit) { TrailsStore.resetPosting() }
@@ -907,6 +981,7 @@ internal fun TrailStudioScreen(
     fun open(bitmap: Bitmap) {
         draft.reset(StudioMode.PHOTO)
         draft.image = bitmap
+        gallery = false
         step = StudioStep.EDIT
     }
 
@@ -918,7 +993,7 @@ internal fun TrailStudioScreen(
         }
     }
 
-    /** A recorded or picked clip into the editor; longer than 30 s, it starts trimmed to its first 30. */
+    /** A recorded or picked clip into the editor; longer than 30 s, it starts as its first 30. */
     fun openClip(uri: Uri) {
         if (openingClip) return
         openingClip = true
@@ -938,16 +1013,17 @@ internal fun TrailStudioScreen(
             session.load()
             videoSession = session
             openingClip = false
+            gallery = false
             step = StudioStep.EDIT
         }
     }
 
-    /** The video's poster: the cover frame with the look and everything drawn on top. */
+    /** The video's poster: the cover frame, cropped, in the look with everything drawn on top. */
     fun videoPoster(): Bitmap? {
         val session = videoSession ?: return null
         val (w, h) = canvasPx
         val filter = if (TrailLooks.isIdentity(draft.look, draft.adjust)) null else TrailLooks.colorFilter(draft.look, draft.adjust)
-        return TrailVideoExport.poster(context, session.clip, session.coverMs, filter) { ow, oh -> draft.renderOverlay(ow, oh, w, h, type) }
+        return TrailVideoExport.poster(context, session.edit.spec(), filter) { ow, oh -> draft.renderOverlay(ow, oh, w, h, type) }
     }
 
     fun postVideo() {
@@ -955,12 +1031,10 @@ internal fun TrailStudioScreen(
         if (TrailsStore.posting.busy) return
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         val (w, h) = canvasPx
+        session.pause()
         TrailsStore.postVideo(
             context = context.applicationContext,
-            clip = session.clip,
-            startMs = session.trimStart,
-            endMs = session.trimEnd,
-            muted = session.muted,
+            spec = session.edit.spec(),
             effects = TrailLooks.videoEffects(draft.look, draft.adjust),
             overlay = { ow, oh -> draft.renderOverlay(ow, oh, w, h, type) },
             poster = rendered ?: videoPoster(),
@@ -969,8 +1043,7 @@ internal fun TrailStudioScreen(
         onClose()
     }
 
-    val pickAll = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(::openUri) }
-    // The phone's own camera app, full screen; photos only for now.
+    // The phone's own camera app, full screen; photos only.
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val file = cameraFile
         if (ok && file != null) openUri(Uri.fromFile(file))
@@ -1000,9 +1073,16 @@ internal fun TrailStudioScreen(
         }
     }
 
+    fun switchMode(next: StudioMode) {
+        if (next == pickMode) return
+        pickMode = next
+        // Text and Canvas write on the draft; the camera leaves it for the next shot.
+        if (next == StudioMode.TEXT || next == StudioMode.CANVAS) draft.reset(next)
+    }
+
     fun back() {
         when (step) {
-            StudioStep.PICK -> onClose()
+            StudioStep.PICK -> if (gallery) gallery = false else onClose()
             StudioStep.EDIT -> if (sharing) onClose() else {
                 step = StudioStep.PICK
                 if (draft.mode == StudioMode.PHOTO) draft.image = null
@@ -1018,7 +1098,7 @@ internal fun TrailStudioScreen(
 
     fun forward() {
         when (step) {
-            StudioStep.PICK -> when (draft.mode) {
+            StudioStep.PICK -> when (pickMode) {
                 StudioMode.TEXT -> post(null)
                 StudioMode.CANVAS -> { rendered = draft.render(canvasPx.first, canvasPx.second, type); step = StudioStep.CAPTION }
                 StudioMode.PHOTO, StudioMode.VIDEO -> Unit
@@ -1031,252 +1111,120 @@ internal fun TrailStudioScreen(
         }
     }
 
+    val cameraPage = step == StudioStep.PICK && !gallery && (pickMode == StudioMode.PHOTO || pickMode == StudioMode.VIDEO)
+    val galleryPage = step == StudioStep.PICK && gallery
+    val media = step == StudioStep.EDIT && (draft.image != null || draft.video)
+    val dark = cameraPage || galleryPage || media
     val ready = when (step) {
-        StudioStep.PICK -> if (draft.mode == StudioMode.TEXT) draft.caption.isNotBlank() else draft.mode == StudioMode.CANVAS
+        StudioStep.PICK -> if (pickMode == StudioMode.TEXT) draft.caption.isNotBlank() else pickMode == StudioMode.CANVAS
         StudioStep.EDIT -> true
         StudioStep.CAPTION -> !TrailsStore.posting.busy
     }
-    val actionLabel = if (step == StudioStep.CAPTION || (step == StudioStep.PICK && draft.mode == StudioMode.TEXT)) "Post" else "Next"
+    val actionLabel = if (step == StudioStep.CAPTION || (step == StudioStep.PICK && pickMode == StudioMode.TEXT)) "Post" else "Next"
     val title = when (step) {
         StudioStep.PICK -> "New trail"
-        StudioStep.EDIT -> if (skinOnly) "Share skin" else if (sharing) "Share run" else if (draft.video) "Edit video" else "Edit"
-        StudioStep.CAPTION -> "Caption"
+        StudioStep.EDIT -> if (skinOnly) "Share skin" else if (sharing) "Share run" else if (draft.video) "Edit video" else if (draft.image != null) "Edit" else "Canvas"
+        StudioStep.CAPTION -> "New trail"
     }
 
-    Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop, bottom = insetBottom).imePadding()) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(38.dp).clip(CircleShape).background(Wyrm.Well)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { back() },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (step == StudioStep.PICK || (sharing && step == StudioStep.EDIT)) Text("✕", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
-                else IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Ink, size = 16.dp, semibold = true)
-            }
-            Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wyrm.Ink,
-                textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-            Box(
-                Modifier.clip(CircleShape).background(Wyrm.Ink.copy(alpha = if (ready) 1f else 0.3f))
-                    .clickable(enabled = ready, interactionSource = remember { MutableInteractionSource() }, indication = null) { forward() }
-                    .padding(horizontal = 16.dp).height(36.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text(actionLabel, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Wyrm.OnInk) }
-        }
-        // The mode pill sits here, in one place, for every mode; only the page
-        // under it moves.
-        if (step == StudioStep.PICK) {
-            // Video stays out of the bar while `TRAIL_VIDEO_ENABLED` is off (OM, 2026-10-05).
-            val shownModes = StudioMode.entries.filter { it != StudioMode.VIDEO || com.wyrm.omrajput.data.TRAIL_VIDEO_ENABLED }
-            Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-                PaperSegmented(
-                    options = shownModes.map { it.label },
-                    selected = shownModes.indexOf(draft.mode).coerceAtLeast(0),
-                    onSelect = { index ->
-                        val next = shownModes[index]
-                        if (next != draft.mode) {
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            draft.reset(next)
-                        }
-                    },
-                )
-            }
-        }
-        // Share run: what is behind everything, the skin colour or the arena at death.
-        if (sharing && !skinOnly && step == StudioStep.EDIT) {
-            val hasShot = draft.share?.run?.screenshot != null
-            Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) {
-                PaperSegmented(
-                    options = listOf("Skin", "Screenshot"),
-                    selected = draft.shareLayer.ordinal,
-                    onSelect = { index ->
-                        val layer = ShareLayer.entries[index]
-                        if (layer != draft.shareLayer && (layer == ShareLayer.SKIN || hasShot)) {
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            draft.showLayer(layer)
-                        }
-                    },
-                )
-                if (!hasShot) {
-                    Text("No screenshot for this run", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
-                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
-                }
-            }
-        }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            val page = if (step == StudioStep.PICK) draft.mode.ordinal else 10 + step.ordinal
-            androidx.compose.animation.AnimatedContent(
-                targetState = page,
-                transitionSpec = {
-                    val forward = targetState > initialState
-                    (androidx.compose.animation.slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { if (forward) it / 4 else -it / 4 } +
-                        androidx.compose.animation.fadeIn(tween(220))) togetherWith
-                        (androidx.compose.animation.slideOutHorizontally(tween(240)) { if (forward) -it / 5 else it / 5 } +
-                            androidx.compose.animation.fadeOut(tween(160)))
-                },
-                label = "studio page",
-            ) { shown ->
-                when (shown) {
-                    StudioMode.PHOTO.ordinal -> PhotoPicker(loadingPhoto, onCaptured = { open(it) }, onPick = ::openUri,
-                        onAll = { pickAll.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                        onNativeCamera = ::nativeCamera)
-                    StudioMode.VIDEO.ordinal -> Box(Modifier.fillMaxSize()) {
-                        TrailVideoPicker(onClip = ::openClip)
-                        if (openingClip) {
-                            Box(Modifier.align(Alignment.Center).size(52.dp).clip(CircleShape).background(Wyrm.Card), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = Wyrm.Ink, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
-                            }
-                        }
-                    }
-                    StudioMode.TEXT.ordinal -> TextComposer(draft)
-                    10 + StudioStep.CAPTION.ordinal -> CaptionStep(draft, rendered, shareSkin.takeIf { sharing }) { shareSkin = it }
-                    else -> {
-                        val session = videoSession
-                        if (draft.video && session != null) {
-                            StudioEditor(
-                                draft, type, { w, h -> canvasPx = w to h },
-                                underlay = { TrailVideoPreview(session, Modifier.fillMaxSize()) },
-                                bottom = { TrailVideoBar(session) },
-                            )
-                        } else {
-                            StudioEditor(draft, type, { w, h -> canvasPx = w to h })
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PhotoPicker(
-    loading: Boolean,
-    onCaptured: (Bitmap) -> Unit,
-    onPick: (Uri) -> Unit,
-    onAll: () -> Unit,
-    onNativeCamera: () -> Unit,
-) {
-    val context = LocalContext.current
-    val lifecycle = LocalLifecycleOwner.current
-    val haptics = LocalHapticFeedback.current
-    var cameraAllowed by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-    }
-    var cameraAsked by remember { mutableStateOf(false) }
-    var photosAllowed by remember { mutableStateOf(hasPhotoAccess(context)) }
-    var photos by remember { mutableStateOf(emptyList<Uri>()) }
-    var front by remember { mutableStateOf(false) }
-    val capture = remember { ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build() }
-    val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
-
-    val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraAllowed = it; cameraAsked = true }
-    val askPhotos = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        photosAllowed = hasPhotoAccess(context)
-    }
-    LaunchedEffect(Unit) {
-        if (!cameraAllowed) askCamera.launch(Manifest.permission.CAMERA)
-        else if (!photosAllowed) askPhotos.launch(photoPermissions())
-    }
-    LaunchedEffect(cameraAsked) { if (cameraAsked && !photosAllowed) askPhotos.launch(photoPermissions()) }
-    LaunchedEffect(photosAllowed) { if (photosAllowed) photos = withContext(Dispatchers.IO) { recentPhotos(context) } }
-
-    DisposableEffect(cameraAllowed, front) {
-        var provider: ProcessCameraProvider? = null
-        // Only this page's own use cases are let go: the Photo and Video pages
-        // overlap while one slides over the other (OM, 2026-10-05).
-        var bound = emptyArray<androidx.camera.core.UseCase>()
-        if (cameraAllowed) {
-            val future = ProcessCameraProvider.getInstance(context)
-            future.addListener({
-                runCatching {
-                    provider = future.get().also { p ->
-                        val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-                        p.unbindAll()
-                        p.bindToLifecycle(lifecycle, if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA,
-                            preview, capture)
-                        bound = arrayOf(preview, capture)
-                    }
-                }
-            }, ContextCompat.getMainExecutor(context))
-        }
-        onDispose { runCatching { provider?.unbind(*bound) } }
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.padding(horizontal = 12.dp).fillMaxWidth().aspectRatio(0.8f).clip(wyrmRounded(22.dp)).background(Wyrm.Well)) {
-            if (cameraAllowed) {
-                AndroidView({ previewView }, Modifier.fillMaxSize())
-                // Full screen: the phone's own camera app.
-                StudioRoundButton("⤢", Modifier.align(Alignment.TopEnd).padding(12.dp), onClick = onNativeCamera)
-                Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.size(44.dp))
-                    Spacer(Modifier.weight(1f))
+    Box(Modifier.fillMaxSize().background(if (dark) Color.Black else Wyrm.Paper)) {
+        Column(Modifier.fillMaxSize().padding(top = insetTop, bottom = insetBottom).imePadding()) {
+            if (!cameraPage && !galleryPage) {
+                Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val ink = if (dark) Color.White else Wyrm.Ink
                     Box(
-                        Modifier.size(70.dp).clip(CircleShape).border(5.dp, Color.White, CircleShape).padding(9.dp)
-                            .clip(CircleShape).background(Color.White.copy(alpha = 0.9f))
-                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                capture.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
-                                    override fun onCaptureSuccess(image: ImageProxy) {
-                                        val shot = runCatching { image.upright(front) }.getOrNull()
-                                        image.close()
-                                        shot?.let(onCaptured)
-                                    }
-                                    override fun onError(exception: ImageCaptureException) {}
-                                })
-                            },
+                        Modifier.size(38.dp).clip(CircleShape).background(if (dark) Color.White.copy(alpha = 0.14f) else Wyrm.Well)
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { back() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val closing = step == StudioStep.PICK || (sharing && step == StudioStep.EDIT)
+                        androidx.compose.material3.Icon(
+                            androidx.compose.ui.res.painterResource(if (closing) LucideR.drawable.lucide_ic_x else LucideR.drawable.lucide_ic_arrow_left),
+                            null, tint = ink, modifier = Modifier.size(18.dp))
+                    }
+                    Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = ink,
+                        textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    val capsule = if (dark) Color.White else Wyrm.Ink
+                    Box(
+                        Modifier.clip(CircleShape).background(capsule.copy(alpha = if (ready) 1f else 0.3f))
+                            .clickable(enabled = ready, interactionSource = remember { MutableInteractionSource() }, indication = null) { forward() }
+                            .padding(horizontal = 18.dp).height(36.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(actionLabel, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = if (dark) Color.Black else Wyrm.OnInk) }
+                }
+            }
+            // Share run: what is behind everything, the skin colour or the arena at death.
+            if (sharing && !skinOnly && step == StudioStep.EDIT) {
+                val hasShot = draft.share?.run?.screenshot != null
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) {
+                    PaperSegmented(
+                        options = listOf("Skin", "Screenshot"),
+                        selected = draft.shareLayer.ordinal,
+                        onSelect = { index ->
+                            val layer = ShareLayer.entries[index]
+                            if (layer != draft.shareLayer && (layer == ShareLayer.SKIN || hasShot)) {
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                draft.showLayer(layer)
+                            }
+                        },
                     )
-                    Spacer(Modifier.weight(1f))
-                    StudioRoundButton("⟲", Modifier) { front = !front }
-                }
-            } else {
-                Column(Modifier.align(Alignment.Center).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Camera is off for Wyrm", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
-                    Text(if (cameraAsked) "Allow it in Settings, or use the phone's camera." else "Tap to allow the camera.",
-                        fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Mute, textAlign = TextAlign.Center,
-                        modifier = Modifier.clickable { askCamera.launch(Manifest.permission.CAMERA) })
-                    PaperOutlineButton(label = "Open camera", onClick = onNativeCamera)
-                }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (photosAllowed) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
-                    modifier = Modifier.padding(horizontal = 12.dp).clip(wyrmRounded(14.dp)),
-                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    item {
-                        Box(Modifier.aspectRatio(1f).background(Wyrm.Well).clickable(onClick = onAll), contentAlignment = Alignment.Center) {
-                            Text("All photos", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, color = Wyrm.Mute)
-                        }
-                    }
-                    items(photos, key = { it.toString() }) { uri ->
-                        var thumb by remember(uri) { mutableStateOf(StudioThumbs.cache.get(ContentUris.parseId(uri))) }
-                        LaunchedEffect(uri) { if (thumb == null) thumb = withContext(Dispatchers.IO) { thumbnail(context, uri) } }
-                        Box(Modifier.aspectRatio(1f).background(Wyrm.Well).clickable { if (!loading) onPick(uri) }) {
-                            thumb?.let { Image(remember(it) { it.asImageBitmap() }, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
-                        }
+                    if (!hasShot) {
+                        Text("No screenshot for this run", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
+                            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
                     }
                 }
-            } else {
-                Column(Modifier.align(Alignment.TopCenter).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Your photos", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
-                    Text("Allow Wyrm to show your photos here, or pick one from the library.", fontFamily = Wyrm.Body,
-                        fontSize = 12.5.sp, color = Wyrm.Mute, textAlign = TextAlign.Center)
-                    PaperPrimaryButton(label = "Choose a photo", onClick = onAll)
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                // The camera is one page for Photo and Video, so changing between them keeps it running.
+                val page = when {
+                    galleryPage -> 20
+                    step == StudioStep.PICK -> if (cameraPage) 0 else pickMode.ordinal + 1
+                    else -> 10 + step.ordinal
+                }
+                androidx.compose.animation.AnimatedContent(
+                    targetState = page,
+                    transitionSpec = {
+                        val forward = targetState > initialState
+                        (androidx.compose.animation.slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { if (forward) it / 4 else -it / 4 } +
+                            androidx.compose.animation.fadeIn(tween(220))) togetherWith
+                            (androidx.compose.animation.slideOutHorizontally(tween(240)) { if (forward) -it / 5 else it / 5 } +
+                                androidx.compose.animation.fadeOut(tween(160)))
+                    },
+                    label = "studio page",
+                ) { shown ->
+                    when {
+                        shown == 20 -> TrailGalleryPage(onClose = { gallery = false }, onPhoto = ::openUri, onVideo = ::openClip,
+                            busy = loadingPhoto || openingClip)
+                        shown == 0 -> TrailCameraPage(
+                            mode = pickMode,
+                            busy = loadingPhoto || openingClip,
+                            onClose = onClose,
+                            onSwipe = { d ->
+                                val i = (shownModes.indexOf(pickMode) + d).coerceIn(0, shownModes.lastIndex)
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                switchMode(shownModes[i])
+                            },
+                            onPhoto = { open(it) },
+                            onClip = ::openClip,
+                            onGallery = { gallery = true },
+                            onCameraApp = ::nativeCamera,
+                        )
+                        shown == StudioMode.TEXT.ordinal + 1 -> TextComposer(draft)
+                        shown == StudioMode.CANVAS.ordinal + 1 -> StudioEditor(draft, type, { w, h -> canvasPx = w to h })
+                        shown == 10 + StudioStep.CAPTION.ordinal -> CaptionStep(draft, rendered, shareSkin.takeIf { sharing }) { shareSkin = it }
+                        else -> {
+                            val session = videoSession
+                            if (draft.video && session != null) StudioEditor(draft, type, { w, h -> canvasPx = w to h }, session)
+                            else StudioEditor(draft, type, { w, h -> canvasPx = w to h })
+                        }
+                    }
                 }
             }
-            if (loading) {
-                Box(Modifier.align(Alignment.Center).size(52.dp).clip(CircleShape).background(Wyrm.Card), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Wyrm.Ink, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
-                }
+            if (step == StudioStep.PICK && !gallery) {
+                StudioModeCarousel(shownModes, pickMode, dark = cameraPage) { switchMode(it) }
             }
         }
+        TrailToast(Modifier.align(Alignment.TopCenter).padding(top = insetTop + 60.dp))
     }
 }
 
@@ -1359,21 +1307,29 @@ private fun CaptionStep(draft: StudioDraft, rendered: Bitmap?, shareSkin: Boolea
 
 // ----------------------------------------------------------------- editor
 
+/** What a finger landed on: words, an emoji or a Share run sticker, by index. */
+private data class StudioHit(val kind: Int, val index: Int) {
+    companion object { const val TEXT = 1; const val EMOJI = 2; const val STICKER = 3 }
+}
+
 /**
- * The editor, story-style: the picture fills the page, tools stand in a rail
- * on its right edge (Aa, draw, crop, undo), and each tool takes the whole
- * screen while it is in use. Text is dragged, pinched and turned in place and
- * thrown into the bin at the bottom to delete it.
+ * The editor (redesigned OM, 2026-10-17): the picture or the playing clip on
+ * a dark stage, tools in a rail on the right (their names show for a moment
+ * when the editor opens), the tool's own controls on a sheet underneath.
+ *
+ * Moving things, Instagram's way: a finger on a word or a sticker takes it;
+ * a second finger anywhere on the stage, on it or not, pinches and turns it.
+ * Either finger may be the one on it. With nothing taken, two fingers zoom
+ * the photo; on a video a tap plays or pauses. Words and stickers are thrown
+ * into the bin at the bottom to delete them.
  */
 @Composable
 private fun StudioEditor(
     draft: StudioDraft,
     type: StudioType,
     onCanvas: (Float, Float) -> Unit,
-    /** What plays under a video's transparent canvas (OM, 2026-10-05). */
-    underlay: (@Composable () -> Unit)? = null,
-    /** A video's own tools under the canvas: trim, cover, sound. */
-    bottom: (@Composable () -> Unit)? = null,
+    /** A video being edited: it plays under the see-through canvas (OM, 2026-10-05). */
+    session: TrailVideoSession? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -1388,210 +1344,289 @@ private fun StudioEditor(
     var editing by remember { mutableStateOf<StudioText?>(null) }
     var dragging by remember { mutableStateOf(false) }
     var overBin by remember { mutableStateOf(false) }
+    /** The tools' names, for a moment when the editor opens. */
+    var labels by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(2600); labels = false }
+    var lastSize by remember { mutableStateOf(0f to 0f) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val sharing = draft.share != null
+        val media = draft.image != null || draft.video
         val bottomBar = when {
-            tool == EditorTool.LOOKS -> 168.dp
-            bottom != null && tool == EditorTool.NONE -> 150.dp
-            tool == EditorTool.CROP -> 96.dp
+            tool == EditorTool.LOOKS -> 176.dp
+            tool == EditorTool.COVER -> 132.dp
+            tool == EditorTool.CROP -> if (draft.video) 128.dp else 96.dp
+            draft.video && tool == EditorTool.NONE -> 176.dp
             sharing -> if (tool == EditorTool.NONE) 120.dp else 56.dp
-            draft.image == null && !draft.video -> 96.dp
-            else -> 56.dp
+            !media -> 96.dp
+            else -> 48.dp
         }
+        val stagePx = with(density) { (maxHeight - bottomBar).toPx() }.coerceAtLeast(200f)
+        val stageWidthPx = with(density) { maxWidth.toPx() }
         val widthPx = with(density) { (maxWidth - 24.dp).toPx() }
-        val maxHeightPx = with(density) { (maxHeight - bottomBar - 8.dp).toPx() }.coerceAtLeast(200f)
+        val maxHeightPx = (stagePx - with(density) { 12.dp.toPx() }).coerceAtLeast(200f)
         val h = min(widthPx / draft.ratio, maxHeightPx)
         val w = h * draft.ratio
-        LaunchedEffect(w, h) { onCanvas(w, h) }
+        // A photo, or Share run's screenshot, is cropped on its own stage (PhotoCrop.kt, 2026-10-18).
+        val cropStage = tool == EditorTool.CROP && session == null && draft.image != null && !sharing
+        // Share run / Share skin: the same cropper over the whole board (OM, 2026-10-18).
+        val shareCrop = tool == EditorTool.CROP && session == null && sharing
+        // Where the canvas sits on the stage: in the middle.
+        val origin = Offset((stageWidthPx - w) / 2, (stagePx - h) / 2)
+        LaunchedEffect(w, h) {
+            val (pw, ph) = lastSize
+            if (pw > 0f && ph > 0f && (pw != w || ph != h) && !sharing) draft.rescale(w / pw, h / ph)
+            lastSize = w to h
+            onCanvas(w, h)
+        }
         // Share run: the stats box (and the skin sticker on the Skin layer) once
         // the canvas has a size; later only keeps everything inside a new shape.
         LaunchedEffect(w, h, draft.shareLayer) { draft.seedShare(w, h, type) }
         val binCenter = Offset(w / 2, h - 46 * density.density)
 
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(with(density) { w.toDp() }, with(density) { h.toDp() })) {
-                underlay?.let { playing -> Box(Modifier.fillMaxSize().clip(wyrmRounded(20.dp))) { playing() } }
-                Canvas(
-                    Modifier.fillMaxSize().clip(wyrmRounded(20.dp))
-                        .pointerInput(tool, brush, inkRgb, w, h) {
-                            when (tool) {
-                                EditorTool.DRAW -> detectDragGestures(
-                                    onDragStart = { p ->
-                                        live = StudioStroke(mutableListOf(p), inkRgb, (if (brush == StudioBrush.BEADS) 7f else 5f) * density.density, brush)
-                                        liveTick++
-                                    },
-                                    onDrag = { change, _ ->
-                                        val p = Offset(change.position.x.coerceIn(0f, w), change.position.y.coerceIn(0f, h))
-                                        live?.let { s -> if ((s.points.last() - p).getDistance() > 1.5f) { s.points += p; liveTick++ } }
-                                    },
-                                    onDragEnd = { live?.let { draft.strokes += it; draft.ink++ }; live = null },
-                                    onDragCancel = { live = null },
-                                )
-                                EditorTool.CROP -> awaitEachGesture {
-                                    awaitFirstDown(requireUnconsumed = false)
-                                    do {
-                                        val event = awaitPointerEvent()
-                                        if (draft.image != null) {
-                                            draft.photoScale = (draft.photoScale * event.calculateZoom()).coerceIn(1f, 5f)
-                                            draft.photoOffset += event.calculatePan()
-                                            draft.clampOffset(w, h)
-                                        } else if (draft.shot != null) {
-                                            draft.moveShot(event.calculatePan(), event.calculateZoom(), w, h)
-                                        }
-                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
-                                    } while (event.changes.any { it.pressed })
+        fun hit(p: Offset): StudioHit? {
+            val text = draft.texts.indexOfLast { item ->
+                val (tw, th) = StudioTextPainter.size(item, type)
+                abs(p.x - item.center.x) < tw * item.scale / 2 + 18 && abs(p.y - item.center.y) < th * item.scale / 2 + 18
+            }
+            if (text >= 0) return StudioHit(StudioHit.TEXT, text)
+            val emoji = draft.emojis.indexOfLast { item ->
+                val half = StudioEmojiPainter.size(type) * item.scale / 2 + 18
+                abs(p.x - item.center.x) < half && abs(p.y - item.center.y) < half
+            }
+            if (emoji >= 0) return StudioHit(StudioHit.EMOJI, emoji)
+            val sticker = draft.stickers.indexOfLast { item ->
+                val (sw, sh) = draft.stickerSize(item, type)
+                abs(p.x - item.center.x) < sw * item.scale / 2 + 18 && abs(p.y - item.center.y) < sh * item.scale / 2 + 18
+            }
+            if (sticker >= 0) return StudioHit(StudioHit.STICKER, sticker)
+            return null
+        }
+
+        Column(Modifier.fillMaxSize()) {
+            Box(
+                Modifier.fillMaxWidth().height(with(density) { stagePx.toDp() })
+                    .pointerInput(tool, brush, inkRgb, w, h, origin) {
+                        when (tool) {
+                            EditorTool.DRAW -> detectDragGestures(
+                                onDragStart = { at ->
+                                    val p = at - origin
+                                    live = StudioStroke(mutableListOf(Offset(p.x.coerceIn(0f, w), p.y.coerceIn(0f, h))), inkRgb,
+                                        (if (brush == StudioBrush.BEADS) 7f else 5f) * density.density, brush)
+                                    liveTick++
+                                },
+                                onDrag = { change, _ ->
+                                    val q = change.position - origin
+                                    val p = Offset(q.x.coerceIn(0f, w), q.y.coerceIn(0f, h))
+                                    live?.let { s -> if ((s.points.last() - p).getDistance() > 1.5f) { s.points += p; liveTick++ } }
+                                },
+                                onDragEnd = { live?.let { draft.strokes += it; draft.ink++ }; live = null },
+                                onDragCancel = { live = null },
+                            )
+                            EditorTool.CROP -> awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val pan = event.calculatePan()
+                                    val zoom = event.calculateZoom()
+                                    when {
+                                        session != null -> session.edit.crop = session.edit.crop.moved(session.clip, pan.x, pan.y, zoom, w, h)
+                                        // A photo or the screenshot: TrailCropStage takes the fingers.
+                                        else -> Unit
+                                    }
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                } while (event.changes.any { it.pressed })
+                            }
+                            EditorTool.COVER, EditorTool.LOOKS -> Unit
+                            else -> awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                var target = hit(down.position - origin)
+                                var moved = 0f
+                                var sweep = Offset.Zero
+                                var fingers = 1
+                                var last = down.position - origin
+                                val start = System.currentTimeMillis()
+                                fun towardBin() {
+                                    if (moved > 12f) {
+                                        dragging = true
+                                        val near = (last - binCenter).getDistance() < 44 * density.density
+                                        if (near != overBin) { overBin = near; if (near) haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+                                    }
                                 }
-                                else -> awaitEachGesture {
-                                    // A text item under the first finger moves, grows and turns;
-                                    // then a Share run sticker the same way; otherwise the
-                                    // photo (or the run's screenshot) pans and zooms.
-                                    val down = awaitFirstDown(requireUnconsumed = false)
-                                    val hit = draft.texts.indexOfLast { item ->
-                                        val (tw, th) = StudioTextPainter.size(item, type)
-                                        abs(down.position.x - item.center.x) < tw * item.scale / 2 + 16 &&
-                                            abs(down.position.y - item.center.y) < th * item.scale / 2 + 16
+                                do {
+                                    val event = awaitPointerEvent()
+                                    // A second finger that lands on something takes it, if nothing was taken yet.
+                                    if (target == null) {
+                                        event.changes.filter { it.changedToDown() }.forEach { c -> hit(c.position - origin)?.let { target = it } }
                                     }
-                                    val emojiHit = if (hit >= 0) -1 else draft.emojis.indexOfLast { item ->
-                                        val half = StudioEmojiPainter.size(type) * item.scale / 2 + 16
-                                        abs(down.position.x - item.center.x) < half && abs(down.position.y - item.center.y) < half
-                                    }
-                                    val stickerHit = if (hit >= 0 || emojiHit >= 0) -1 else draft.stickers.indexOfLast { item ->
-                                        val (sw, sh) = draft.stickerSize(item, type)
-                                        abs(down.position.x - item.center.x) < sw * item.scale / 2 + 16 &&
-                                            abs(down.position.y - item.center.y) < sh * item.scale / 2 + 16
-                                    }
-                                    var moved = 0f
-                                    var sweep = Offset.Zero
-                                    var last = down.position
-                                    val start = System.currentTimeMillis()
-                                    fun towardBin() {
-                                        if (moved > 12f) {
-                                            dragging = true
-                                            val near = (last - binCenter).getDistance() < 44 * density.density
-                                            if (near != overBin) { overBin = near; if (near) haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+                                    fingers = max(fingers, event.changes.count { it.pressed })
+                                    val pan = event.calculatePan()
+                                    val zoom = event.calculateZoom()
+                                    val turn = event.calculateRotation()
+                                    moved += pan.getDistance()
+                                    sweep += pan
+                                    event.changes.firstOrNull { it.pressed }?.let { last = it.position - origin }
+                                    val t = target
+                                    when {
+                                        t != null && t.kind == StudioHit.TEXT && t.index < draft.texts.size -> {
+                                            val item = draft.texts[t.index]
+                                            draft.texts[t.index] = item.copy(
+                                                center = Offset((item.center.x + pan.x).coerceIn(0f, w), (item.center.y + pan.y).coerceIn(0f, h)),
+                                                scale = (item.scale * zoom).coerceIn(0.3f, 6f),
+                                                rotation = item.rotation + turn,
+                                            )
+                                            towardBin()
                                         }
-                                    }
-                                    do {
-                                        val event = awaitPointerEvent()
-                                        val pan = event.calculatePan()
-                                        moved += pan.getDistance()
-                                        sweep += pan
-                                        event.changes.firstOrNull()?.let { last = it.position }
-                                        if (hit >= 0 && hit < draft.texts.size) {
-                                            val item = draft.texts[hit]
-                                            draft.texts[hit] = item.copy(
+                                        t != null && t.kind == StudioHit.EMOJI && t.index < draft.emojis.size -> {
+                                            val item = draft.emojis[t.index]
+                                            draft.emojis[t.index] = item.copy(
                                                 center = Offset((item.center.x + pan.x).coerceIn(0f, w), (item.center.y + pan.y).coerceIn(0f, h)),
-                                                scale = (item.scale * event.calculateZoom()).coerceIn(0.4f, 5f),
-                                                rotation = item.rotation + event.calculateRotation(),
+                                                scale = (item.scale * zoom).coerceIn(0.3f, 7f),
+                                                rotation = item.rotation + turn,
                                             )
                                             towardBin()
-                                        } else if (emojiHit >= 0 && emojiHit < draft.emojis.size) {
-                                            val item = draft.emojis[emojiHit]
-                                            draft.emojis[emojiHit] = item.copy(
+                                        }
+                                        t != null && t.kind == StudioHit.STICKER && t.index < draft.stickers.size -> {
+                                            val item = draft.stickers[t.index]
+                                            draft.stickers[t.index] = item.copy(
                                                 center = Offset((item.center.x + pan.x).coerceIn(0f, w), (item.center.y + pan.y).coerceIn(0f, h)),
-                                                scale = (item.scale * event.calculateZoom()).coerceIn(0.3f, 6f),
-                                                rotation = item.rotation + event.calculateRotation(),
+                                                scale = (item.scale * zoom).coerceIn(0.3f, 6f),
+                                                rotation = item.rotation + turn,
                                             )
                                             towardBin()
-                                        } else if (stickerHit >= 0 && stickerHit < draft.stickers.size) {
-                                            val item = draft.stickers[stickerHit]
-                                            draft.stickers[stickerHit] = item.copy(
-                                                center = Offset((item.center.x + pan.x).coerceIn(0f, w), (item.center.y + pan.y).coerceIn(0f, h)),
-                                                scale = (item.scale * event.calculateZoom()).coerceIn(0.3f, 5f),
-                                                rotation = item.rotation + event.calculateRotation(),
-                                            )
-                                            towardBin()
-                                        } else if (draft.image != null) {
-                                            draft.photoScale = (draft.photoScale * event.calculateZoom()).coerceIn(1f, 5f)
+                                        }
+                                        draft.image != null && fingers > 1 -> {
+                                            draft.photoScale = (draft.photoScale * zoom).coerceIn(1f, 5f)
                                             draft.photoOffset += pan
                                             draft.clampOffset(w, h)
-                                        } else if (draft.shot != null) {
-                                            draft.moveShot(pan, event.calculateZoom(), w, h)
                                         }
-                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
-                                    } while (event.changes.any { it.pressed })
-                                    val tapped = moved < 12f && System.currentTimeMillis() - start < 320
-                                    if (hit >= 0 && hit < draft.texts.size) {
-                                        when {
-                                            dragging && overBin -> draft.texts.removeAt(hit)
-                                            tapped -> { editing = draft.texts[hit]; tool = EditorTool.TEXT }
+                                        draft.image != null && draft.photoScale > 1.01f -> {
+                                            draft.photoOffset += pan
+                                            draft.clampOffset(w, h)
                                         }
-                                    } else if (emojiHit >= 0 && emojiHit < draft.emojis.size) {
-                                        if (dragging && overBin) draft.emojis.removeAt(emojiHit)
-                                    } else if (stickerHit >= 0 && stickerHit < draft.stickers.size) {
-                                        val item = draft.stickers[stickerHit]
-                                        when {
-                                            dragging && overBin -> draft.stickers.removeAt(stickerHit)
-                                            // A tap on the stats box shows its next style.
-                                            tapped && item.kind == StickerKind.STATS -> {
-                                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                                draft.statsStyle = StatsStyle.entries[(draft.statsStyle.ordinal + 1) % StatsStyle.entries.size]
-                                            }
+                                        draft.shot != null -> draft.moveShot(pan, zoom, w, h)
+                                    }
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                } while (event.changes.any { it.pressed })
+                                val tapped = moved < 12f && System.currentTimeMillis() - start < 320 && fingers == 1
+                                val t = target
+                                if (t != null && t.kind == StudioHit.TEXT && t.index < draft.texts.size) {
+                                    when {
+                                        dragging && overBin -> draft.texts.removeAt(t.index)
+                                        tapped -> { editing = draft.texts[t.index]; tool = EditorTool.TEXT }
+                                    }
+                                } else if (t != null && t.kind == StudioHit.EMOJI && t.index < draft.emojis.size) {
+                                    if (dragging && overBin) draft.emojis.removeAt(t.index)
+                                } else if (t != null && t.kind == StudioHit.STICKER && t.index < draft.stickers.size) {
+                                    val item = draft.stickers[t.index]
+                                    when {
+                                        dragging && overBin -> draft.stickers.removeAt(t.index)
+                                        // A tap on the stats box shows its next style.
+                                        tapped && item.kind == StickerKind.STATS -> {
+                                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                            draft.statsStyle = StatsStyle.entries[(draft.statsStyle.ordinal + 1) % StatsStyle.entries.size]
                                         }
                                     }
-                                    // Snapchat's swipe: across an empty picture, the next or the last look.
-                                    val swiped = hit < 0 && emojiHit < 0 && stickerHit < 0 &&
-                                        abs(sweep.x) > 72 * density.density && abs(sweep.y) < abs(sweep.x) * 0.6f &&
-                                        (draft.video || draft.image != null) && draft.photoScale <= 1.01f
-                                    if (swiped) {
-                                        val looks = TrailLooks.all
-                                        val i = looks.indexOf(draft.look).coerceAtLeast(0)
-                                        val next = (i + if (sweep.x < 0) 1 else looks.size - 1) % looks.size
-                                        draft.look = looks[next]
-                                        lookToast = looks[next].name
-                                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                    }
-                                    dragging = false
-                                    overBin = false
+                                } else if (tapped && session != null) {
+                                    session.togglePlay()
                                 }
+                                // Snapchat's swipe: across an empty picture, the next or the last look.
+                                val swiped = t == null && fingers == 1 &&
+                                    abs(sweep.x) > 72 * density.density && abs(sweep.y) < abs(sweep.x) * 0.6f &&
+                                    media && draft.photoScale <= 1.01f
+                                if (swiped) {
+                                    val looks = TrailLooks.all
+                                    val i = looks.indexOf(draft.look).coerceAtLeast(0)
+                                    val next = (i + if (sweep.x < 0) 1 else looks.size - 1) % looks.size
+                                    draft.look = looks[next]
+                                    lookToast = looks[next].name
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                }
+                                dragging = false
+                                overBin = false
                             }
-                        },
-                ) {
-                    @Suppress("UNUSED_VARIABLE") val redraw = liveTick + draft.ink + draft.texts.size + draft.stickers.size +
-                        draft.emojis.size + draft.look.hashCode() + draft.adjust.hashCode()
-                    drawIntoCanvas { draft.paint(it.nativeCanvas, w, h, type, live) }
-                    if (tool == EditorTool.CROP) {
-                        // The rule of thirds while cropping.
-                        val line = Color.White.copy(alpha = 0.55f)
-                        for (i in 1..2) {
-                            drawLine(line, Offset(size.width * i / 3, 0f), Offset(size.width * i / 3, size.height), 1.dp.toPx())
-                            drawLine(line, Offset(0f, size.height * i / 3), Offset(size.width, size.height * i / 3), 1.dp.toPx())
+                        }
+                    },
+            ) {
+                Box(Modifier.offset { IntOffset(origin.x.roundToInt(), origin.y.roundToInt()) }
+                    .size(with(density) { w.toDp() }, with(density) { h.toDp() })) {
+                    if (session != null) Box(Modifier.fillMaxSize().clip(wyrmRounded(20.dp))) { TrailVideoPreview(session, Modifier.fillMaxSize()) }
+                    Canvas(Modifier.fillMaxSize().clip(wyrmRounded(20.dp))) {
+                        @Suppress("UNUSED_VARIABLE") val redraw = liveTick + draft.ink + draft.texts.size + draft.stickers.size +
+                            draft.emojis.size + draft.look.hashCode() + draft.adjust.hashCode()
+                        drawIntoCanvas { draft.paint(it.nativeCanvas, w, h, type, live) }
+                        if (tool == EditorTool.CROP) {
+                            // The rule of thirds while cropping.
+                            val line = Color.White.copy(alpha = 0.55f)
+                            for (i in 1..2) {
+                                drawLine(line, Offset(size.width * i / 3, 0f), Offset(size.width * i / 3, size.height), 1.dp.toPx())
+                                drawLine(line, Offset(0f, size.height * i / 3), Offset(size.width, size.height * i / 3), 1.dp.toPx())
+                            }
                         }
                     }
-                }
-                if (tool == EditorTool.CROP && draft.aspect == StudioAspect.FREE) FreeHandles(draft, w, h, widthPx, maxHeightPx)
+                    if (tool == EditorTool.CROP && session == null && !cropStage && !shareCrop) FreeHandles(draft, w, h, widthPx, maxHeightPx)
 
-                // The bin, while a text item or a sticker is being dragged.
-                if (dragging) {
-                    Box(
-                        Modifier.offset { IntOffset((binCenter.x - 26 * density.density).roundToInt(), (binCenter.y - 26 * density.density).roundToInt()) }
-                            .size(52.dp).scale(if (overBin) 1.25f else 1f).clip(CircleShape)
-                            .background(if (overBin) Color(0xFFE5484D) else Color.Black.copy(alpha = 0.45f)),
-                        contentAlignment = Alignment.Center,
-                    ) { Text("🗑", fontSize = 20.sp) }
+                    // The bin, while a text item or a sticker is being dragged.
+                    if (dragging) {
+                        Box(
+                            Modifier.offset { IntOffset((binCenter.x - 26 * density.density).roundToInt(), (binCenter.y - 26 * density.density).roundToInt()) }
+                                .size(52.dp).scale(if (overBin) 1.25f else 1f).clip(CircleShape)
+                                .background(if (overBin) Color(0xFFE5484D) else Color.Black.copy(alpha = 0.45f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(LucideR.drawable.lucide_ic_trash_2), null,
+                                tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                    }
+
+                    // The look's name after a swipe, as Snapchat shows it.
+                    if (lookToast.isNotEmpty()) {
+                        Text(lookToast, fontFamily = Wyrm.Display, fontSize = 30.sp, color = Color.White,
+                            style = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.5f), Offset(0f, 2f), 12f)),
+                            modifier = Modifier.align(Alignment.Center))
+                    }
                 }
 
-                // The look's name after a swipe, as Snapchat shows it.
-                if (lookToast.isNotEmpty()) {
-                    Text(lookToast, fontFamily = Wyrm.Display, fontSize = 30.sp, color = Color.White,
-                        style = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.5f), Offset(0f, 2f), 12f)),
-                        modifier = Modifier.align(Alignment.Center))
+                // Cropping a photo: the whole photo with a crop box over it.
+                if (cropStage) TrailCropStage(draft, w, h, widthPx, maxHeightPx, Modifier.fillMaxSize())
+                if (shareCrop) {
+                    val snapshot = remember { draft.shareCropSnapshot(w, h) }
+                    val board = remember(snapshot) { draft.shareBoard(snapshot, type) }
+                    val start = remember(snapshot) { draft.shareStart(snapshot) }
+                    var chosen by remember(snapshot) { mutableStateOf(start) }
+                    // Done (or any way out of Crop) makes the box the frame.
+                    DisposableEffect(snapshot) { onDispose { draft.applyShareCrop(snapshot, chosen, widthPx, maxHeightPx) } }
+                    TrailCropStage(draft, w, h, widthPx, maxHeightPx, Modifier.fillMaxSize(),
+                        board = board, start = start, onSet = { chosen = it })
                 }
 
-                // The tool rail.
+                // The tool rail, on the stage's right edge.
                 if (tool == EditorTool.NONE && !dragging) {
-                    Column(Modifier.align(Alignment.TopEnd).padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        StudioRoundButton("Aa", Modifier) {
+                    Column(Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalAlignment = Alignment.End) {
+                        StudioRailTool(LucideR.drawable.lucide_ic_type, "Text", labels) {
                             val rgb = draft.tone
                             editing = StudioText(text = "", rgb = rgb, serif = false, filled = false, center = Offset(w / 2, h / 2))
                             tool = EditorTool.TEXT
                         }
-                        StudioRoundButton("✎", Modifier) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tool = EditorTool.DRAW }
-                        StudioRoundButton("☺", Modifier) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tool = EditorTool.EMOJI }
-                        if (draft.image != null || draft.video) StudioRoundButton("◐", Modifier) { tool = EditorTool.LOOKS }
-                        if (draft.image != null || sharing) StudioRoundButton("⌗", Modifier) { tool = EditorTool.CROP }
-                        if (draft.strokes.isNotEmpty()) StudioRoundButton("↶", Modifier) { draft.strokes.removeAt(draft.strokes.lastIndex); draft.ink++ }
+                        StudioRailTool(LucideR.drawable.lucide_ic_smile, "Stickers", labels) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tool = EditorTool.EMOJI
+                        }
+                        StudioRailTool(LucideR.drawable.lucide_ic_pencil, "Draw", labels) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tool = EditorTool.DRAW
+                        }
+                        if (media) StudioRailTool(LucideR.drawable.lucide_ic_wand_sparkles, "Looks", labels) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tool = EditorTool.LOOKS
+                        }
+                        if (draft.image != null || sharing || session != null) StudioRailTool(LucideR.drawable.lucide_ic_crop, "Crop", labels) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); session?.pause(); tool = EditorTool.CROP
+                        }
+                        if (session != null) StudioRailTool(LucideR.drawable.lucide_ic_image_play, "Cover", labels) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tool = EditorTool.COVER
+                        }
+                        if (draft.strokes.isNotEmpty()) StudioRailTool(LucideR.drawable.lucide_ic_undo_2, "Undo", labels) {
+                            draft.strokes.removeAt(draft.strokes.lastIndex); draft.ink++
+                        }
                     }
                 }
 
@@ -1601,7 +1636,9 @@ private fun StudioEditor(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         StudioBrush.entries.forEach { kind -> StudioChip(kind.label, brush == kind, dark = true) { brush = kind } }
                         Spacer(Modifier.weight(1f))
-                        if (draft.strokes.isNotEmpty()) StudioRoundButton("↶", Modifier) { draft.strokes.removeAt(draft.strokes.lastIndex); draft.ink++ }
+                        if (draft.strokes.isNotEmpty()) StudioRailTool(LucideR.drawable.lucide_ic_undo_2, "", false) {
+                            draft.strokes.removeAt(draft.strokes.lastIndex); draft.ink++
+                        }
                         StudioChip("Done", true, dark = true) { tool = EditorTool.NONE }
                     }
                     Column(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1613,11 +1650,18 @@ private fun StudioEditor(
                 }
             }
 
-            // Under the picture: crop shapes, the canvas colour, or a hint.
-            Box(Modifier.fillMaxWidth().height(bottomBar), contentAlignment = Alignment.Center) {
+            // Under the stage: the tool's own controls, on a sheet for a photo or a video.
+            val sheet = media && (tool == EditorTool.LOOKS || tool == EditorTool.CROP || tool == EditorTool.COVER || (draft.video && tool == EditorTool.NONE))
+            Box(
+                Modifier.fillMaxWidth().height(bottomBar)
+                    .then(if (sheet) Modifier.padding(horizontal = 8.dp).padding(bottom = 6.dp).clip(wyrmRounded(22.dp)).background(Wyrm.Card) else Modifier),
+                contentAlignment = Alignment.Center,
+            ) {
                 when {
                     tool == EditorTool.LOOKS -> LooksPanel(draft) { tool = EditorTool.NONE }
-                    bottom != null && tool == EditorTool.NONE -> bottom()
+                    tool == EditorTool.COVER && session != null -> TrailCoverBar(session) { tool = EditorTool.NONE }
+                    tool == EditorTool.CROP && session != null -> TrailCropBar(session) { tool = EditorTool.NONE }
+                    session != null && tool == EditorTool.NONE -> TrailTimelineBar(session)
                     tool == EditorTool.CROP -> Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             StudioAspect.entries.forEach { aspect ->
@@ -1631,10 +1675,13 @@ private fun StudioEditor(
                                 }
                             }
                         }
-                        StudioChip("Done", true) { tool = EditorTool.NONE }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (cropStage || shareCrop) StudioChip("Reset", false) { PhotoCrop.resetTick++ }
+                            StudioChip("Done", true) { tool = EditorTool.NONE }
+                        }
                     }
                     sharing && tool == EditorTool.NONE -> ShareBar(draft, w, h, type)
-                    draft.image == null && !draft.video && tool == EditorTool.NONE -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    !media && tool == EditorTool.NONE -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(StudioAspect.PORTRAIT, StudioAspect.SQUARE, StudioAspect.WIDE).forEach { aspect ->
                                 StudioChip(aspect.label, draft.aspect == aspect) { draft.aspect = aspect }
@@ -1642,8 +1689,8 @@ private fun StudioEditor(
                         }
                         StudioSwatches(draft.background) { draft.background = it }
                     }
-                    tool == EditorTool.NONE -> Text("Swipe for looks · Aa write · ☺ stickers · ✎ draw", fontFamily = Wyrm.Body,
-                        fontSize = 12.sp, color = Wyrm.Quiet)
+                    tool == EditorTool.NONE -> Text("Swipe for looks · two fingers to zoom", fontFamily = Wyrm.Body,
+                        fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f))
                 }
             }
         }
@@ -1679,6 +1726,25 @@ private fun StudioEditor(
     }
 }
 
+/** One tool in the rail: a round glass button, its name beside it while [named]. */
+@Composable
+private fun StudioRailTool(icon: Int, label: String, named: Boolean, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.animation.AnimatedVisibility(named && label.isNotEmpty(), enter = androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.fadeOut(tween(300))) {
+            Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White,
+                style = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.6f), Offset(0f, 1f), 6f)))
+        }
+        Box(
+            Modifier.size(42.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.42f)).border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(icon), null, tint = Color.White, modifier = Modifier.size(19.dp))
+        }
+    }
+}
+
 @Composable
 private fun StudioRoundButton(label: String, modifier: Modifier, onClick: () -> Unit) {
     Box(
@@ -1688,21 +1754,53 @@ private fun StudioRoundButton(label: String, modifier: Modifier, onClick: () -> 
     ) { Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White) }
 }
 
-/** Free crop: drag an edge to reshape the frame; the photo stays covering it. */
+/**
+ * The frame's crop when there is no picture (a canvas, Share skin): the same
+ * look as the photo cropper (OM, 2026-10-18), a white frame with corner
+ * brackets and edge bars. On Free, the edges and corners reshape the frame
+ * (1:2 to 2:1); the other shapes come from the chips.
+ */
 @Composable
 private fun FreeHandles(draft: StudioDraft, w: Float, h: Float, maxW: Float, maxH: Float) {
     val density = LocalDensity.current
-    for (edge in 0 until 4) {
-        val horizontal = edge < 2
-        val x = when (edge) { 0 -> 0f; 1 -> w; else -> w / 2 }
-        val y = when (edge) { 2 -> 0f; 3 -> h; else -> h / 2 }
+    val free = draft.aspect == StudioAspect.FREE
+    Canvas(Modifier.size(with(density) { w.toDp() }, with(density) { h.toDp() })) {
+        val bar = 3.dp.toPx()
+        val o = bar / 2
+        drawRect(Color.White.copy(alpha = 0.9f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+        val arm = min(22.dp.toPx(), min(w, h) / 2)
+        fun bracket(x: Float, y: Float, sx: Float, sy: Float) {
+            drawLine(Color.White, Offset(x + sx * o, y + sy * o), Offset(x + sx * arm, y + sy * o), bar, cap = StrokeCap.Square)
+            drawLine(Color.White, Offset(x + sx * o, y + sy * o), Offset(x + sx * o, y + sy * arm), bar, cap = StrokeCap.Square)
+        }
+        bracket(0f, 0f, 1f, 1f)
+        bracket(w, 0f, -1f, 1f)
+        bracket(w, h, -1f, -1f)
+        bracket(0f, h, 1f, -1f)
+        if (free) {
+            val half = min(12.dp.toPx(), min(w, h) / 4)
+            drawLine(Color.White, Offset(w / 2 - half, o), Offset(w / 2 + half, o), bar, cap = StrokeCap.Round)
+            drawLine(Color.White, Offset(w / 2 - half, h - o), Offset(w / 2 + half, h - o), bar, cap = StrokeCap.Round)
+            drawLine(Color.White, Offset(o, h / 2 - half), Offset(o, h / 2 + half), bar, cap = StrokeCap.Round)
+            drawLine(Color.White, Offset(w - o, h / 2 - half), Offset(w - o, h / 2 + half), bar, cap = StrokeCap.Round)
+        }
+    }
+    if (!free) return
+    // 0 left, 1 right, 2 top, 3 bottom, 4.. the corners (left/top, right/top, right/bottom, left/bottom).
+    for (grip in 0 until 8) {
+        val left = grip == 0 || grip == 4 || grip == 7
+        val right = grip == 1 || grip == 5 || grip == 6
+        val top = grip == 2 || grip == 4 || grip == 5
+        val bottom = grip == 3 || grip == 6 || grip == 7
+        val x = if (left) 0f else if (right) w else w / 2
+        val y = if (top) 0f else if (bottom) h else h / 2
         var start by remember { mutableStateOf(0f to 0f) }
         var drag by remember { mutableStateOf(Offset.Zero) }
         Box(
             Modifier
                 .offset { IntOffset((x - 22 * density.density).roundToInt(), (y - 22 * density.density).roundToInt()) }
                 .size(44.dp)
-                .pointerInput(edge) {
+                .pointerInput(grip) {
                     detectDragGestures(
                         onDragStart = { start = w to h; drag = Offset.Zero },
                         onDrag = { change, amount ->
@@ -1710,12 +1808,11 @@ private fun FreeHandles(draft: StudioDraft, w: Float, h: Float, maxW: Float, max
                             drag += amount
                             var nw = start.first
                             var nh = start.second
-                            when (edge) {
-                                0 -> nw = start.first - drag.x * 2
-                                1 -> nw = start.first + drag.x * 2
-                                2 -> nh = start.second - drag.y * 2
-                                else -> nh = start.second + drag.y * 2
-                            }
+                            // The frame stays centred, so each side moves twice the finger.
+                            if (left) nw = start.first - drag.x * 2
+                            if (right) nw = start.first + drag.x * 2
+                            if (top) nh = start.second - drag.y * 2
+                            if (bottom) nh = start.second + drag.y * 2
                             nw = nw.coerceIn(120f, maxW)
                             nh = nh.coerceIn(120f, maxH)
                             draft.freeRatio = (nw / nh).coerceIn(0.5f, 2f)
@@ -1723,10 +1820,7 @@ private fun FreeHandles(draft: StudioDraft, w: Float, h: Float, maxW: Float, max
                         },
                     )
                 },
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(Modifier.size(if (horizontal) 6.dp else 42.dp, if (horizontal) 42.dp else 6.dp).clip(CircleShape).background(Color.White))
-        }
+        )
     }
 }
 

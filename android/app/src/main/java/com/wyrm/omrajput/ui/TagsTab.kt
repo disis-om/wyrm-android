@@ -215,7 +215,7 @@ private fun GearButton(open: Boolean, onClick: () -> Unit) {
 
 /** One square of the picker: the tag's artwork, cut out of the sheet. */
 @Composable
-private fun TagCell(
+internal fun TagCell(
     atlas: ImageBitmap?,
     index: Int,
     selected: Boolean,

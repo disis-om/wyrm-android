@@ -22,6 +22,7 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
@@ -145,6 +146,13 @@ class SettingsSearchEntry(
 /** The search field at the top of the hub. */
 @Composable
 internal fun SettingsSearchField(query: String, onQuery: (String) -> Unit, placeholder: String = "Search settings") {
+    val requester = remember { androidx.compose.ui.focus.FocusRequester() }
+    val searchRegistry = LocalSearchShortcut.current
+    val searchId = remember { Any() }
+    androidx.compose.runtime.DisposableEffect(searchId) {
+        searchRegistry(searchId) { requester.requestFocus() }
+        onDispose { searchRegistry(searchId, null) }
+    }
     var focused by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val shape = wyrmRounded(13.dp)
@@ -176,7 +184,7 @@ internal fun SettingsSearchField(query: String, onQuery: (String) -> Unit, place
                     imeAction = ImeAction.Search,
                 ),
                 keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
-                modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
+                modifier = Modifier.fillMaxWidth().focusRequester(requester).onFocusChanged { focused = it.isFocused },
             )
         }
         if (query.isNotEmpty()) {

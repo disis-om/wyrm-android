@@ -86,7 +86,10 @@ const char* wyrm_desktop_user_file(const char* suffix);
 /* Eyes Back (OM, 2026-10-06): NTL VANCED's eye flick on an on-screen key. Its
    layout and look live in user_settings_ext, so no stored array grows. */
 #define MOBILE_HOTKEY_EYES_BACK 15
-#define NUM_MOBILE_ACTIONS 16
+/* Snakey Rain (OM, 2026-10-14): the arena's Rain key opens the app's Rain
+   panel. Its layout and look live in user_settings_ext too. */
+#define MOBILE_HOTKEY_RAIN 16
+#define NUM_MOBILE_ACTIONS 17
 /* hotkey_scale / hotkey_opacity in user.dat hold the first 15 actions only.
    That size is part of the file layout and never changes; reach a key's size
    and opacity through user_settings_key_scale / _opacity. */

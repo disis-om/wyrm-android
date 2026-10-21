@@ -99,15 +99,19 @@ public final class WyrmActivity extends SDLActivity {
     /** Settings › Modes › Assist: the assist laser in joystick mode (length: share of the short side). */
     private static native void nativeSetJoystickLaser(boolean on, float length);
     private static native void nativeSetNearOriginal(boolean on, int server);
-    /** Settings › Performance: present mode (vsync) and frame cap (0 = none). */
-    private static native void nativeSetFramePolicy(boolean vsync, int cap);
     /* Background play (2026-10-13): main.c. */
     private static native void nativeSetBackgroundPlay(boolean on);
+    /* Custom arenas (2026-10-13): network/callback.c. */
+    private static native void nativeSetCustomArenas(String id, String list);
+
+    /** Custom arenas (data/CustomArenas.kt): the player's id and the arenas that get it. */
+    public static void setCustomArenas(String id, String list) {
+        nativeSetCustomArenas(id, list);
+    }
     /** The engine's screen, as last reported (setScreenFromNative). */
     private static volatile int engineScreen = -1;
     /** The activity is out of sight (onStop until onStart). */
     private boolean backgrounded;
-    private static native void nativeSetPerformanceChip(String text);
     private static native void nativeSetNickname(String nickname);
     private static native void nativeSelectArena(String address);
     private static native void nativeSetArenaTheme(int[] colours, boolean dark);
@@ -158,8 +162,16 @@ public final class WyrmActivity extends SDLActivity {
             int action, int key, int mode, boolean visible, float x, float y);
     private static native void nativeSettingsAction(int action);
     private static native String nativeTeamPresence();
+    private static native String nativeRainRead();
+    private static native void nativeRainEnable(boolean enabled);
+    private static native void nativeRainRotate(int direction);
     private static native void nativeSetTeamMembers(String packed);
     private static native void nativeSetTeamChat(String packed);
+    /* Arena chat tabs (OM, 2026-10-14). */
+    private static native void nativeSetGlobalChat(String packed);
+    private static native void nativeSetOnlinePlayers(String packed);
+    private static native int nativeChatTab();
+    private static native void nativeSetChatTab(int tab);
     private static native void nativeSetPlayFeel(boolean originalArrow, boolean lookAhead, int zoomStyle);
     /* Controls › Joystick knob (2026-10-13): true = back to the centre. */
     private static native void nativeSetJoystickKnob(boolean centre);
@@ -186,13 +198,10 @@ public final class WyrmActivity extends SDLActivity {
         });
         // Play orientation (portrait play): read before any screen asks to turn.
         com.wyrm.omrajput.data.PlayOrientation.INSTANCE.load(this);
-        // Settings › Performance: the engine's frame policy and the display rate.
-        // Phase 3 H: set before attach, which publishes at once.
-        com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.setChipSink(text -> {
-            try { nativeSetPerformanceChip(text); } catch (UnsatisfiedLinkError ignored) { }
-            return kotlin.Unit.INSTANCE;
-        });
-        com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.attach(this, this::applyFramePolicy);
+        // The display at its fastest, always, as the reference client (OM, 2026-10-18).
+        enableHighPerformanceDisplay();
+        // Custom arenas: the player's id and the arenas that get it (data/CustomArenas.kt).
+        com.wyrm.omrajput.data.CustomArenas.start(this);
         // The arena's team roster and chat window: their saved look reaches the engine first.
         com.wyrm.omrajput.ui.TeamHudStore.attach(this, values -> {
             try { nativeSetTeamHudStyle(values); } catch (UnsatisfiedLinkError ignored) { }
@@ -360,6 +369,9 @@ public final class WyrmActivity extends SDLActivity {
             public String onReadPresence() {
                 return nativeTeamPresence();
             }
+            @Override public String onRainRead() { return nativeRainRead(); }
+            @Override public void onRainEnable(boolean on) { nativeRainEnable(on); }
+            @Override public void onRainRotate(int direction) { nativeRainRotate(direction); }
 
             @Override
             public void onWriteTeamMembers(String packed) {
@@ -369,6 +381,26 @@ public final class WyrmActivity extends SDLActivity {
             @Override
             public void onWriteTeamChat(String packed) {
                 try { nativeSetTeamChat(packed); } catch (UnsatisfiedLinkError ignored) { }
+            }
+
+            @Override
+            public void onWriteGlobalChat(String packed) {
+                try { nativeSetGlobalChat(packed); } catch (UnsatisfiedLinkError ignored) { }
+            }
+
+            @Override
+            public void onWriteOnlinePlayers(String packed) {
+                try { nativeSetOnlinePlayers(packed); } catch (UnsatisfiedLinkError ignored) { }
+            }
+
+            @Override
+            public int onReadChatTab() {
+                try { return nativeChatTab(); } catch (UnsatisfiedLinkError ignored) { return 0; }
+            }
+
+            @Override
+            public void onSetChatTab(int tab) {
+                try { nativeSetChatTab(tab); } catch (UnsatisfiedLinkError ignored) { }
             }
 
             /**
@@ -552,7 +584,8 @@ public final class WyrmActivity extends SDLActivity {
     protected void onResume() {
         super.onResume();
         if (gameMode != null) gameMode.onResume();
-        com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.onResume(this);
+        enableHighPerformanceDisplay();
+        com.wyrm.omrajput.data.CustomArenas.onResume();
         com.wyrm.omrajput.data.DropWatch.watchNetwork(this, true);
         if (overlay != null) overlay.onActivityResumed();
         if (updateManager != null) {
@@ -589,7 +622,6 @@ public final class WyrmActivity extends SDLActivity {
     @Override
     protected void onPause() {
         if (gameMode != null) gameMode.onPause();
-        com.wyrm.omrajput.data.WyrmPerformance.INSTANCE.onPause();
         com.wyrm.omrajput.data.DropWatch.watchNetwork(this, false);
         if (overlay != null) {
             overlay.onActivityPaused();
@@ -660,6 +692,29 @@ public final class WyrmActivity extends SDLActivity {
                 try (InputStream stream = getContentResolver().openInputStream(source)) {
                     decoded = BitmapFactory.decodeStream(stream, null, options);
                 }
+                // A camera photo says which way is up in its EXIF; BitmapFactory
+                // ignores it, so the cropper showed it on its side (2026-10-14).
+                if (decoded != null) {
+                    int degrees = 0;
+                    try (InputStream exifStream = getContentResolver().openInputStream(source)) {
+                        if (exifStream != null) {
+                            int orientation = new android.media.ExifInterface(exifStream).getAttributeInt(
+                                    android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL);
+                            if (orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90) degrees = 90;
+                            else if (orientation == android.media.ExifInterface.ORIENTATION_ROTATE_180) degrees = 180;
+                            else if (orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270) degrees = 270;
+                        }
+                    } catch (Throwable ignored) {
+                        degrees = 0;
+                    }
+                    if (degrees != 0) {
+                        android.graphics.Matrix turn = new android.graphics.Matrix();
+                        turn.postRotate(degrees);
+                        Bitmap upright = Bitmap.createBitmap(decoded, 0, 0, decoded.getWidth(), decoded.getHeight(), turn, true);
+                        if (upright != decoded) decoded.recycle();
+                        decoded = upright;
+                    }
+                }
             } catch (Throwable failure) {
                 Log.w(TAG, "Could not read the chosen image", failure);
             }
@@ -713,13 +768,26 @@ public final class WyrmActivity extends SDLActivity {
             updateManager.shutdown();
         }
         photoExecutor.shutdownNow();
-        if (displayRateListener != null) {
-            android.hardware.display.DisplayManager displays =
-                    (android.hardware.display.DisplayManager) getSystemService(DISPLAY_SERVICE);
-            if (displays != null) displays.unregisterDisplayListener(displayRateListener);
-            displayRateListener = null;
-        }
         super.onDestroy();
+    }
+
+    /**
+     * SDL's surface takes the Back key as a keyboard key for the engine, so
+     * onBackPressed never ran (OM, 2026-10-13: phone Back did nothing). While
+     * the app's own pages are on screen, Back is theirs: down is swallowed, up
+     * goes back. In a match it stays the engine's.
+     */
+    @Override
+    public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+        if (overlay != null && overlay.onRainKey(event)) return true;
+        if (event.getKeyCode() == android.view.KeyEvent.KEYCODE_BACK && overlay != null
+                && overlay.ownsSystemBack()) {
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && !event.isCanceled()) {
+                overlay.consumeSystemBack();
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     @Override
@@ -1109,95 +1177,45 @@ public final class WyrmActivity extends SDLActivity {
     }
 
     /**
-     * Settings › Performance. Vsync is on in every mode (OM, 2026-10-12, "same
-     * to same the reference client"): FIFO paces every frame. The engine's surface asks the
-     * display for the policy's rate with CHANGE_FRAME_RATE_ALWAYS, up or down,
-     * so a limit is held by the display itself (Android 15 keeps a game at
-     * 60 Hz until it asks). The engine's own cap (a sleep, a second clock on
-     * top of vsync that made heavy frames repeat) runs only while the display
-     * still shows more than the limit: a phone that refused the switch.
+     * The display at its fastest, as the reference client (OM, 2026-10-18): no
+     * modes, no limit, no stepping down when warm. The window asks for the
+     * display mode with the highest refresh rate at the current resolution
+     * (the reference client takes the fastest mode of any resolution; a mode
+     * with another resolution would rescale the whole screen), and for
+     * sustained performance, so the clocks stay steady instead of bursting
+     * and then throttling. Vsync (FIFO) paces every frame.
      */
-    private void applyFramePolicy(boolean vsync, int cap, float displayHz, boolean raising) {
-        framePolicyCap = cap;
-        pushEngineFramePolicy();
-        Log.i(TAG, "Performance: cap=" + cap + " display=" + displayHz + " Hz");
-        frameRateHz = displayHz;
-        frameRateHandler.removeCallbacks(frameRateRequest);
-        frameRateHandler.post(frameRateRequest);
-        watchDisplayRate();
-    }
-
-    private int framePolicyCap;
-    private int sentEngineCap = -1;
-
-    private float currentRefreshRate() {
+    private void enableHighPerformanceDisplay() {
         try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                getWindow().setSustainedPerformanceMode(true);
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
             android.view.Display display = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                     ? getDisplay() : getWindowManager().getDefaultDisplay();
-            return display == null ? 0f : display.getRefreshRate();
+            if (display == null) return;
+            android.view.Display.Mode current = display.getMode();
+            android.view.Display.Mode best = null;
+            for (android.view.Display.Mode mode : display.getSupportedModes()) {
+                boolean sameSize = current == null
+                        || (mode.getPhysicalWidth() == current.getPhysicalWidth()
+                            && mode.getPhysicalHeight() == current.getPhysicalHeight());
+                if (!sameSize) continue;
+                if (best == null || mode.getRefreshRate() > best.getRefreshRate()) best = mode;
+            }
+            if (best == null) return;
+            android.view.WindowManager.LayoutParams attrs = getWindow().getAttributes();
+            if (attrs.preferredDisplayModeId == best.getModeId()
+                    && attrs.preferredRefreshRate == best.getRefreshRate()) return;
+            attrs.preferredDisplayModeId = best.getModeId();
+            attrs.preferredRefreshRate = best.getRefreshRate();
+            getWindow().setAttributes(attrs);
+            Log.i(TAG, "Display: asked for " + best.getPhysicalWidth() + "x"
+                    + best.getPhysicalHeight() + " @ " + best.getRefreshRate() + " Hz");
         } catch (RuntimeException e) {
-            return 0f;
+            Log.w(TAG, "Display: high refresh request refused", e);
         }
     }
-
-    /** Vsync always; the engine's cap only while the display runs faster than the limit. */
-    private void pushEngineFramePolicy() {
-        float actual = currentRefreshRate();
-        int engineCap = framePolicyCap > 0 && (actual <= 0f || actual > framePolicyCap + 2f)
-                ? framePolicyCap : 0;
-        if (engineCap == sentEngineCap) return;
-        try {
-            nativeSetFramePolicy(true, engineCap);
-        } catch (UnsatisfiedLinkError ignored) {
-            return;
-        }
-        sentEngineCap = engineCap;
-        Log.i(TAG, "Performance: display " + actual + " Hz, engine cap " + engineCap);
-    }
-
-    private android.hardware.display.DisplayManager.DisplayListener displayRateListener;
-
-    /** The display answers setFrameRate later: follow its real rate. */
-    private void watchDisplayRate() {
-        if (displayRateListener != null) return;
-        android.hardware.display.DisplayManager displays =
-                (android.hardware.display.DisplayManager) getSystemService(DISPLAY_SERVICE);
-        if (displays == null) return;
-        displayRateListener = new android.hardware.display.DisplayManager.DisplayListener() {
-            @Override public void onDisplayAdded(int displayId) { }
-            @Override public void onDisplayRemoved(int displayId) { }
-            @Override public void onDisplayChanged(int displayId) { pushEngineFramePolicy(); }
-        };
-        displays.registerDisplayListener(displayRateListener, frameRateHandler);
-    }
-
-    private final Handler frameRateHandler = new Handler(Looper.getMainLooper());
-    private float frameRateHz;
-    private int frameRateTries;
-    private final Runnable frameRateRequest = new Runnable() {
-        @Override
-        public void run() {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || frameRateHz <= 0f) return;
-            final SurfaceView surface = mSurface;
-            android.view.Surface target = surface == null ? null : surface.getHolder().getSurface();
-            if (target == null || !target.isValid()) {
-                // The surface is still being made (start, back from the background).
-                if (frameRateTries++ < 20) frameRateHandler.postDelayed(this, 250);
-                return;
-            }
-            frameRateTries = 0;
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    target.setFrameRate(frameRateHz, android.view.Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
-                            android.view.Surface.CHANGE_FRAME_RATE_ALWAYS);
-                } else {
-                    target.setFrameRate(frameRateHz, android.view.Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
-                }
-            } catch (RuntimeException e) {
-                Log.w(TAG, "Performance: setFrameRate refused", e);
-            }
-        }
-    };
 
     private void restoreNativeSurfaceFocus() {
         if (mSurface == null) return;

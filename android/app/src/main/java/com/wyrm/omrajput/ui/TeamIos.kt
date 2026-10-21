@@ -209,6 +209,7 @@ private fun Stat(text: String, strong: Boolean = false) {
     Text(
         text,
         fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, style = tnum,
+        maxLines = 1, softWrap = false,
         color = if (strong) Wyrm.OnInk else Wyrm.Ink,
         modifier = Modifier
             .clip(CircleShape)

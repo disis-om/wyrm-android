@@ -30,6 +30,7 @@ import com.composables.icons.lucide.R as LucideR
 import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -314,6 +315,10 @@ fun UnifiedArenaLayoutEditor(
     hotkeys: List<Hotkey>,
     keyScales: Map<Int, Float>,
     keyOpacities: Map<Int, Float>,
+    /** On-screen key colours (OM, 2026-10-14): team-roster index by action, 0 = theme. */
+    keyColours: Map<Int, Int> = emptyMap(),
+    /** On-screen key fills (OM, 2026-10-14), the same palette. */
+    keyFills: Map<Int, Int> = emptyMap(),
     hudPositions: Map<ArenaHudTarget, Offset>,
     minimapSize: Float,
     leaderboardFont: Int,
@@ -336,6 +341,9 @@ fun UnifiedArenaLayoutEditor(
     /** Near Original: the original's map, board and stats are fixed, so not shown.
      *  The team roster and the chat window stay editable. */
     hudEditable: Boolean = true,
+    /** The chat window's tab to show while its options are open (0 TEAM, 1 GLOBAL,
+     *  2 ONLINE, 3 the folded button; -1 back to the window). OM, 2026-10-18. */
+    onChatTab: (Int) -> Unit = {},
 ) {
     var canvas by remember { mutableStateOf(Offset.Zero) }
     var options by remember { mutableStateOf<LayoutOptions?>(null) }
@@ -412,13 +420,21 @@ fun UnifiedArenaLayoutEditor(
             hotkeys.filter { it.visible }.forEach { hotkey ->
                 val keyScale = keyScales[hotkey.action] ?: 1f
                 val keysOpacity = keyOpacities[hotkey.action] ?: 1f
+                val keyColour = keyColours[hotkey.action] ?: 0
+                val keyFill = keyFills[hotkey.action] ?: 9
                 Draggable(Offset(hotkey.x, hotkey.y), area, { onMoveKey(hotkey.action, it) }, onLongPress = {
-                    openOptions(
+                    options = LayoutOptions(
                         "key-${hotkey.action}", hotkey.name.uppercase(Locale.US),
-                        LayoutSlider("SIZE", keyScale, 0.65f..2.50f) { onSettingChange("layout.key_${hotkey.action}_scale", it) },
-                        LayoutSlider("OPACITY", keysOpacity, 0.05f..1f) { onSettingChange("layout.key_${hotkey.action}_opacity", it) },
+                        listOf(
+                            LayoutSlider("SIZE", keyScale, 0.65f..5.00f) { onSettingChange("layout.key_${hotkey.action}_scale", it) },
+                            LayoutSlider("OPACITY", keysOpacity, 0.05f..1f) { onSettingChange("layout.key_${hotkey.action}_opacity", it) },
+                        ),
+                        colours = listOf(
+                            LayoutColours("TEXT AND BORDER", keyColour) { onSettingChange("layout.key_${hotkey.action}_colour", it.toFloat()) },
+                            LayoutColours("FILL", keyFill) { onSettingChange("layout.key_${hotkey.action}_fill", it.toFloat()) },
+                        ),
                     )
-                }) { PaperKey(label = hotkey.name, opacity = keysOpacity, scale = keyScale) }
+                }) { PaperKey(label = hotkey.name, opacity = keysOpacity, scale = keyScale, colour = keyColour, fill = keyFill) }
             }
             fun hudPosition(target: ArenaHudTarget) = hudPositions[target] ?: target.fallback
             if (hudEditable) {
@@ -504,11 +520,34 @@ fun UnifiedArenaLayoutEditor(
                         teamHudSlider("WIDTH", "chat_width"),
                         teamHudSlider("HEIGHT", "chat_height"),
                     ),
-                    colours = listOf(
-                        teamHudColour("PLAYER NAME", "chat_name"),
-                        teamHudColour("MESSAGES", "chat_text"),
+                    // One tab per chat tab and one for the folded button
+                    // (OM, 2026-10-18); the arena shows the tab being set.
+                    tabs = listOf(
+                        LayoutTab("TEAM", onShow = { onChatTab(0) }, colours = listOf(
+                            teamHudColour("PLAYER NAME", "chat_name"),
+                            teamHudColour("MESSAGES", "chat_text"),
+                        )),
+                        LayoutTab("GLOBAL", onShow = { onChatTab(1) }, colours = listOf(
+                            teamHudColour("PLAYER NAME", "global_name"),
+                            teamHudColour("MESSAGES", "global_text"),
+                        )),
+                        LayoutTab("ONLINE", onShow = { onChatTab(2) }, colours = listOf(
+                            teamHudColour("PLAYER NAME", "online_name"),
+                            teamHudColour("USERNAME AND SERVER", "online_data"),
+                        )),
+                        LayoutTab("BUTTON", onShow = { onChatTab(3) },
+                            sliders = listOf(
+                                teamHudSlider("SIZE", "chatbtn_scale"),
+                                teamHudSlider("OPACITY", "chatbtn_opacity"),
+                            ),
+                            colours = listOf(
+                                teamHudColour("TEXT AND BORDER", "chatbtn_label"),
+                                teamHudColour("FILL", "chatbtn_fill"),
+                            )),
                     ),
+                    onClose = { onChatTab(-1) },
                 )
+                onChatTab(0)
             }) {
                 Box(
                     Modifier
@@ -519,7 +558,7 @@ fun UnifiedArenaLayoutEditor(
             }
         }
         EditorFooter(onReset, onSave, onCancel, canvas, footerNorm, { footerNorm = it }, portrait, onToggleOrientation)
-        options?.let { EditorOptionsPopup(it) { options = null } }
+        options?.let { open -> EditorOptionsPopup(open) { open.onClose(); options = null } }
     }
 }
 
@@ -542,6 +581,17 @@ private data class LayoutOptions(
     val title: String,
     val sliders: List<LayoutSlider>,
     val choice: LayoutChoice? = null,
+    val colours: List<LayoutColours> = emptyList(),
+    /** Tabs under the shared sliders (the chat window, OM 2026-10-18). */
+    val tabs: List<LayoutTab> = emptyList(),
+    val onClose: () -> Unit = {},
+)
+
+/** One tab of a popup: its own sliders and colours; [onShow] runs when it is picked. */
+private data class LayoutTab(
+    val label: String,
+    val onShow: () -> Unit = {},
+    val sliders: List<LayoutSlider> = emptyList(),
     val colours: List<LayoutColours> = emptyList(),
 )
 
@@ -583,15 +633,37 @@ private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
                     onSelect = { next -> selected = next; choice.onSelect(next) },
                 )
             }
+            if (options.tabs.isNotEmpty()) {
+                var tab by remember(options.key) { mutableIntStateOf(0) }
+                PaperSegmented(
+                    options = options.tabs.map { it.label.lowercase().replaceFirstChar(Char::uppercase) },
+                    selected = tab,
+                    onSelect = { next -> tab = next; options.tabs[next].onShow() },
+                )
+                val shown = options.tabs[tab]
+                shown.sliders.forEach { option ->
+                    var value by remember(options.key, shown.label, option.label) { mutableStateOf(option.value) }
+                    Text(option.label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
+                    LiquidSlider(
+                        value = value,
+                        onValueChange = { next -> value = next; option.onChange(next) },
+                        valueRange = option.range,
+                    )
+                }
+                shown.colours.forEach { row -> LayoutColourRow(options.key + "." + shown.label, row) }
+            }
             options.colours.forEach { row ->
                 var selected by remember(options.key, row.label) { mutableStateOf(row.selected) }
-                Text("${row.label} · ${TeamHudStore.COLOUR_NAMES.getOrElse(selected) { "Theme" }.uppercase()}",
+                val whiteDefault = row.label == "TEXT AND BORDER"
+                val greyFill = row.label == "FILL"
+                val name = if (greyFill && selected == 9) "Grey" else if (whiteDefault && selected == 0) "White" else TeamHudStore.COLOUR_NAMES.getOrElse(selected) { "Theme" }
+                Text("${row.label} · ${name.uppercase()}",
                     fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    TeamHudStore.COLOUR_SWATCHES.forEachIndexed { index, swatch ->
-                        val fill = if (swatch == Color.Unspecified) Wyrm.Ink else swatch
+                Row(horizontalArrangement = Arrangement.spacedBy(if (greyFill) 3.dp else 5.dp)) {
+                    (TeamHudStore.COLOUR_SWATCHES + if (greyFill) listOf(Color(0xFF808080)) else emptyList()).forEachIndexed { index, swatch ->
+                        val fill = if (whiteDefault && index == 0) Color.White else if (swatch == Color.Unspecified) Wyrm.Ink else swatch
                         Box(
-                            Modifier.size(24.dp)
+                            Modifier.size(if (greyFill) 22.dp else 24.dp)
                                 .border(if (index == selected) 2.dp else 1.dp, if (index == selected) Wyrm.Ink else Wyrm.Rule, CircleShape)
                                 .padding(3.dp).clip(CircleShape).background(fill)
                                 .clickable { selected = index; row.onSelect(index) },
@@ -600,6 +672,28 @@ private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
                 }
             }
             Text("DONE", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.2.sp, color = Wyrm.Ink, modifier = Modifier.align(Alignment.End).clickable(onClick = onDismiss).padding(8.dp))
+        }
+    }
+}
+
+/** A colour row inside a popup tab; the same swatches as the plain rows. */
+@Composable
+private fun LayoutColourRow(scope: String, row: LayoutColours) {
+    var selected by remember(scope, row.label) { mutableStateOf(row.selected) }
+    val whiteDefault = row.label == "TEXT AND BORDER"
+    val greyFill = row.label == "FILL"
+    val name = if (greyFill && selected == 9) "Grey" else if (whiteDefault && selected == 0) "White" else TeamHudStore.COLOUR_NAMES.getOrElse(selected) { "Theme" }
+    Text("${row.label} · ${name.uppercase()}",
+        fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
+    Row(horizontalArrangement = Arrangement.spacedBy(if (greyFill) 3.dp else 5.dp)) {
+        (TeamHudStore.COLOUR_SWATCHES + if (greyFill) listOf(Color(0xFF808080)) else emptyList()).forEachIndexed { index, swatch ->
+            val fill = if (whiteDefault && index == 0) Color.White else if (swatch == Color.Unspecified) Wyrm.Ink else swatch
+            Box(
+                Modifier.size(if (greyFill) 22.dp else 24.dp)
+                    .border(if (index == selected) 2.dp else 1.dp, if (index == selected) Wyrm.Ink else Wyrm.Rule, CircleShape)
+                    .padding(3.dp).clip(CircleShape).background(fill)
+                    .clickable { selected = index; row.onSelect(index) },
+            )
         }
     }
 }

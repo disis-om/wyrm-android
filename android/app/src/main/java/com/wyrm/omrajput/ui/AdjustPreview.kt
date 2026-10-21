@@ -83,7 +83,7 @@ internal object AdjustPreview {
     }
 
     fun subjectFor(id: String): AdjustSubject? = when (id) {
-        "arrow.size", "arrow.separation", "arrow.smoothness", "arrow.color", "app.arrow-brightness" -> AdjustSubject.ARROW
+        "arrow.size", "arrow.separation", "arrow.sensitivity", "arrow.color", "app.arrow-brightness" -> AdjustSubject.ARROW
         "controls.joystick_size" -> AdjustSubject.JOYSTICK
         "controls.boost_size" -> AdjustSubject.BOOST
         "controls.zoom_length" -> AdjustSubject.ZOOM

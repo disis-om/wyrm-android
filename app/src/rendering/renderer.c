@@ -152,6 +152,33 @@ renderer* renderer_create(tenv* env) {
                              .maxLod = 0.0f},
       NULL, &r->atlas_sampler);
 
+  /* Beads at the size they are drawn (OM, 2026-10-18). The game atlas was
+     sampled at LOD 0 only, so every bead of a zoomed-out crowd read the full
+     3136 x 4032 atlas: on the Moto (Adreno 619) the arena pass went from
+     5 ms with 250 beads to 21 ms with 1,900 (frame probe), while the
+     reference client mipmaps the same kind of atlas. The cells stay clean
+     because they line up with every level used: bead cells are 448 px
+     (7 x 64) and the accessory cells 112 px (7 x 16), so up to level 4 a
+     cell never shares a texel with its neighbour (beads 28 px, accessories
+     7 px there). Level 4 is also about the smallest a bead is drawn, so the
+     cap costs nothing in speed. The small negative bias keeps near beads
+     crisp; the bead shader masks each cell to its circle anyway. */
+  vkCreateSampler(
+      ctx->device,
+      &(VkSamplerCreateInfo){.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                             .pNext = NULL,
+                             .flags = 0,
+                             .magFilter = VK_FILTER_LINEAR,
+                             .minFilter = VK_FILTER_LINEAR,
+                             .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                             .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             .mipLodBias = BEAD_ATLAS_LOD_BIAS,
+                             .minLod = 0.0f,
+                             .maxLod = BEAD_ATLAS_MAX_LOD},
+      NULL, &r->bead_sampler);
+
   vkCreateSampler(ctx->device,
                   &(VkSamplerCreateInfo){
                       .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -371,7 +398,7 @@ renderer* renderer_create(tenv* env) {
                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 .pImageInfo =
                     &(VkDescriptorImageInfo){
-                        r->atlas_sampler, r->tex_atlas->view,
+                        r->bead_sampler, r->tex_atlas->view,
                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             },
             {
@@ -412,7 +439,7 @@ renderer* renderer_create(tenv* env) {
                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 .pImageInfo =
                     &(VkDescriptorImageInfo){
-                        r->atlas_sampler, r->tex_atlas->view,
+                        r->bead_sampler, r->tex_atlas->view,
                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             }},
         0, NULL);
@@ -603,7 +630,7 @@ static void renderer_bg_swap_step(renderer* r, tcontext* ctx) {
       s->thread = NULL;
       if (s->pixels) {
         if (s->job == s->want && s->want != r->background)
-          s->upload = texture_upload_begin(ctx, s->pixels, s->w, s->h);
+          s->upload = texture_upload_begin(ctx, s->pixels, s->w, s->h, true);
         stbi_image_free(s->pixels);
         s->pixels = NULL;
       } else {
@@ -746,7 +773,9 @@ static void renderer_bind_studio(renderer* r, tcontext* ctx, int frame,
               .descriptorCount = 1,
               .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
               .pImageInfo =
-                  &(VkDescriptorImageInfo){r->atlas_sampler, tex->view,
+                  /* The Studio atlas is 8 x 8 cells of 128 px, clean
+                     on every level the bead sampler reads (2026-10-18). */
+                  &(VkDescriptorImageInfo){r->bead_sampler, tex->view,
                                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
           },
       },
@@ -806,7 +835,7 @@ static void renderer_studio_swap_step(renderer* r, tcontext* ctx) {
       s->thread = NULL;
       if (s->pixels) {
         if (s->job == s->want && s->want_path[0])
-          s->upload = texture_upload_begin(ctx, s->pixels, s->w, s->h);
+          s->upload = texture_upload_begin(ctx, s->pixels, s->w, s->h, false);
         stbi_image_free(s->pixels);
         s->pixels = NULL;
       } else {
@@ -897,6 +926,7 @@ void renderer_destroy(renderer* r, tcontext* ctx) {
   destroy_texture(ctx, r->bg_tex);
   vkDestroySampler(ctx->device, r->nearest_sampler, NULL);
   vkDestroySampler(ctx->device, r->atlas_sampler, NULL);
+  vkDestroySampler(ctx->device, r->bead_sampler, NULL);
   vkDestroySampler(ctx->device, r->linear_sampler, NULL);
   free(r);
 }

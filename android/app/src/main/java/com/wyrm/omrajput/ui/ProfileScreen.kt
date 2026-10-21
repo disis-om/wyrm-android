@@ -310,10 +310,11 @@ private fun PropCard(props: List<Prop>) {
                 Text(
                     text = prop.value,
                     fontFamily = Wyrm.Body,
-                    fontSize = 15.sp,
+                    fontSize = if (prop.label.startsWith("Rank by") && prop.value.takeWhile { it.isDigit() }.length >= 4) 12.sp else 15.sp,
                     color = Wyrm.Ink,
                     style = nums,
                     maxLines = 1,
+                    softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )

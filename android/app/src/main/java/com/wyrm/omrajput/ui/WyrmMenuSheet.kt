@@ -76,6 +76,18 @@ internal fun WyrmMenuSheet(
     subtitle: String = "",
     onDismiss: () -> Unit,
 ) {
+    if (LocalCentredDialogs.current) {
+        CentredDialog(onDismiss) {
+            Column {
+                Text(title, fontFamily = Wyrm.Display, fontSize = 23.sp, color = Wyrm.Ink)
+                if (subtitle.isNotBlank()) Text(subtitle, fontFamily = Wyrm.Body, color = Wyrm.Quiet, modifier = Modifier.padding(vertical = 8.dp))
+                items.forEach { item -> MenuRow(item) { onDismiss(); item.onClick() } }
+                Text("Cancel · Esc", fontFamily = Wyrm.Body, color = Wyrm.Quiet,
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onDismiss).padding(16.dp))
+            }
+        }
+        return
+    }
     val appear = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { appear.animateTo(1f, iosSpring(0.38f, 0.86f)) }

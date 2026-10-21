@@ -396,10 +396,30 @@ object SkinCatalog {
         SkinBackgroundAsset(27, "wyrm_dotgrid", "Dot grid", "textures/backgrounds/wyrm_dotgrid.png", 2735.23f, 2735.23f),
         SkinBackgroundAsset(28, "wyrm_contours", "Contours", "textures/backgrounds/wyrm_contours.png", 7002.18f, 7002.18f),
         SkinBackgroundAsset(29, "wyrm_scales", "Scales", "textures/backgrounds/wyrm_scales.png", 3282.27f, 3282.27f),
+        // Round two (OM, 2026-10-15): engine backgrounds.h 30-48, nine dark then ten soft.
+        SkinBackgroundAsset(30, "wyrm_ember", "Ember", "textures/backgrounds/wyrm_ember.png", 5251.63f, 5251.63f),
+        SkinBackgroundAsset(31, "wyrm_dunes", "Dunes", "textures/backgrounds/wyrm_dunes.png", 7002.18f, 7002.18f),
+        SkinBackgroundAsset(32, "wyrm_moss", "Moss", "textures/backgrounds/wyrm_moss.png", 5251.63f, 5251.63f),
+        SkinBackgroundAsset(33, "wyrm_cells", "Cells", "textures/backgrounds/wyrm_cells.png", 6154.26f, 6154.26f),
+        SkinBackgroundAsset(34, "wyrm_aurora", "Aurora", "textures/backgrounds/wyrm_aurora.png", 7002.18f, 7002.18f),
+        SkinBackgroundAsset(35, "wyrm_facets", "Facets", "textures/backgrounds/wyrm_facets.png", 5470.45f, 5470.45f),
+        SkinBackgroundAsset(36, "wyrm_frost", "Frost", "textures/backgrounds/wyrm_frost.png", 5251.63f, 5251.63f),
+        SkinBackgroundAsset(37, "wyrm_tartan", "Tartan", "textures/backgrounds/wyrm_tartan.png", 3282.27f, 3282.27f),
+        SkinBackgroundAsset(38, "wyrm_reptile", "Reptile", "textures/backgrounds/wyrm_reptile.png", 6154.26f, 6154.26f),
+        SkinBackgroundAsset(39, "wyrm_sage", "Sage", "textures/backgrounds/wyrm_sage.png", 3501.09f, 3501.09f),
+        SkinBackgroundAsset(40, "wyrm_shore", "Shore", "textures/backgrounds/wyrm_shore.png", 7002.18f, 7002.18f),
+        SkinBackgroundAsset(41, "wyrm_terrazzo", "Terrazzo", "textures/backgrounds/wyrm_terrazzo.png", 5251.63f, 5251.63f),
+        SkinBackgroundAsset(42, "wyrm_mist", "Mist", "textures/backgrounds/wyrm_mist.png", 7002.18f, 7002.18f),
+        SkinBackgroundAsset(43, "wyrm_lavender", "Lavender", "textures/backgrounds/wyrm_lavender.png", 3411.04f, 2954.04f),
+        SkinBackgroundAsset(44, "wyrm_clay", "Clay", "textures/backgrounds/wyrm_clay.png", 2625.82f, 2625.82f),
+        SkinBackgroundAsset(45, "wyrm_paper", "Paper", "textures/backgrounds/wyrm_paper.png", 2735.23f, 2735.23f),
+        SkinBackgroundAsset(46, "wyrm_seafoam", "Seafoam", "textures/backgrounds/wyrm_seafoam.png", 3501.09f, 1750.54f),
+        SkinBackgroundAsset(47, "wyrm_marble", "Marble", "textures/backgrounds/wyrm_marble.png", 7002.18f, 7002.18f),
+        SkinBackgroundAsset(48, "wyrm_pebbles", "Pebbles", "textures/backgrounds/wyrm_pebbles.png", 5251.63f, 5251.63f),
     )
 
     /** The grid's order (ids stay the engine's): Wyrm, Black, None, Wyrm's own, then the imported set. */
-    val backgroundOrder: List<Int> = listOf(0, 22, 1) + (23..29) + (2..21)
+    val backgroundOrder: List<Int> = listOf(0, 22, 1) + (23..29) + (30..48) + (2..21)
 
     fun code(groups: List<Int>): String = groups.take(256)
         .filter { it in groupCodes.indices && it in validGroups }

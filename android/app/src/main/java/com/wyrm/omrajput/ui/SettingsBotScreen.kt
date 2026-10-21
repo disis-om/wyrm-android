@@ -49,7 +49,7 @@ fun SettingsBotScreen(
                     color = Wyrm.Ink,
                 )
                 Text(
-                    text = "Turn it on with the Bot button in a match. It plays like NTL's bot: it eats, dodges snakes and breaks away with boost when one surrounds it, then coils round itself once it is big.",
+                    text = "Turn it on with the Bot button in a match. It eats, dodges snakes, breaks away with boost when it is surrounded, and coils round itself once it is big.",
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
                     color = Wyrm.Quiet,

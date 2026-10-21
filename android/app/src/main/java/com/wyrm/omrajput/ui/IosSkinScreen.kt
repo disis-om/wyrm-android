@@ -112,7 +112,7 @@ private const val TAGS_DISABLED = false
 private enum class SkinSection(val title: String) {
     OVERVIEW("Skin wardrobe"), PRESETS("Default skins"), PATTERN("Pattern"),
     ACCESSORIES("Accessory"), TAGS("Tag"), BACKGROUND("Arena background"),
-    WYRM_ACCESSORIES("Wyrm accessories"),
+    WYRM_ACCESSORIES("Wyrm accessories"), WYRM_SKINS("Wyrm skins"),
 }
 
 private fun Int.rgbColor(): Color = Color(((this shr 16) and 0xFF) / 255f, ((this shr 8) and 0xFF) / 255f, (this and 0xFF) / 255f)
@@ -143,6 +143,8 @@ internal fun IosSkinScreen(
     onAdjustBackgroundSize: (() -> Unit)? = null,
     /** Beside the title: the way back to Skin Studio (OM, 2026-10-12). */
     headerTrailing: (@Composable () -> Unit)? = null,
+    /** A Skin Studio skin is worn: its own preview, eyes and all (OM, 2026-10-13). */
+    wornPreview: (@Composable (Modifier) -> Unit)? = null,
 ) {
     val textures by rememberSkinTextures()
     val lookNow = look ?: WyrmLookStore.spec()
@@ -155,7 +157,6 @@ internal fun IosSkinScreen(
     /** Saved skins being selected (keys), Gmail-style: the top bar turns into their actions. */
     var savedSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
     var editingPattern by remember { mutableStateOf(false) }
-    var showingWheel by remember { mutableStateOf(false) }
 
     // What is worn, mirrored locally so a tap shows at once; the engine's echo re-syncs it.
     var preset by remember { mutableIntStateOf(state.preset) }
@@ -181,6 +182,18 @@ internal fun IosSkinScreen(
     var tag by remember { mutableIntStateOf(if (TAGS_DISABLED) -1 else tagSetting?.number?.roundToInt() ?: -1) }
     LaunchedEffect(tagSetting?.number) { tag = if (TAGS_DISABLED) -1 else tagSetting?.number?.roundToInt() ?: -1 }
     val chain = chainSetting?.number?.toDouble() ?: 1.0
+    // Wyrm skins (OM, 2026-10-13): the engine's `skin.wyrm`, 0 = none.
+    val wyrmSkinSetting = settings.firstOrNull { it.id == "skin.wyrm" }
+    var wyrmSkin by remember { mutableIntStateOf(wyrmSkinSetting?.number?.roundToInt() ?: 0) }
+    LaunchedEffect(wyrmSkinSetting?.number) { wyrmSkin = wyrmSkinSetting?.number?.roundToInt() ?: 0 }
+    /** A Wyrm skin is worn: tags, accessories and Wyrm accessories are off. */
+    val skinWorn = WyrmSkins.byNumber(wyrmSkin) != null
+    /** What was tapped while a Wyrm skin is worn ("Tags", "Accessories", ...): the popup that explains. */
+    var blockedBy by remember { mutableStateOf<String?>(null) }
+    fun dropWyrmSkin() {
+        wyrmSkin = 0
+        wyrmSkinSetting?.let { onSettingChange(it, listOf(0f)) }
+    }
     val swing = swingSetting?.number?.toDouble() ?: 1.0
     val tagScale = scaleSetting?.number?.toDouble() ?: 1.0
 
@@ -193,8 +206,6 @@ internal fun IosSkinScreen(
     val previewGroups = if (editingPattern) List(256) { if (it < customGroups.size) customGroups[it] else -1 } else activeGroups
     val previewColors = if (editingPattern) List(256) { if (it < customGroups.size) customColors[it] else 0 } else activeColors
 
-    // The colour wheel's colour, which Wyrm's patterned beads take.
-    var wheelRgb by remember { mutableIntStateOf(prefs.getInt("air-rgb", 0x808080) and 0xFFFFFF) }
 
     fun savePattern(groups: List<Int>, colors: List<Int>) {
         editingPattern = true
@@ -210,6 +221,7 @@ internal fun IosSkinScreen(
         section = target
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
         if (savedSelection.isNotEmpty()) {
             SavedSelectionBar(
@@ -233,7 +245,11 @@ internal fun IosSkinScreen(
         }
         banner?.invoke()
         Box(Modifier.fillMaxWidth().height(218.dp)) {
-            SkinPreview(
+            if (skinWorn && !editingPattern) {
+                WyrmSkinLive(wyrmSkin, textures?.wyrmSkins?.get(wyrmSkin), Modifier.fillMaxSize())
+            } else if (wornPreview != null && !editingPattern && look == null) {
+                wornPreview(Modifier.fillMaxSize())
+            } else SkinPreview(
                 textures = textures,
                 groups = previewGroups,
                 colors = previewColors,
@@ -273,8 +289,13 @@ internal fun IosSkinScreen(
                         IosPaperCard {
                             IosListRow(SkinSection.PRESETS.title, value = "${SkinCatalog.presets.size}") { enter(SkinSection.PRESETS) }
                             IosListRow(SkinSection.PATTERN.title, value = if (customEnabled) "Custom" else "Preset") { enter(SkinSection.PATTERN) }
-                            IosListRow(SkinSection.ACCESSORIES.title, value = if (accessory < 0) "None" else "%02d".format(accessory + 1)) { enter(SkinSection.ACCESSORIES) }
-                            IosListRow(SkinSection.TAGS.title, value = if (TAGS_DISABLED) "Coming soon" else SkinCatalog.tags.getOrNull(tag)?.let { if (isWyrmTag(it.ntlId)) "On" else "#${it.ntlId}" } ?: "None") { if (!TAGS_DISABLED) enter(SkinSection.TAGS) }
+                            // While a Wyrm skin is worn these wait; a tap says why (OM, 2026-10-13).
+                            IosListRow(SkinSection.ACCESSORIES.title, value = if (accessory < 0) "None" else "%02d".format(accessory + 1)) {
+                                if (skinWorn) blockedBy = "Accessories" else enter(SkinSection.ACCESSORIES)
+                            }
+                            IosListRow(SkinSection.TAGS.title, value = if (TAGS_DISABLED) "Coming soon" else SkinCatalog.tags.getOrNull(tag)?.let { if (isWyrmTag(it.ntlId)) "On" else "#${it.ntlId}" } ?: "None") {
+                                if (skinWorn) blockedBy = "Tags" else if (!TAGS_DISABLED) enter(SkinSection.TAGS)
+                            }
                             IosListRow(SkinSection.BACKGROUND.title, value = SkinCatalog.backgrounds.getOrNull(backgroundId)?.label ?: "Wyrm") { enter(SkinSection.BACKGROUND) }
                         }
                         // Saved skins (OM, 2026-10-13): every custom skin played, newest first.
@@ -301,7 +322,11 @@ internal fun IosSkinScreen(
                         IosPaperCard {
                             val worn = listOf(lookNow.hair, lookNow.ears, lookNow.glasses).count { it >= 0 }
                             IosListRow(SkinSection.WYRM_ACCESSORIES.title, value = if (worn == 0) "None" else "$worn on") {
-                                enter(SkinSection.WYRM_ACCESSORIES)
+                                if (skinWorn) blockedBy = "Wyrm accessories" else enter(SkinSection.WYRM_ACCESSORIES)
+                            }
+                            // Wyrm skins (OM, 2026-10-13): creatures and strip looks.
+                            IosListRow(SkinSection.WYRM_SKINS.title, value = WyrmSkins.byNumber(wyrmSkin)?.name ?: "None") {
+                                enter(SkinSection.WYRM_SKINS)
                             }
                         }
                     }
@@ -335,82 +360,7 @@ internal fun IosSkinScreen(
                     }
                     SkinSection.PATTERN -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
-                        Row(
-                            Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Text("${customGroups.size} / 256 beads", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Wyrm.Quiet, modifier = Modifier.weight(1f))
-                            Text("UNDO", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, color = Wyrm.Ink,
-                                modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                    val groups = customGroups.dropLast(1)
-                                    savePattern(groups, customColors.take(groups.size))
-                                })
-                            Text("CLEAR", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, color = Color(0xFFFF3B30),
-                                modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                    savePattern(emptyList(), emptyList())
-                                })
-                            AirWheelToggle(showingWheel, enabled = !WyrmBeads.BUILT_BEADS_OFF) { showingWheel = !showingWheel }
-                        }
-                        val codeStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 15.sp, color = Wyrm.Ink)
-                        BasicTextField(
-                            value = SkinCatalog.code(customGroups),
-                            onValueChange = { typed ->
-                                val groups = typed.lowercase().take(256).mapNotNull { SkinCatalog.group(it) }
-                                val common = groups.zip(customGroups).takeWhile { it.first == it.second }.size
-                                savePattern(groups, List(groups.size) { if (it < common) customColors[it] else 0 })
-                            },
-                            singleLine = true,
-                            textStyle = codeStyle,
-                            cursorBrush = SolidColor(Wyrm.Link),
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
-                            modifier = Modifier
-                                .padding(horizontal = 20.dp)
-                                .fillMaxWidth()
-                                .clip(wyrmRounded(11.dp))
-                                .background(Wyrm.Card.copy(alpha = 0.9f))
-                                .padding(13.dp),
-                            decorationBox = { inner ->
-                                Box {
-                                    if (customGroups.isEmpty()) Text("Type or paste a skin code", style = codeStyle.copy(color = Wyrm.Quiet.copy(alpha = 0.6f)))
-                                    inner()
-                                }
-                            },
-                        )
-                        IosSectionLabel("Build a Wyrm")
-                        // The wheel opens above the beads; the beads stay below it
-                        // (OM, 2026-10-03: one group, every bead the same size).
-                        AnimatedVisibility(
-                            visible = showingWheel && !WyrmBeads.BUILT_BEADS_OFF,
-                            enter = fadeIn(iosSpring(0.38f, 0.84f)) + scaleIn(iosSpring(0.38f, 0.84f), initialScale = 0.96f),
-                            exit = fadeOut(iosSpring(0.38f, 0.84f)),
-                            label = "wheel",
-                        ) {
-                            Column {
-                                AirWheelPanel(textures, prefs, onColour = { wheelRgb = it }) { kind, rgb ->
-                                    if (!WyrmBeads.BUILT_BEADS_OFF && customGroups.size < 256) {
-                                        savePattern(customGroups + AirSkin.nearestGroup(rgb), customColors + (AirSkin.marker(kind) or rgb))
-                                    }
-                                }
-                                Spacer(Modifier.height(16.dp))
-                            }
-                        }
-                        // Slither's beads first, then Wyrm's own; the arena gets
-                        // each Wyrm bead's nearest slither colour.
-                        AllBeadGrid(
-                            textures,
-                            wheelRgb,
-                            wyrmEnabled = !WyrmBeads.BUILT_BEADS_OFF,
-                            onPickGroup = { group ->
-                                if (customGroups.size < 256) savePattern(customGroups + group, customColors + 0)
-                            },
-                            onPickWyrm = { kind ->
-                                if (!WyrmBeads.BUILT_BEADS_OFF && customGroups.size < 256) {
-                                    val argb = WyrmBeads.argb(kind, wheelRgb)
-                                    savePattern(customGroups + AirSkin.nearestGroup(argb and 0xFFFFFF), customColors + argb)
-                                }
-                            },
-                        )
+                        SkinPatternBuilder(textures, prefs, customGroups, customColors, ::savePattern)
                     }
                     SkinSection.ACCESSORIES -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
@@ -474,6 +424,13 @@ internal fun IosSkinScreen(
                             }
                         }
                     }
+                    SkinSection.WYRM_SKINS -> {
+                        InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
+                        WyrmSkinsPage(textures, wyrmSkin) { number ->
+                            wyrmSkin = number
+                            wyrmSkinSetting?.let { onSettingChange(it, listOf(number.toFloat())) }
+                        }
+                    }
                     SkinSection.TAGS -> {
                         InlineHeader(shown.title) { enter(SkinSection.OVERVIEW) }
                         Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -510,6 +467,113 @@ internal fun IosSkinScreen(
             }
         }
     }
+    blockedBy?.let { what ->
+        WyrmSkinBlockedPopup(
+            skinName = WyrmSkins.byNumber(wyrmSkin)?.name ?: "Your Wyrm skin",
+            strip = WyrmSkins.byNumber(wyrmSkin)?.strip == true,
+            what = what,
+            onDefault = { blockedBy = null; dropWyrmSkin(); enter(SkinSection.PRESETS) },
+            onCustom = { blockedBy = null; dropWyrmSkin(); enter(SkinSection.PATTERN) },
+            onDismiss = { blockedBy = null },
+        )
+    }
+    }
+}
+
+/**
+ * The Pattern editor's body (code field, UNDO / CLEAR, wheel, every bead): the
+ * Skin tab's and Snakey Rain's characters' (OM, 2026-10-14) are the same one.
+ * [onSave] gets the whole new pattern and its per-bead colours.
+ */
+@Composable
+internal fun SkinPatternBuilder(
+    textures: SkinTextures?,
+    prefs: android.content.SharedPreferences,
+    customGroups: List<Int>,
+    customColors: List<Int>,
+    onSave: (List<Int>, List<Int>) -> Unit,
+    maxBeads: Int = 256,
+) {
+    var showingWheel by remember { mutableStateOf(false) }
+    // The colour wheel's colour, which Wyrm's patterned beads take.
+    var wheelRgb by remember { mutableIntStateOf(prefs.getInt("air-rgb", 0x808080) and 0xFFFFFF) }
+    fun savePattern(groups: List<Int>, colors: List<Int>) = onSave(groups.take(maxBeads), colors.take(maxBeads))
+    Row(
+        Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("${customGroups.size} / $maxBeads beads", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Wyrm.Quiet, modifier = Modifier.weight(1f))
+        Text("UNDO", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, color = Wyrm.Ink,
+            modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                val groups = customGroups.dropLast(1)
+                savePattern(groups, customColors.take(groups.size))
+            })
+        Text("CLEAR", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, color = Color(0xFFFF3B30),
+            modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                savePattern(emptyList(), emptyList())
+            })
+        AirWheelToggle(showingWheel, enabled = !WyrmBeads.BUILT_BEADS_OFF) { showingWheel = !showingWheel }
+    }
+    val codeStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 15.sp, color = Wyrm.Ink)
+    BasicTextField(
+        value = SkinCatalog.code(customGroups),
+        onValueChange = { typed ->
+            val groups = typed.lowercase().take(maxBeads).mapNotNull { SkinCatalog.group(it) }
+            val common = groups.zip(customGroups).takeWhile { it.first == it.second }.size
+            savePattern(groups, List(groups.size) { if (it < common) customColors[it] else 0 })
+        },
+        singleLine = true,
+        textStyle = codeStyle,
+        cursorBrush = SolidColor(Wyrm.Link),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+        modifier = Modifier
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth()
+            .clip(wyrmRounded(11.dp))
+            .background(Wyrm.Card.copy(alpha = 0.9f))
+            .padding(13.dp),
+        decorationBox = { inner ->
+            Box {
+                if (customGroups.isEmpty()) Text("Type or paste a skin code", style = codeStyle.copy(color = Wyrm.Quiet.copy(alpha = 0.6f)))
+                inner()
+            }
+        },
+    )
+    IosSectionLabel("Build a Wyrm")
+    // The wheel opens above the beads; the beads stay below it
+    // (OM, 2026-10-03: one group, every bead the same size).
+    AnimatedVisibility(
+        visible = showingWheel && !WyrmBeads.BUILT_BEADS_OFF,
+        enter = fadeIn(iosSpring(0.38f, 0.84f)) + scaleIn(iosSpring(0.38f, 0.84f), initialScale = 0.96f),
+        exit = fadeOut(iosSpring(0.38f, 0.84f)),
+        label = "wheel",
+    ) {
+        Column {
+            AirWheelPanel(textures, prefs, onColour = { wheelRgb = it }) { kind, rgb ->
+                if (!WyrmBeads.BUILT_BEADS_OFF && customGroups.size < maxBeads) {
+                    savePattern(customGroups + AirSkin.nearestGroup(rgb), customColors + (AirSkin.marker(kind) or rgb))
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+    // Slither's beads first, then Wyrm's own; the arena gets
+    // each Wyrm bead's nearest slither colour.
+    AllBeadGrid(
+        textures,
+        wheelRgb,
+        wyrmEnabled = !WyrmBeads.BUILT_BEADS_OFF,
+        onPickGroup = { group ->
+            if (customGroups.size < maxBeads) savePattern(customGroups + group, customColors + 0)
+        },
+        onPickWyrm = { kind ->
+            if (!WyrmBeads.BUILT_BEADS_OFF && customGroups.size < maxBeads) {
+                val argb = WyrmBeads.argb(kind, wheelRgb)
+                savePattern(customGroups + AirSkin.nearestGroup(argb and 0xFFFFFF), customColors + argb)
+            }
+        },
+    )
 }
 
 /* ------------------------------------------------------------- saved skins */
@@ -1052,16 +1116,17 @@ internal fun WyrmBeadGrid(textures: SkinTextures?, tint: Int, onPick: (Int) -> U
 
 /** `WyrmMiniSnake`: a preset's beads in a line, 8/48 of a bead apart. */
 @Composable
-internal fun MiniSnake(textures: SkinTextures?, groups: List<Int>, modifier: Modifier) {
+internal fun MiniSnake(textures: SkinTextures?, groups: List<Int>, modifier: Modifier, colors: List<Int> = emptyList()) {
     Canvas(modifier) {
-        val beads = textures?.beads ?: return@Canvas
+        val t = textures ?: return@Canvas
         val bead = min(size.height * 0.87f, 38.dp.toPx())
         val step = bead * (8f / 48f)
         val count = min(128, max(1, ceil(max(0f, size.width - bead) / step).toInt() + 1))
         for (index in 0 until count) {
             val group = if (groups.isEmpty()) 7 else groups[index % groups.size]
-            val image = beads[group] ?: continue
-            drawImageInto(image, index * step, (size.height - bead) * 0.5f, bead, bead)
+            val argb = if (colors.isEmpty()) 0 else colors[index % colors.size]
+            val (image, tint) = skinBead(t, group, argb) ?: continue
+            drawImageInto(image, index * step, (size.height - bead) * 0.5f, bead, bead, tint)
         }
     }
 }
@@ -1081,7 +1146,7 @@ internal fun DrawScope.drawImageInto(image: ImageBitmap, left: Float, top: Float
 }
 
 /** `scaledToFit` centred in the canvas. */
-private fun DrawScope.drawFitted(image: ImageBitmap, tint: Color? = null) {
+internal fun DrawScope.drawFitted(image: ImageBitmap, tint: Color? = null) {
     val scale = min(size.width / image.width, size.height / image.height)
     val w = image.width * scale
     val h = image.height * scale
@@ -1551,7 +1616,7 @@ internal class NtlPreviewRope {
 
 /** `WyrmSwingTag`: the Skin preview's tag on NTL's own chooser rope ([NtlPreviewRope]), stepped every frame. */
 @Composable
-private fun SwingTag(
+internal fun SwingTag(
     item: SkinTagAsset,
     image: ImageBitmap,
     head: Offset,

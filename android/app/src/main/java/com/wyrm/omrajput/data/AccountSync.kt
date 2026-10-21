@@ -68,7 +68,7 @@ object AccountSync {
         PrefFile("wyrm_local_stats", Scope.SYNC),
         PrefFile("wyrm_skin_studio", Scope.SYNC),
         PrefFile("wyrm_saved_skins", Scope.SYNC),             // Skin › Saved skins: every custom skin played (2026-10-13)
-        PrefFile("wyrm_performance", Scope.SYNC),              // Settings › Performance: mode, FPS limit
+        PrefFile("wyrm_performance", Scope.WIPE),              // retired 2026-10-18 (Settings › Performance removed): log out clears an old copy
         // Run receipts not yet uploaded: carried by the account so none is lost
         // (the server ignores a receipt it already has, by event id).
         PrefFile("wyrm_pending_runs", Scope.SYNC),
@@ -76,9 +76,14 @@ object AccountSync {
         PrefFile("wyrm_drop", Scope.SYNC, keys = setOf("auto_send")),
         PrefFile("wyrm_crash", Scope.SYNC, keys = setOf("auto_send"), rest = Scope.KEEP),
         PrefFile("wyrm_update_state", Scope.SYNC, keys = setOf("beta_updates"), rest = Scope.KEEP),
+        // Custom arenas (2026-10-13): the id follows the account (also shared); the list is this phone's cache.
+        PrefFile("wyrm_custom_arena", Scope.SYNC, keys = setOf("player_id"), rest = Scope.KEEP),
         // Wiped: caches and session state of the account.
         PrefFile("wyrm_look", Scope.WIPE),                     // travels in the shared document
         PrefFile("wyrm_session", Scope.WIPE),
+        PrefFile("wyrm_rain", Scope.WIPE),                     // non-secret choices travel in shared rainSettings
+        PrefFile("wyrm_shed", Scope.WIPE),                     // Home › Shed: recipe + skins already shown, phone only (OM, 2026-10-15)
+        PrefFile("wyrm_rain_auth", Scope.WIPE),                // encrypted personal credentials never sync
         PrefFile("wyrm_team_mode", Scope.WIPE),                // team credentials never leave the phone
         PrefFile("wyrm_voice_runtime", Scope.WIPE),
         PrefFile("wyrm_voice_call", Scope.WIPE),
@@ -95,6 +100,7 @@ object AccountSync {
         // The retired manual backups (2026-10-01): their folder grant goes too.
         PrefFile("wyrm_backup_state", Scope.WIPE),
         // About the phone itself: kept.
+        PrefFile("wyrm_device_migrations", Scope.KEEP),         // one-time defaults, never restored or wiped
         PrefFile("hidapi", Scope.KEEP),                        // SDL game controllers
         // Which build's "What's new" this phone has seen (OM, 2026-10-02): a log
         // out must not bring the sheet back on the next launch.
@@ -124,7 +130,7 @@ object AccountSync {
 
     /** This phone's copy, ready for `PUT /v1/me/settings/android`. */
     fun platformDocument(context: Context, engine: Engine?): JSONObject {
-        val doc = JSONObject().put("schema", SCHEMA).put("platform", PLATFORM)
+        val doc = JSONObject().put("schema", SCHEMA).put("platform", PLATFORM).put("keysWhiteV1", true).put("keysGreyFillV1", true)
         if (engine != null) {
             val settings = SettingsCodec.settings(engine.readSettings())
             if (settings.isNotEmpty()) {
@@ -219,7 +225,9 @@ object AccountSync {
             saved.keys().forEach { stored ->
                 val id = ENGINE_RENAMES[stored] ?: stored
                 val setting = current[id]
-                val raw = saved.optString(stored, "")
+                val oldKeyColour = id.startsWith("layout.key_") && id.endsWith("_colour") && !doc.optBoolean("keysWhiteV1", false)
+                val oldKeyFill = id.startsWith("layout.key_") && id.endsWith("_fill") && !doc.optBoolean("keysGreyFillV1", false)
+                val raw = if (oldKeyColour) "0" else if (oldKeyFill) "9" else saved.optString(stored, "")
                 val values = raw.split(",").mapNotNull { it.trim().toFloatOrNull()?.takeIf(Float::isFinite) }
                 if (setting == null || values.isEmpty()) { skipped++; return@forEach }
                 val wanted = when (setting.type) {

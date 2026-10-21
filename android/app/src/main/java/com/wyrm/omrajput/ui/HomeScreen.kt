@@ -140,6 +140,10 @@ fun HomeScreen(
     onOpenFood: (Rect) -> Unit,
     onOpenControls: (Rect) -> Unit,
     onOpenMode: (Rect) -> Unit,
+    onOpenRain: (Rect) -> Unit = {},
+    rainEnabled: Boolean = false,
+    /** Home › Shed, the skin generator (OM, 2026-10-15). */
+    onOpenShed: (Rect) -> Unit = {},
     onOpenTeam: (Rect) -> Unit,
     onOpenVoice: (Rect) -> Unit,
     onTabNotifications: (Rect) -> Unit,
@@ -222,7 +226,13 @@ fun HomeScreen(
                     IosLoadoutRow("Controls", controlsLabel, leading = { IosLoadoutIcon(IosGlyph.GAMECONTROLLER) }) { onOpenControls(Rect.Zero) }
                 }
                 IosLoadoutRow("Mode", "", leading = { IosLoadoutIcon(IosGlyph.SCOPE) }) { onOpenMode(Rect.Zero) }
+                IosLoadoutRow("Snakey Rain", if (rainEnabled) "On" else "Off", leading = { IosLoadoutIcon(IosGlyph.CLOUD_RAIN) }) { onOpenRain(Rect.Zero) }
                 Box(Modifier.tourAnchor("home.near")) { NearOriginalRow(on = nearOriginal, onToggle = onNearOriginal) }
+            }
+            // Shed (OM, 2026-10-15): between Loadout and Rooms & team.
+            IosSectionLabel("Shed")
+            IosPaperCard {
+                ShedHomeCard { onOpenShed(Rect.Zero) }
             }
             IosSectionLabel("Rooms & team")
             IosPaperCard {

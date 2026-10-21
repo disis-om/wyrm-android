@@ -23,12 +23,13 @@ import org.json.JSONObject
 const val TRAILS_ENABLED = true
 
 /**
- * Video trails (OM, 2026-10-05): off for now, so nobody can post a video.
- * `false` takes the Video page out of the studio's mode bar; the video code,
- * the backend route and playback of any video trail stay. `true` brings the
- * Video page back. iOS: WyrmTrailsFeature.videoEnabled.
+ * Video trails (OM, 2026-10-05): off for the releases since 6.5.2, on again
+ * for the 2026-10-17 test builds of the new studio (OM tests the video
+ * editor). `false` takes Video out of the studio's modes and the hold-to-
+ * record shutter; the video code, the backend route and playback of any video
+ * trail stay. iOS: WyrmTrailsFeature.videoEnabled.
  */
-const val TRAIL_VIDEO_ENABLED = false
+const val TRAIL_VIDEO_ENABLED = false // off again (OM, 2026-10-18)
 
 /** Badges that only make sense with Trails on; hidden from the strip and its count while paused. */
 val TRAIL_BADGE_IDS = setOf("trailblazer", "crowd-favourite")

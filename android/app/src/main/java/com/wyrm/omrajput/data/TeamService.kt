@@ -32,6 +32,8 @@ data class TeamMember(
     /** From the player's own NTL status line (`dt`), when their client sends one. */
     val fps: Int? = null,
     val ping: Int? = null,
+    /** NTL's snake identity, distinct from the displayed name. */
+    val snakeId: Int = 0,
 ) {
     /** In a match at all — the service says `_GAME_MENU_` when they are not. */
     val playing: Boolean get() = arena.isNotEmpty() && arena != MENU_ARENA
@@ -58,6 +60,8 @@ data class TeamState(
     val status: String = "",
     val members: List<TeamMember> = emptyList(),
     val messages: List<TeamMessage> = emptyList(),
+    /** True only when this response carries this session's outgoing line. */
+    val messageAcknowledged: Boolean = false,
 )
 
 /** What this player is doing, read out of the engine before each poll. */
@@ -108,7 +112,9 @@ data class TeamPresence(
  * behind them; that is a property of the service, not something the app can
  * quietly fix by asking harder.
  */
-class TeamService(context: Context) {
+class TeamService(context: Context, private val clientIdentity: String = NICK_PREFIX,
+                  private val escapeMessages: Boolean = false) {
+    init { require(clientIdentity.length == 8 && clientIdentity.all { it.isLetterOrDigit() }) }
     private val appContext = context.applicationContext
     private val preferences =
         appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -290,6 +296,63 @@ class TeamService(context: Context) {
         vaultCache = list.toList() to active.coerceIn(0, list.lastIndex)
     }
 
+    internal fun pollRequest(credentials: TeamProfile, presence: TeamPresence, message: String?): String = buildString {
+        append(ENDPOINT)
+        append("?auth=").append(encode(credentials.authKey))
+        append("&tid=").append(encode(credentials.teamId))
+        /*
+         * Eight characters of prefix, then the name.
+         *
+         * The service does not carry the name it is given — it carries
+         * everything after the first eight characters of it. The mod
+         * generates eight random ones per session (`Rg = n(8)`, then
+         * `sa = Rg + nick`) and matches its own row back by them. Wyrm
+         * sent the bare name, so the service ate the first eight
+         * letters of it and everyone saw "KKI LAGGY" where the name was
+         * "[SMT] SUKKI LAGGY".
+         */
+        append("&nick=").append(encode(clientIdentity + presence.nickname))
+        append("&score=").append(presence.score.coerceAtLeast(0))
+        append("&valx=").append(presence.x)
+        append("&valy=").append(presence.y)
+        append("&bot=").append(if (presence.bot) 1 else 0)
+        append("&sos=0&food=0")
+        append("&srv=").append(encode(presence.arena))
+        /*
+         * `sid` is this snake's id, and `tg` is the tag it is wearing.
+         *
+         * Both were missing — `sid` went out as a constant zero and the
+         * tag not at all — which is why a player using the NTL
+         * extension saw a Wyrm player with no tag on. The service
+         * carries the pair and hands it to everyone on the network;
+         * read off the mod's own report, which sends exactly these
+         * beside the rest of this.
+         */
+        append("&sid=").append(presence.snakeId)
+        // Tags on again (OM, 2026-10-04): the tag in the mod's numbering, -1 for none.
+        append("&tg=").append(presence.tag)
+        append("&rank=").append(presence.rank.coerceAtLeast(0))
+        append("&ver=").append(encode(VERSION))
+        /*
+         * `msg` is always sent, empty when there is nothing to say —
+         * and this one parameter is the whole reason Team Mode never
+         * worked.
+         *
+         * The old client added it only when it had a line to send, and
+         * those were the only polls that ever came back with a team.
+         * Every silent report was answered with an opaque
+         * 128-character token instead, which the client could not
+         * parse and reported as "credentials rejected". Send it empty
+         * and every poll returns the full roster.
+         *
+         * `tlm` is deliberately not sent at all: asking for the
+         * backlog with a bare `&tlm=` earns the same opaque token, and
+         * the only thing lost by not asking is chat posted before this
+         * device connected.
+         */
+        append("&msg=").append(if (message.isNullOrEmpty()) "" else encode(if (escapeMessages) wireMessage(message) else message))
+    }
+
     /**
      * One round trip: report [presence], send [message] if there is one, and
      * take back the team.
@@ -302,62 +365,7 @@ class TeamService(context: Context) {
             val credentials = readCredentials()
                 ?: return@withContext TeamState(status = "Add a team first.")
 
-            val query = buildString {
-                append(ENDPOINT)
-                append("?auth=").append(encode(credentials.authKey))
-                append("&tid=").append(encode(credentials.teamId))
-                /*
-                 * Eight characters of prefix, then the name.
-                 *
-                 * The service does not carry the name it is given — it carries
-                 * everything after the first eight characters of it. The mod
-                 * generates eight random ones per session (`Rg = n(8)`, then
-                 * `sa = Rg + nick`) and matches its own row back by them. Wyrm
-                 * sent the bare name, so the service ate the first eight
-                 * letters of it and everyone saw "KKI LAGGY" where the name was
-                 * "[SMT] SUKKI LAGGY".
-                 */
-                append("&nick=").append(encode(NICK_PREFIX + presence.nickname))
-                append("&score=").append(presence.score.coerceAtLeast(0))
-                append("&valx=").append(presence.x)
-                append("&valy=").append(presence.y)
-                append("&bot=").append(if (presence.bot) 1 else 0)
-                append("&sos=0&food=0")
-                append("&srv=").append(encode(presence.arena))
-                /*
-                 * `sid` is this snake's id, and `tg` is the tag it is wearing.
-                 *
-                 * Both were missing — `sid` went out as a constant zero and the
-                 * tag not at all — which is why a player using the NTL
-                 * extension saw a Wyrm player with no tag on. The service
-                 * carries the pair and hands it to everyone on the network;
-                 * read off the mod's own report, which sends exactly these
-                 * beside the rest of this.
-                 */
-                append("&sid=").append(presence.snakeId)
-                // Tags on again (OM, 2026-10-04): the tag in the mod's numbering, -1 for none.
-                append("&tg=").append(presence.tag)
-                append("&rank=").append(presence.rank.coerceAtLeast(0))
-                append("&ver=").append(encode(VERSION))
-                /*
-                 * `msg` is always sent, empty when there is nothing to say —
-                 * and this one parameter is the whole reason Team Mode never
-                 * worked.
-                 *
-                 * The old client added it only when it had a line to send, and
-                 * those were the only polls that ever came back with a team.
-                 * Every silent report was answered with an opaque
-                 * 128-character token instead, which the client could not
-                 * parse and reported as "credentials rejected". Send it empty
-                 * and every poll returns the full roster.
-                 *
-                 * `tlm` is deliberately not sent at all: asking for the
-                 * backlog with a bare `&tlm=` earns the same opaque token, and
-                 * the only thing lost by not asking is chat posted before this
-                 * device connected.
-                 */
-                append("&msg=").append(if (message.isNullOrEmpty()) "" else encode(message))
-            }
+            val query = pollRequest(credentials, presence, message)
 
             val connection = (URL(query).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -365,6 +373,7 @@ class TeamService(context: Context) {
                 readTimeout = 4_000
                 useCaches = false
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty("Referer", TAG_REFERER)
             }
             val body = try {
                 val status = connection.responseCode
@@ -393,20 +402,25 @@ class TeamService(context: Context) {
                     status = "The team service rejected these credentials.",
                 )
             }
-            parse(trimmed)
+            parse(trimmed, clientIdentity + presence.nickname, message)
         }
 
-    private fun parse(body: String): TeamState {
+    private fun parse(body: String): TeamState = parse(body, null, null)
+
+    private fun parse(body: String, ownNick: String?, outgoing: String?): TeamState {
         val array = runCatching { JSONArray(body) }.getOrNull()
             ?: return TeamState(configured = true, status = "The team service sent something unreadable.")
 
         val members = ArrayList<TeamMember>(array.length())
         val fresh = ArrayList<TeamMessage>()
+        var acknowledged = false
 
         for (index in 0 until array.length()) {
             val row = array.optJSONObject(index) ?: continue
             val rawNick = row.optString("nick")
             val text = decode(row.optString("msg"))
+            if (rawNick == ownNick && !outgoing.isNullOrEmpty() &&
+                text.split('\n').any { it.trim() == outgoing.trim() }) acknowledged = true
 
             // An entry called 00000000 is not a person — it is the service
             // itself talking to the team.
@@ -453,9 +467,12 @@ class TeamService(context: Context) {
                 version = row.optString("ver"),
                 fps = STATUS_FPS.find(status)?.groupValues?.get(1)?.toIntOrNull(),
                 ping = STATUS_PING.find(status)?.groupValues?.get(1)?.toIntOrNull(),
+                snakeId = row.optInt("sid"),
             )
 
-            val key = identity.ifEmpty { name }
+            // Older clients reused one prefix for everybody. Keep their full
+            // nick in the transcript key so one row cannot erase another's log.
+            val key = rawNick
             newLine(chatLog[key].orEmpty(), text)?.let { fresh += TeamMessage(name, it) }
             chatLog[key] = text
         }
@@ -466,11 +483,15 @@ class TeamService(context: Context) {
             status = if (members.isEmpty()) "Connected. Nobody else is here yet." else "Connected",
             members = members,
             messages = fresh,
+            messageAcknowledged = acknowledged,
         )
     }
 
     private fun coordinate(value: String): Int =
         value.toDoubleOrNull()?.toInt() ?: 0
+
+    private fun wireMessage(value: String): String = value.replace("&", "&amp;")
+        .replace("<", "&lt;").replace(">", "&gt;").replace(" ", "&nbsp;")
 
     /**
      * What is new in an append-only log.

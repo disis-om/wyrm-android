@@ -72,6 +72,17 @@ data class ChatMessage(
     val authorAvatarUrl: String,
     val authorAvatarKey: String,
     val authorDeleted: Boolean = false,
+    /** The author's in-game name; blank when they never set one. */
+    val authorIngame: String = "",
+)
+
+/** A player seen on Wyrm lately, for the arena chat's ONLINE tab (OM, 2026-10-14). */
+data class OnlinePlayer(
+    val username: String,
+    val ingameName: String,
+    val displayName: String,
+    /** "ip:port" of the arena they played in lately, blank otherwise. */
+    val arena: String,
 )
 
 /** A finished run waiting for the account backend to acknowledge it. */
@@ -137,6 +148,11 @@ data class ServerNotification(
     val read: Boolean,
 )
 
+/** A trail video goes up this much at a time unless the server says otherwise. */
+private const val VIDEO_PART_BYTES = 512 * 1024
+/** Failures in a row on one part before the video upload gives up (waits 1, 2, 4, 8, 8… s). */
+private const val VIDEO_PART_TRIES = 10
+
 internal class ApiException(
     val status: Int,
     message: String,
@@ -149,7 +165,11 @@ internal class ApiException(
    runs stay queued. Normally false. */
 internal const val WYRM_BACKEND_DISCONNECTED = false
 
-class WyrmRepository(context: Context, baseUrl: String) {
+class WyrmRepository(
+    context: Context,
+    baseUrl: String,
+    private val openConnection: (URL, String) -> HttpURLConnection = { url, _ -> url.openConnection() as HttpURLConnection },
+) {
     private val appContext = context.applicationContext
     private val api = baseUrl.trimEnd('/')
     private val prefs = appContext.getSharedPreferences("wyrm_session", Context.MODE_PRIVATE)
@@ -247,10 +267,13 @@ class WyrmRepository(context: Context, baseUrl: String) {
         bio: String? = null,
         avatarKey: String? = null,
         phoneNumber: String? = null,
+        /** No in-game name any more: the server clears it (OM, 2026-10-14). */
+        clearIngameName: Boolean = false,
     ): ApiPlayer = withContext(Dispatchers.IO) {
         val body = JSONObject()
         displayName?.let { body.put("displayName", it) }
         ingameName?.let { body.put("ingameName", it) }
+        if (clearIngameName) body.put("ingameName", JSONObject.NULL)
         username?.let { body.put("username", it) }
         bio?.let { body.put("bio", it) }
         avatarKey?.let { body.put("avatarKey", it) }
@@ -434,11 +457,68 @@ class WyrmRepository(context: Context, baseUrl: String) {
 
     /**
      * One trail video (OM, 2026-10-05): the MP4 the app already trimmed and
-     * compressed (at most 30 s, 720p, 16 MB), sent as itself. The server checks
-     * its boxes and moves its index to the front for streaming.
+     * compressed (at most 30 s, 720p, 16 MB). The server checks its boxes and
+     * moves its index to the front for streaming.
+     *
+     * Sent in parts (OM, 2026-10-17): as one 8 MB request it failed whole at
+     * the first glitch of a phone's network, around 80%, and its progress
+     * counted bytes handed to the phone's own buffer, so it raced to 60% and
+     * then crawled. Now each part goes at its offset; after a failure the app
+     * waits, asks the server how far it got and carries on from there. The
+     * progress only moves for parts the server has taken.
      */
     suspend fun uploadTrailVideo(file: java.io.File, progress: (Float) -> Unit): String = withContext(Dispatchers.IO) {
-        callBinary("/v1/trails/video", "PUT", "video/mp4", file.readBytes(), progress).getString("id")
+        val bytes = file.readBytes()
+        fun open(): Pair<String, Int> {
+            val opened = call("/v1/trails/video/uploads", "POST", JSONObject().put("bytes", bytes.size))
+            return opened.getString("uploadId") to opened.optInt("partBytes", VIDEO_PART_BYTES).coerceIn(64 * 1024, 1024 * 1024)
+        }
+        var (uploadId, part) = open()
+        var received = 0
+        var resync = false
+        var failures = 0
+        var reopened = 0
+        progress(0f)
+        while (true) {
+            try {
+                if (resync) {
+                    received = call("/v1/trails/video/uploads/$uploadId").getInt("received")
+                    resync = false
+                }
+                if (received >= bytes.size) {
+                    return@withContext call("/v1/trails/video/uploads/$uploadId/finish", "POST", JSONObject()).getString("id")
+                }
+                val end = minOf(bytes.size, received + part)
+                val answer = callBinary("/v1/trails/video/uploads/$uploadId?offset=$received", "PUT",
+                    "application/octet-stream", bytes.copyOfRange(received, end))
+                received = answer.getInt("received")
+                failures = 0
+                progress(received.toFloat() / bytes.size)
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (failure: Exception) {
+                val status = (failure as? ApiException)?.status
+                when {
+                    // The server lost the upload (it restarted): start it again, twice at most.
+                    status == 404 && reopened < 2 -> {
+                        reopened += 1
+                        val fresh = open()
+                        uploadId = fresh.first
+                        part = fresh.second
+                        received = 0
+                        progress(0f)
+                        continue
+                    }
+                    status != null && status != 408 && status != 409 && status != 429 && (status < 500 || status == 507) -> throw failure
+                }
+                failures += 1
+                if (failures > VIDEO_PART_TRIES) throw failure
+                kotlinx.coroutines.delay(1_000L shl minOf(failures - 1, 3))
+                resync = true
+            }
+        }
+        @Suppress("UNREACHABLE_CODE")
+        error("unreachable")
     }
 
     /**
@@ -604,6 +684,24 @@ class WyrmRepository(context: Context, baseUrl: String) {
 
     suspend fun globalMessages(): List<ChatMessage> = withContext(Dispatchers.IO) {
         call("/v1/chat/messages").messages(api)
+    }
+
+    /** Players on Wyrm in the last few minutes who share their activity. */
+    suspend fun onlinePlayers(): List<OnlinePlayer> = withContext(Dispatchers.IO) {
+        val array = call("/v1/players/online").optJSONArray("players")
+        buildList {
+            for (index in 0 until (array?.length() ?: 0)) {
+                val row = array!!.getJSONObject(index)
+                add(
+                    OnlinePlayer(
+                        username = row.optString("username").orEmptyish(),
+                        ingameName = row.optString("ingameName").orEmptyish(),
+                        displayName = row.optString("displayName").orEmptyish(),
+                        arena = row.optString("arena").orEmptyish(),
+                    )
+                )
+            }
+        }
     }
 
     suspend fun sendGlobal(body: String): Unit = withContext(Dispatchers.IO) {
@@ -801,7 +899,7 @@ class WyrmRepository(context: Context, baseUrl: String) {
         authenticated: Boolean = true,
     ): JSONObject {
         if (WYRM_BACKEND_DISCONNECTED) throw java.io.IOException("Wyrm backend disconnected")
-        val connection = (URL("$api$path").openConnection() as HttpURLConnection).apply {
+        val connection = openConnection(URL("$api$path"), method).apply {
             requestMethod = method
             connectTimeout = 12_000
             readTimeout = 15_000
@@ -849,7 +947,7 @@ class WyrmRepository(context: Context, baseUrl: String) {
         progress: ((Float) -> Unit)? = null,
     ): JSONObject {
         if (WYRM_BACKEND_DISCONNECTED) throw java.io.IOException("Wyrm backend disconnected")
-        val connection = (URL("$api$path").openConnection() as HttpURLConnection).apply {
+        val connection = openConnection(URL("$api$path"), method).apply {
             requestMethod = method
             connectTimeout = 15_000
             readTimeout = 30_000
@@ -941,6 +1039,7 @@ private fun JSONObject.messages(base: String): List<ChatMessage> {
                     authorAvatarUrl = if (avatar.startsWith("/")) "$base$avatar" else avatar,
                     authorAvatarKey = row.optString("avatarKey", "mono-ink"),
                     authorDeleted = row.optString("deletedAt").orEmptyish().isNotEmpty(),
+                    authorIngame = row.optString("ingameName").orEmptyish(),
                 )
             )
         }

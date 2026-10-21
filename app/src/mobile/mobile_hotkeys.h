@@ -23,6 +23,8 @@ typedef struct mobile_hotkeys_state {
   bool eyes_back_visible_backup;
   float eyes_back_x_backup;
   float eyes_back_y_backup;
+  float rain_x_backup;
+  float rain_y_backup;
 } mobile_hotkeys_state;
 
 void mobile_hotkeys_init(tenv* env);

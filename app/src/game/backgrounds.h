@@ -68,6 +68,27 @@ static const background_def BACKGROUNDS[] = {
     {"wyrm_dotgrid", "Dot grid", "app/res/textures/backgrounds/wyrm_dotgrid.png", 2735.23f, 2735.23f},
     {"wyrm_contours", "Contours", "app/res/textures/backgrounds/wyrm_contours.png", 7002.18f, 7002.18f},
     {"wyrm_scales", "Scales", "app/res/textures/backgrounds/wyrm_scales.png", 3282.27f, 3282.27f},
+    /* Round two (OM, 2026-10-15): nine dark and ten soft mid-tone floors,
+       Wyrm Android/tools/floors-2026-10-15 (append only). */
+    {"wyrm_ember", "Ember", "app/res/textures/backgrounds/wyrm_ember.png", 5251.63f, 5251.63f},
+    {"wyrm_dunes", "Dunes", "app/res/textures/backgrounds/wyrm_dunes.png", 7002.18f, 7002.18f},
+    {"wyrm_moss", "Moss", "app/res/textures/backgrounds/wyrm_moss.png", 5251.63f, 5251.63f},
+    {"wyrm_cells", "Cells", "app/res/textures/backgrounds/wyrm_cells.png", 6154.26f, 6154.26f},
+    {"wyrm_aurora", "Aurora", "app/res/textures/backgrounds/wyrm_aurora.png", 7002.18f, 7002.18f},
+    {"wyrm_facets", "Facets", "app/res/textures/backgrounds/wyrm_facets.png", 5470.45f, 5470.45f},
+    {"wyrm_frost", "Frost", "app/res/textures/backgrounds/wyrm_frost.png", 5251.63f, 5251.63f},
+    {"wyrm_tartan", "Tartan", "app/res/textures/backgrounds/wyrm_tartan.png", 3282.27f, 3282.27f},
+    {"wyrm_reptile", "Reptile", "app/res/textures/backgrounds/wyrm_reptile.png", 6154.26f, 6154.26f},
+    {"wyrm_sage", "Sage", "app/res/textures/backgrounds/wyrm_sage.png", 3501.09f, 3501.09f},
+    {"wyrm_shore", "Shore", "app/res/textures/backgrounds/wyrm_shore.png", 7002.18f, 7002.18f},
+    {"wyrm_terrazzo", "Terrazzo", "app/res/textures/backgrounds/wyrm_terrazzo.png", 5251.63f, 5251.63f},
+    {"wyrm_mist", "Mist", "app/res/textures/backgrounds/wyrm_mist.png", 7002.18f, 7002.18f},
+    {"wyrm_lavender", "Lavender", "app/res/textures/backgrounds/wyrm_lavender.png", 3411.04f, 2954.04f},
+    {"wyrm_clay", "Clay", "app/res/textures/backgrounds/wyrm_clay.png", 2625.82f, 2625.82f},
+    {"wyrm_paper", "Paper", "app/res/textures/backgrounds/wyrm_paper.png", 2735.23f, 2735.23f},
+    {"wyrm_seafoam", "Seafoam", "app/res/textures/backgrounds/wyrm_seafoam.png", 3501.09f, 1750.54f},
+    {"wyrm_marble", "Marble", "app/res/textures/backgrounds/wyrm_marble.png", 7002.18f, 7002.18f},
+    {"wyrm_pebbles", "Pebbles", "app/res/textures/backgrounds/wyrm_pebbles.png", 5251.63f, 5251.63f},
 };
 
 enum { NUM_BACKGROUNDS = (int)(sizeof(BACKGROUNDS) / sizeof(BACKGROUNDS[0])) };

@@ -3,6 +3,7 @@
 #include "../game/food.h"
 #include "../game/snake.h"
 #include "../game/tags.h"
+#include "../game/wyrm_skins.h"
 #include "../game/oef.h"
 #include "../platform/android_home.h"
 #include "../user.h"
@@ -10,6 +11,95 @@
 #include "arena_protocol.h"
 #include "arena_trace.h"
 #include "server.h"
+
+/*
+ * Custom arenas (OM, 2026-10-13): the id community-run arenas know a player
+ * by, sent the way NTL 9.68 sends it (main-mt.js `j3`): 'C' (0x43) + 16
+ * characters of [0-9A-Za-z], right after the challenge answer and before the
+ * join, only to the arenas on the list the apps fetch
+ * (ntl-slither.com/slither/useplayerid.php; official arenas are not on it),
+ * compared as "ip:port" in lower case. Set by the apps from any thread
+ * (Android JNI WyrmActivity.nativeSetCustomArenas, iOS
+ * WyrmIOSSetCustomArenas).
+ */
+#include <ctype.h>
+#include <string.h>
+#define CUSTOM_ARENA_ID_LEN 16
+#define CUSTOM_ARENA_LIST_MAX 8192
+static SDL_SpinLock custom_arena_lock;
+static char custom_arena_id[CUSTOM_ARENA_ID_LEN + 1];
+static char custom_arena_list[CUSTOM_ARENA_LIST_MAX]; /* lines, lower case */
+
+/* `id`: 16 of [0-9A-Za-z], anything else turns the packet off. `list`: one
+   "ip:port" a line. */
+void custom_arenas_set(const char* id, const char* list) {
+  char next_id[CUSTOM_ARENA_ID_LEN + 1] = {0};
+  bool ok = id && strlen(id) == CUSTOM_ARENA_ID_LEN;
+  for (int i = 0; ok && i < CUSTOM_ARENA_ID_LEN; i++) {
+    char ch = id[i];
+    ok = (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z') ||
+         (ch >= 'a' && ch <= 'z');
+  }
+  if (ok) memcpy(next_id, id, CUSTOM_ARENA_ID_LEN);
+  SDL_LockSpinlock(&custom_arena_lock);
+  memcpy(custom_arena_id, next_id, sizeof(next_id));
+  size_t n = 0;
+  if (list) {
+    for (const char* p = list; *p && n + 1 < sizeof(custom_arena_list); p++)
+      custom_arena_list[n++] = (char)tolower((unsigned char)*p);
+  }
+  custom_arena_list[n] = 0;
+  SDL_UnlockSpinlock(&custom_arena_lock);
+}
+
+/* True, with the packet in `out`, when `arena` is on the list. */
+static bool custom_arena_id_packet(const char* arena,
+                                   uint8_t out[1 + CUSTOM_ARENA_ID_LEN]) {
+  bool found = false;
+  size_t len = arena ? strlen(arena) : 0;
+  if (len == 0) return false;
+  SDL_LockSpinlock(&custom_arena_lock);
+  if (custom_arena_id[0]) {
+    const char* line = custom_arena_list;
+    while (*line && !found) {
+      const char* end = strchr(line, '\n');
+      size_t n = end ? (size_t)(end - line) : strlen(line);
+      if (n == len) {
+        found = true;
+        for (size_t i = 0; i < n; i++) {
+          if (line[i] != (char)tolower((unsigned char)arena[i])) {
+            found = false;
+            break;
+          }
+        }
+      }
+      line = end ? end + 1 : line + n;
+    }
+    if (found) {
+      out[0] = 'C';
+      memcpy(out + 1, custom_arena_id, CUSTOM_ARENA_ID_LEN);
+    }
+  }
+  SDL_UnlockSpinlock(&custom_arena_lock);
+  return found;
+}
+
+#ifdef WYRM_SDL_JNI
+#include <jni.h>
+JNIEXPORT void JNICALL
+Java_com_wyrm_omrajput_WyrmActivity_nativeSetCustomArenas(JNIEnv* jenv,
+                                                          jclass clazz,
+                                                          jstring id,
+                                                          jstring list) {
+  (void)clazz;
+  const char* id_utf = id ? (*jenv)->GetStringUTFChars(jenv, id, NULL) : NULL;
+  const char* list_utf =
+      list ? (*jenv)->GetStringUTFChars(jenv, list, NULL) : NULL;
+  custom_arenas_set(id_utf, list_utf);
+  if (id_utf) (*jenv)->ReleaseStringUTFChars(jenv, id, id_utf);
+  if (list_utf) (*jenv)->ReleaseStringUTFChars(jenv, list, list_utf);
+}
+#endif
 
 void snl(game_data* gdata, snake* o) {
   float orl = o->tl;
@@ -620,6 +710,17 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
               answer[0], answer[26]);
     }
 
+    /* Custom arenas (OM, 2026-10-13): NTL's id packet, between the answer
+       and the join, only to an arena on the list. */
+    {
+      uint8_t id_packet[1 + CUSTOM_ARENA_ID_LEN];
+      if (custom_arena_id_packet(user_settings_arena(usrs), id_packet)) {
+        arena_send(c, id_packet, sizeof(id_packet));
+        SDL_Log("Wyrm arena: custom arena id sent to %s",
+                user_settings_arena(usrs));
+      }
+    }
+
     int nick_len = strlen(usrs->nickname);
     uint8_t* ba = NULL;
     uint8_t* skin_compressed = NULL;
@@ -641,13 +742,25 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
     /* NTL's tag corner (see ntl_tag_corner). A preset wearing a tag goes out
        with NTL's block for that preset, unless the preset already wears that
        very tag as its official antenna: then NTL sends no block either. */
+    /* A Wyrm skin (OM, 2026-10-13, game/wyrm_skins.h) takes the tag's place
+       in the corner, so no tag goes with it. A creature goes out as its
+       nearest preset (never a custom block); a strip look keeps the
+       player's own skin. */
+    int worn_skin = web_persona ? user_settings_wyrm_skin(usrs) : 0;
+    int join_preset = wyrm_skin_preset(worn_skin) >= 0 ? wyrm_skin_preset(worn_skin)
+                                                       : usrs->default_skin;
+    if (wyrm_skin_preset(worn_skin) >= 0 && skin_compressed) {
+      tdarray_destroy(skin_compressed);
+      skin_compressed = NULL;
+      skin_compressed_len = 0;
+    }
     uint8_t tag_mark = 0, tag_kind = 0, tag_byte = 0;
-    int worn_ntl = tags_valid(usrs->tag_index) ? tags_ntl_id(usrs->tag_index) : -1;
+    int worn_ntl = !worn_skin && tags_valid(usrs->tag_index) ? tags_ntl_id(usrs->tag_index) : -1;
     bool tag_corner =
         web_persona && ntl_tag_corner(worn_ntl, &tag_mark, &tag_kind, &tag_byte);
     /* A Wyrm tag rides in the same corner with Wyrm's kind byte. A preset
        always goes out as its runs then: no official antenna is a Wyrm tag. */
-    int worn_wyrm = tags_valid(usrs->tag_index) ? tags_wyrm_id(usrs->tag_index) : -1;
+    int worn_wyrm = !worn_skin && tags_valid(usrs->tag_index) ? tags_wyrm_id(usrs->tag_index) : -1;
     bool wyrm_corner = false;
     if (!tag_corner && web_persona && worn_wyrm >= 0 && worn_wyrm < 256) {
       tag_mark = WYRM_TAG_MARK;
@@ -656,11 +769,19 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
       tag_corner = true;
       wyrm_corner = true;
     }
+    bool skin_corner = false;
+    if (worn_skin) {
+      tag_mark = WYRM_SKIN_MARK;
+      tag_kind = WYRM_SKIN_KIND;
+      tag_byte = (uint8_t)worn_skin;
+      tag_corner = true;
+      skin_corner = true;
+    }
     bool preset_block = false;
     if (tag_corner && !skin_compressed &&
-        (wyrm_corner || usrs->default_skin >= NTL_PRESET_COUNT ||
-         !ntl_preset_wears(usrs->default_skin, worn_ntl))) {
-      int preset = usrs->default_skin % NTL_PRESET_COUNT;
+        (wyrm_corner || skin_corner || join_preset >= NTL_PRESET_COUNT ||
+         !ntl_preset_wears(join_preset, worn_ntl))) {
+      int preset = join_preset % NTL_PRESET_COUNT;
       skin_compressed = tdarray_create(uint8_t);
       for (int i = 0; i < NTL_PRESET_RUN_BYTES[preset]; i++) {
         uint8_t run_byte = NTL_PRESET_RUNS[preset][i];
@@ -683,7 +804,7 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
     for (int i = 0; i < 20; i++) {
       ba[4 + i] = persona->fingerprint[i];
     }
-    ba[24] = usrs->default_skin;
+    ba[24] = (uint8_t)join_preset;
     ba[25] = nick_len;
     int m = 26;
     for (int i = 0; i < nick_len; i++) {
@@ -692,7 +813,7 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
     }
     ba[m] = 0;
     m++;
-    ba[m] = usrs->accessory;
+    ba[m] = worn_skin ? NO_ACCESSORY : usrs->accessory;
     m++;
 
     if (skin_compressed) {
@@ -710,11 +831,14 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
            and 6 written over; byte 7 stays 0. */
         ba[corner + 0] = tag_mark;
         ba[corner + 1] = tag_kind;
-        ba[corner + 2] = preset_block ? usrs->default_skin : 255;
+        ba[corner + 2] = preset_block ? (uint8_t)join_preset : 255;
         ba[corner + 6] = tag_byte;
-        ba[corner + 7] = wyrm_corner ? (uint8_t)(tag_byte ^ WYRM_TAG_CHECK) : 0;
-        SDL_Log("Wyrm arena: %s tag %d in the skin corner (%s block, %d run bytes)",
-                wyrm_corner ? "Wyrm" : "NTL", wyrm_corner ? worn_wyrm : worn_ntl,
+        ba[corner + 7] = skin_corner   ? (uint8_t)(tag_byte ^ WYRM_SKIN_CHECK)
+                         : wyrm_corner ? (uint8_t)(tag_byte ^ WYRM_TAG_CHECK)
+                                       : 0;
+        SDL_Log("Wyrm arena: %s %d in the skin corner (%s block, %d run bytes)",
+                skin_corner ? "Wyrm skin" : wyrm_corner ? "Wyrm tag" : "NTL tag",
+                skin_corner ? worn_skin : wyrm_corner ? worn_wyrm : worn_ntl,
                 preset_block ? "preset" : "custom", skin_compressed_len);
       }
 
@@ -830,11 +954,13 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
       int corner_tag = -1;
       int corner_wyrm = -1;
       int corner_preset = -1;
+      int corner_skin = 0;
       if (skl >= 8 && m + 8 <= alen) {
         corner_tag = ntl_tag_from_corner(a + m);
         corner_wyrm = wyrm_tag_from_corner(a + m);
+        corner_skin = wyrm_skin_from_corner(a + m);
         if ((a[m + 1] == NTL_TAG_FREE_KIND || a[m + 1] == NTL_TAG_PUBLIC_KIND ||
-             corner_wyrm >= 0) &&
+             corner_wyrm >= 0 || corner_skin > 0) &&
             a[m + 2] != 255)
           corner_preset = a[m + 2];
       }
@@ -1012,6 +1138,8 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
       o.skin_tag = corner_wyrm >= 0  ? tags_from_wyrm_id(corner_wyrm) + 1
                    : corner_tag >= 0 ? tags_from_ntl_id(corner_tag) + 1
                                      : 0;
+      o.wyrm_skin = corner_skin;
+      o.wyrm_skin_look = NAN;
       /* Our own snake keeps the whole design we chose. The join carries the
          code as made (bounded, see get_skin_compressed), and `cusk_data`
          above holds the arena's echo of that; drawn from the echo, a code

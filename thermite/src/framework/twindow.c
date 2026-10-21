@@ -341,6 +341,17 @@ static void apply_pending_window_change(twindow* window) {
      window object survives. Rebuild only Vulkan's surface-facing resources;
      ImGui and the raw-finger input backend remain bound to the same SDL
      window, which preserves live touch ownership after resume. */
+  /* No native window (the app is in Recents or the screen is off): wait for
+     Android's next surfaceCreated. Rebuilding now crashes the driver and
+     would spend the bounded retries (OM, 2026-10-13). */
+#ifdef __ANDROID__
+  if (window->env->ctx &&
+      (window->env->ctx->surface_lost || !window->env->ctx->swapchain_ok) &&
+      !SDL_GetPointerProperty(SDL_GetWindowProperties(window->handle),
+                              SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, NULL)) {
+    return;
+  }
+#endif
   if (window->env->ctx && window->env->ctx->surface_lost) {
     if (android_surface_recovery_attempts >=
         ANDROID_MAX_GRAPHICS_RECOVERY_ATTEMPTS) {

@@ -22,6 +22,8 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.WindowInsets as ComposeInsets
@@ -194,6 +196,10 @@ class WyrmOverlay(private val activity: Activity) :
 
     private var root: ComposeView? = null
     private var voiceHud: ComposeView? = null
+    private var rainHud: ComposeView? = null
+    private var rainPanelOpen by mutableStateOf(false)
+    private val rain by lazy { com.wyrm.omrajput.data.SnakeyRain(activity,
+        { host?.onRainRead() ?: "{}" }, { host?.onRainEnable(it) }, { host?.onRainRotate(it) }) }
 
     // Screen state. Native callbacks arrive on the engine thread and are hopped
     // to the main thread before touching any of this.
@@ -228,7 +234,8 @@ class WyrmOverlay(private val activity: Activity) :
     /** A skin tried from a trail: the Skin tab shows it; nothing is worn or saved until Wear. */
     private var skinTrial by mutableStateOf<SkinTrial?>(null)
     /** Skin tab: the classic editor instead of Skin Studio (OM, 2026-10-12: Studio is the default). */
-    private var skinClassicOpen by mutableStateOf(false)
+    /** The classic Skin page is the Skin tab's default (OM, 2026-10-13); Skin Studio opens from it. */
+    private var skinClassicOpen by mutableStateOf(true)
 
     // Help & feedback (OM, 2026-09-29).
     private var supportKind by mutableStateOf(com.wyrm.omrajput.data.SupportKind.BUG)
@@ -581,7 +588,6 @@ class WyrmOverlay(private val activity: Activity) :
     /** Index into the background table; the engine holds the same order. */
     private var arenaBackground by mutableStateOf(0)
     /** Earned during a run, held until Home can give each one its own impact. */
-    private var pendingAchievements by mutableStateOf<List<WyrmNotification>>(emptyList())
     private var lastBackupReceiptStatus = 0
     private var sessionReady = repository.hasSession && profile.id.isNotBlank()
     private var activityResumed = false
@@ -600,11 +606,11 @@ class WyrmOverlay(private val activity: Activity) :
         SKIN_BACKGROUND, DEATH, PROFILE, EDIT_PROFILE, LEADERBOARD, ARENA,
         CROP_PHOTO, SETTINGS, SETTINGS_GENERAL, SETTINGS_ASSIST, SETTINGS_NORMAL,
         SETTINGS_CONTROLS, SETTINGS_BUTTONS, SETTINGS_BOT, SETTINGS_NOTIFICATIONS,
-        SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_PERFORMANCE, SETTINGS_BACKUP,
+        SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_BACKUP,
         SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR, SNAKE_LOOK_EDITOR,
         CHAT, THREAD, PLAYER, CONNECTIONS, TEAM, VOICE, ARENA_CHAT, PRIVACY, NOTIFICATIONS,
         GUEST_SIGN_UP, GUEST_LOG_IN, LOBBY, ABOUT, TRAILS, TRAIL, TRAIL_STUDIO,
-        HELP, SUPPORT_COMPOSE, SUPPORT_REPORTS, TRAIL_SHARE;
+        HELP, SUPPORT_COMPOSE, SUPPORT_REPORTS, TRAIL_SHARE, RAIN, SHED;
 
         /**
          * Whether this screen was reached from a row on Home.
@@ -668,6 +674,13 @@ class WyrmOverlay(private val activity: Activity) :
         fun onWriteTeamMembers(packed: String)
         /** The team chat for the arena's chat window: a total, then `author<TAB>body` lines. */
         fun onWriteTeamChat(packed: String)
+        /** Arena chat tabs (OM, 2026-10-14): Wyrm's global chat, packed as the team chat. */
+        fun onWriteGlobalChat(packed: String) {}
+        /** Players online for the ONLINE tab: `name<TAB>@username · server` lines. */
+        fun onWriteOnlinePlayers(packed: String) {}
+        /** The tab the arena chat window shows: 0 team, 1 global, 2 online. */
+        fun onReadChatTab(): Int = 0
+        fun onSetChatTab(tab: Int) {}
         fun onCloseTeamChat(seconds: Float)
         fun onReadUpdate(): String
         fun onUpdateAction(action: Int)
@@ -700,6 +713,9 @@ class WyrmOverlay(private val activity: Activity) :
 
         /** Skin Studio (OM, 2026-10-12): wear the atlas at [path] with [text]; "" takes it off. */
         fun onStudioSet(path: String, text: String) {}
+        fun onRainRead(): String = "{}"
+        fun onRainEnable(on: Boolean) {}
+        fun onRainRotate(direction: Int) {}
     }
 
     var host: Host? = null
@@ -999,6 +1015,23 @@ class WyrmOverlay(private val activity: Activity) :
                             startTab = skinEditTab,
                         )
 
+                        Route.RAIN -> SnakeyRainScreen(
+                            rain = rain,
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            backLabel = settingsBackLabel(),
+                            onBack = back { panelOpen = false },
+                            // Arrange the UI (OM, 2026-10-14): the same editor as Controls, back to Rain.
+                            onArrange = { layoutEditorReturn = Route.RAIN; openEditor(Route.CONTROL_LAYOUT) },
+                        )
+
+                        // Home › Shed, the skin generator (OM, 2026-10-15).
+                        Route.SHED -> ShedScreen(
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onBack = back { panelOpen = false },
+                        )
+
                         Route.SKIN_PATTERN -> SkinPatternScreen(
                             tables = skinTables,
                             state = skinState,
@@ -1126,8 +1159,9 @@ class WyrmOverlay(private val activity: Activity) :
                             insetTop = insetTop,
                             insetBottom = insetBottom,
                             onBack = back { route = Route.PROFILE },
-                            onSave = { name, arena, user, about ->
-                                saveProfile(name, user, about, profile.avatarKey, arena)
+                            // The arena name comes from the lobby only (OM, 2026-10-14).
+                            onSave = { name, _, user, about ->
+                                saveProfile(name, user, about, profile.avatarKey)
                             },
                             onPickPhoto = {
                                 formError = ""
@@ -1682,12 +1716,6 @@ class WyrmOverlay(private val activity: Activity) :
                             onChange = ::writeSetting,
                         )
 
-                        Route.SETTINGS_PERFORMANCE -> SettingsPerformanceScreen(
-                            insetTop = insetTop,
-                            insetBottom = insetBottom,
-                            onBack = back { panelOpen = false },
-                        )
-
                         Route.SETTINGS_BACKUP, Route.SETTINGS_UPDATES -> BackupScreen(
                             update = updateState,
                             installedVersion = BuildConfig.VERSION_NAME,
@@ -1744,6 +1772,8 @@ class WyrmOverlay(private val activity: Activity) :
                             hotkeys = hotkeys,
                             keyScales = hotkeys.associate { it.action to value("layout.key_${it.action}_scale", value("keys.key_scale", 1f)) },
                             keyOpacities = hotkeys.associate { it.action to value("layout.key_${it.action}_opacity", value("keys.opacity", 1f)) },
+                            keyColours = hotkeys.associate { it.action to value("layout.key_${it.action}_colour", 0f).toInt() },
+                            keyFills = hotkeys.associate { it.action to value("layout.key_${it.action}_fill", 9f).toInt() },
                             hudPositions = ArenaHudTarget.entries.associateWith { target ->
                                 layoutPosition("${target.prefix}_x", "${target.prefix}_y")
                             },
@@ -1768,10 +1798,12 @@ class WyrmOverlay(private val activity: Activity) :
                                 }
                             },
                             onReset = { resetOrientationLayout(listOf(2, 4, 8)) },
-                            onSave = { closeEditor(Route.SETTINGS_CONTROLS, save = true) },
-                            onCancel = back { closeEditor(Route.SETTINGS_CONTROLS, save = false) },
+                            onSave = { closeEditor(layoutEditorReturn, save = true); layoutEditorReturn = Route.SETTINGS_CONTROLS },
+                            onCancel = back { closeEditor(layoutEditorReturn, save = false); layoutEditorReturn = Route.SETTINGS_CONTROLS },
                             portrait = com.wyrm.omrajput.data.PlayOrientation.portrait,
                             onToggleOrientation = { switchPlayOrientation(!com.wyrm.omrajput.data.PlayOrientation.portrait) },
+                            // The chat popup's tabs show in the arena (OM, 2026-10-18).
+                            onChatTab = { tab -> host?.onSetChatTab(tab) },
                         )
 
                         Route.ON_SCREEN_BUTTON_LAYOUT -> OnScreenButtonLayoutEditor(
@@ -1808,14 +1840,15 @@ class WyrmOverlay(private val activity: Activity) :
                         Route.ARENA_CHAT -> ArenaChatScreen(
                             messages = teamMessages,
                             draft = teamDraft,
-                            sending = teamSending,
+                            sending = if (arenaChatGlobal) arenaGlobalSending else teamSending,
                             handoverSeconds = handoverSeconds,
                             insetTop = insetTop,
                             insetBottom = insetBottom,
                             onDraftChange = { teamDraft = it },
-                            onSend = ::sendTeamMessage,
+                            onSend = { if (arenaChatGlobal) sendArenaGlobal() else sendTeamMessage() },
                             onHandoverChange = ::chooseHandover,
                             onClose = back(::closeArenaChat),
+                            placeholder = if (arenaChatGlobal) "Message everyone" else "Message the team",
                         )
 
                         Route.DEATH -> DeathScreen(
@@ -1926,22 +1959,8 @@ class WyrmOverlay(private val activity: Activity) :
                         )
                     }
 
-                    if (
-                        route == Route.HOME &&
-                        !WyrmTour.active &&
-                        pendingAchievements.isNotEmpty() &&
-                        !updatePromptVisible &&
-                        whatsNewState == null &&
-                        !backupPromptVisible &&
-                        eventGate == null
-                    ) {
-                        AchievementImpact(
-                            achievement = pendingAchievements.first(),
-                            onFinished = {
-                                pendingAchievements = pendingAchievements.drop(1)
-                            },
-                        )
-                    }
+                    /* No kills / score / achievement popups on Home any more
+                     * (OM, 2026-10-14): they stay in Notifications only. */
 
                     /* Deliberately gone. The engine draws the only connecting
                      * screen there is; this was a second one that appeared
@@ -2081,6 +2100,49 @@ class WyrmOverlay(private val activity: Activity) :
             },
         )
         voiceHud = hud
+        // A stationary full-screen host prevents Compose's root render clip from
+        // staying behind at the panel's old rectangle. Only the panel moves.
+        val rainStage = RainPanelTouchFrame(activity)
+        val panelPosition = mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
+        rainStage.onPanelMove = { x, y -> panelPosition.value = androidx.compose.ui.geometry.Offset(x, y) }
+        val rainView = ComposeView(activity).apply {
+            setViewTreeLifecycleOwner(this@WyrmOverlay)
+            setViewTreeSavedStateRegistryOwner(this@WyrmOverlay)
+            setViewTreeViewModelStoreOwner(this@WyrmOverlay)
+        }
+        rainView.setContent {
+            WyrmTheme {
+                var seen by remember { mutableStateOf(rain.panelRequests) }
+                LaunchedEffect(rain.panelRequests) {
+                    if (rain.panelRequests != seen) { seen = rain.panelRequests; rainPanelOpen = !rainPanelOpen }
+                }
+                val showing = rain.enabled && rainPanelOpen && !shown
+                LaunchedEffect(showing) {
+                    if (!rain.enabled || shown) rainPanelOpen = false
+                    rainStage.visibility = if (showing) View.VISIBLE else View.GONE
+                }
+                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val densityNow = LocalDensity.current
+                    val requested = rain.config.optDouble("panelSize", 1.0).toFloat().coerceIn(0.7f, 1.3f)
+                    val scale = minOf(requested, maxWidth.value / 428f, maxHeight.value / 388f)
+                    val width = 428f * scale
+                    val height = 388f * scale
+                    val pw = with(densityNow) { maxWidth.toPx() }
+                    val ph = with(densityNow) { maxHeight.toPx() }
+                    val w = with(densityNow) { width.dp.toPx() }
+                    val h = with(densityNow) { height.dp.toPx() }
+                    androidx.compose.runtime.SideEffect {
+                        rainStage.layoutPanel(pw, ph, w, h, densityNow.density * scale)
+                    }
+                    if (showing) RainArenaPanel(rain, onClose = { rainPanelOpen = false }, modifier = Modifier
+                        .offset { val p = panelPosition.value; androidx.compose.ui.unit.IntOffset(p.x.roundToInt(), p.y.roundToInt()) }
+                        .size(width.dp, height.dp))
+                }
+            }
+        }
+        rainStage.addView(rainView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        activity.addContentView(rainStage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        rainHud = rainView
         val pushFilter = IntentFilter(WyrmMessagingService.ACTION_PUSH_RECEIVED)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             activity.registerReceiver(pushReceiver, pushFilter, Context.RECEIVER_NOT_EXPORTED)
@@ -2215,6 +2277,13 @@ class WyrmOverlay(private val activity: Activity) :
                     route = Route.SETTINGS_ASSIST
                 }
             },
+            rainEnabled = rain.enabled,
+            onOpenRain = { origin ->
+                if (interactive) openPanel(origin) { host?.onSkinSync(false); refreshSettings(); route = Route.RAIN }
+            },
+            onOpenShed = { origin ->
+                if (interactive) openPanel(origin) { route = Route.SHED }
+            },
             onOpenTeam = { origin ->
                 if (interactive) {
                     teamTab = TeamTab.TEAM
@@ -2262,8 +2331,8 @@ class WyrmOverlay(private val activity: Activity) :
         }
         // "Try this skin": every pick changes the draft only; Wear sends it.
         val trial = skinTrial.takeIf { interactive }
-        // Skin Studio is the Skin tab's default page (OM, 2026-10-12); a skin
-        // being tried opens in the classic editor.
+        // The classic page is the Skin tab's default (OM, 2026-10-13); Skin
+        // Studio opens from its header. A skin being tried opens in the classic editor.
         if (trial == null && !skinClassicOpen) {
             SkinStudioScreen(
                 insetTop = insetTop,
@@ -2309,6 +2378,8 @@ class WyrmOverlay(private val activity: Activity) :
             headerTrailing = if (trial == null) ({
                 StudioCapsule("Skin Studio", icon = com.composables.icons.lucide.R.drawable.lucide_ic_sparkles) { skinClassicOpen = false }
             }) else null,
+            // A worn Skin Studio skin shows here too, eyes and all (OM, 2026-10-13).
+            wornPreview = if (trial == null && SkinStudio.worn != null) ({ m -> StudioWornPreview(m) }) else null,
         )
     }
 
@@ -2477,7 +2548,6 @@ class WyrmOverlay(private val activity: Activity) :
             appVersion = BuildConfig.VERSION_NAME,
             themeName = appTheme.displayName,
             foodValue = foodValue,
-            performanceValue = com.wyrm.omrajput.data.WyrmPerformance.summary(),
             unreadNotifications = visibleNotifications().count { !it.read },
             insetTop = insetTop,
             insetBottom = insetBottom,
@@ -2574,12 +2644,6 @@ class WyrmOverlay(private val activity: Activity) :
                     tabRoot = Route.SETTINGS
                     refreshSettings()
                     openPanel(origin) { route = Route.SETTINGS_FOOD }
-                }
-            },
-            onOpenPerformance = { origin ->
-                if (interactive) {
-                    tabRoot = Route.SETTINGS
-                    openPanel(origin) { route = Route.SETTINGS_PERFORMANCE }
                 }
             },
             onTabNotifications = {
@@ -3088,7 +3152,6 @@ class WyrmOverlay(private val activity: Activity) :
             // sitting on top of your own snake is noise — you already know
             // where you are. Matched by name, which is all the service knows
             // you by.
-            .filterNot { it.name.equals(nickname.trim(), ignoreCase = true) }
             .joinToString("\n") { member ->
             val present = member.playing && member.arena == myArena
             listOf(
@@ -3096,7 +3159,7 @@ class WyrmOverlay(private val activity: Activity) :
                 member.x, member.y, member.score, member.rank,
                 if (member.bot) 1 else 0,
                 if (present) 1 else 0,
-                0, -1,
+                member.snakeId, -1,
                 member.owner.replace('\t', ' ').replace('\n', ' '),
                 if (member.playing) member.arena.replace('\t', ' ').replace('\n', ' ') else "",
             ).joinToString("\t")
@@ -3141,6 +3204,8 @@ class WyrmOverlay(private val activity: Activity) :
                 // no way out of that from the inside.
                 if (route != Route.ARENA_CHAT) chatReturn = route
                 teamDraft = ""
+                // The window's GLOBAL tab writes to everyone (OM, 2026-10-14).
+                arenaChatGlobal = (host?.onReadChatTab() ?: 0) == 1
                 route = Route.ARENA_CHAT
             } else if (route == Route.ARENA_CHAT) {
                 route = chatReturn
@@ -3177,6 +3242,91 @@ class WyrmOverlay(private val activity: Activity) :
      * next position report, so it goes out within four seconds rather than
      * immediately. Saying "sending" until then is the honest thing to show.
      */
+    /*
+     * Arena chat tabs (OM, 2026-10-14). While a match is on screen the arena's
+     * chat window gets Wyrm's global chat every 4 s and the players online
+     * every 15 s; nothing is asked outside a match.
+     */
+    private var arenaChatGlobal by mutableStateOf(false)
+    private var arenaGlobalSending by mutableStateOf(false)
+    private var arenaFeedJob: Job? = null
+    private val arenaGlobalIds = HashSet<String>()
+    private var arenaGlobalTotal = 0L
+
+    private fun startArenaFeed() {
+        if (arenaFeedJob?.isActive == true) return
+        arenaFeedJob = scope.launch {
+            var tick = 0
+            while (presenceScreen == SCREEN_PLAYING) {
+                if (repository.hasSession && profile.id.isNotBlank()) {
+                    pushArenaGlobal()
+                    if (tick % 4 == 0) {
+                        runCatching { repository.onlinePlayers() }
+                            .onSuccess { host?.onWriteOnlinePlayers(packOnline(it)) }
+                    }
+                }
+                tick++
+                delay(4000)
+            }
+        }
+    }
+
+    private suspend fun pushArenaGlobal() {
+        runCatching { repository.globalMessages() }.onSuccess { list ->
+            val shown = list.filterNot { it.id in deletedChatIds }.sortedBy { it.createdAt }
+            var fresh = 0
+            for (message in shown) if (arenaGlobalIds.add(message.id)) fresh++
+            arenaGlobalTotal += fresh
+            host?.onWriteGlobalChat(packGlobal(shown))
+        }
+    }
+
+    /** In-game name first, else the username, else the account name. */
+    private fun arenaName(ingame: String, username: String, display: String): String =
+        ingame.takeIf { it.isNotBlank() }
+            ?: username.takeIf { it.isNotBlank() }
+            ?: display.ifBlank { "Player" }
+
+    private fun packGlobal(list: List<ChatMessage>): String = buildString {
+        append(arenaGlobalTotal.coerceAtLeast(list.size.toLong()))
+        list.takeLast(80).forEach { message ->
+            append('\n')
+            append(arenaName(message.authorIngame, message.authorUsername, message.authorName).oneLine())
+            append('\t')
+            append(message.body.oneLine())
+        }
+    }
+
+    private fun packOnline(list: List<com.wyrm.omrajput.data.OnlinePlayer>): String = buildString {
+        list.take(120).forEach { player ->
+            if (isNotEmpty()) append('\n')
+            append(arenaName(player.ingameName, player.username, player.displayName).oneLine())
+            append('\t')
+            val handle = if (player.username.isNotBlank()) "@${player.username}" else player.displayName
+            val server = if (player.arena.isNotBlank()) {
+                com.wyrm.omrajput.data.FriendPresence.arenaName(player.arena)
+            } else {
+                "Not in an arena"
+            }
+            append("$handle · $server".oneLine())
+        }
+    }
+
+    private fun String.oneLine(): String = replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
+
+    /** The message box on the GLOBAL tab: straight to Wyrm's global chat. */
+    private fun sendArenaGlobal() {
+        val body = teamDraft.trim().take(280)
+        if (body.isEmpty() || arenaGlobalSending) return
+        teamDraft = ""
+        arenaGlobalSending = true
+        scope.launch {
+            runCatching { repository.sendGlobal(body) }
+                .onSuccess { pushArenaGlobal() }
+            arenaGlobalSending = false
+        }
+    }
+
     private fun sendTeamMessage() {
         val body = teamDraft.trim()
         if (body.isEmpty() || teamSending) return
@@ -4042,7 +4192,7 @@ class WyrmOverlay(private val activity: Activity) :
         val id = setting.id
         val group = setting.group
         if (setting.label.isBlank() || id.startsWith("tags.")) return null
-        // Settings › Performance owns the present mode now.
+        // Vsync is always on, as the reference client (OM, 2026-10-18): no row.
         if (id == "general.vsync") return null
         val arrowSteering = settings.named("controls.joystick_mode")?.index == 2
         return when {
@@ -4198,39 +4348,6 @@ class WyrmOverlay(private val activity: Activity) :
                 on = JoystickLaserStore.on,
                 first = true,
                 onToggle = { JoystickLaserStore.applyOn(it) },
-            )
-        }
-        out += SettingsSearchEntry(
-            id = "app.performance",
-            title = "Performance mode",
-            detail = "Auto, Balanced or Performance: frame rate, heat and battery",
-            page = "Performance",
-            keywords = "fps frame rate vsync heat hot battery smooth lag 120 hz refresh balanced auto",
-            open = { openSettingsPage(Route.SETTINGS_PERFORMANCE) },
-        ) {
-            SettingsValueRow(
-                title = "Performance mode",
-                value = com.wyrm.omrajput.data.WyrmPerformance.summary(),
-                first = true,
-                onOpen = { openSettingsPage(Route.SETTINGS_PERFORMANCE) },
-            )
-        }
-        out += SettingsSearchEntry(
-            id = "app.fps-limit",
-            title = "Frame limit",
-            detail = "Auto, 30, 60, 90, 120 or Max, as this display allows",
-            page = "Performance",
-            keywords = "fps cap limit frame rate 30 60 90 120 max",
-            open = { openSettingsPage(Route.SETTINGS_PERFORMANCE) },
-        ) {
-            val choices = com.wyrm.omrajput.data.WyrmPerformance.limitChoices()
-            SettingsEnumBlock(
-                title = "Frame limit",
-                detail = "Auto lets the mode decide",
-                options = choices.map(com.wyrm.omrajput.data.WyrmPerformance::limitLabel),
-                selected = choices.indexOf(com.wyrm.omrajput.data.WyrmPerformance.limit).coerceAtLeast(0),
-                first = true,
-                onSelect = { com.wyrm.omrajput.data.WyrmPerformance.applyLimit(choices[it]) },
             )
         }
         out += SettingsSearchEntry(
@@ -4430,8 +4547,8 @@ class WyrmOverlay(private val activity: Activity) :
      */
     private fun openSkinTab() {
         refreshSettings()
-        // Skin Studio opens first every time the tab is chosen (OM, 2026-10-12).
-        if (route != Route.SKIN) skinClassicOpen = false
+        // The classic Skin page opens first every time the tab is chosen (OM, 2026-10-13).
+        if (route != Route.SKIN) skinClassicOpen = true
         tabRoot = Route.SKIN
         route = Route.SKIN
         panelOpen = false
@@ -4669,6 +4786,9 @@ class WyrmOverlay(private val activity: Activity) :
         hotkeys = hotkeys.map { if (it.action == action) moved else it }
     }
 
+    /** Where Arrange the UI goes back to: Controls, or Snakey Rain (OM, 2026-10-14). */
+    private var layoutEditorReturn = Route.SETTINGS_CONTROLS
+
     /** Where the background-size editor goes back to: Modes, or the Skin tab. */
     private var backgroundEditorReturn = Route.SETTINGS_ASSIST
 
@@ -4708,6 +4828,8 @@ class WyrmOverlay(private val activity: Activity) :
 
     /** The editors are the only Compose screens that want the phone sideways. */
     private fun openEditor(editor: Route) {
+        // Fresh keys: the Rain key shows while Rain is on, from any Arrange (OM, 2026-10-14).
+        refreshSettings()
         editorSettingsSnapshot = settings
         editorHotkeysSnapshot = hotkeys
         host?.onRequestLandscape(true)
@@ -4745,6 +4867,7 @@ class WyrmOverlay(private val activity: Activity) :
             "layout.stats_scale", "layout.stats_opacity", "layout.chat_scale", "layout.chat_opacity",
             "normal.bg_scale", "assist.bg_scale",
             "normal.render_mode", "assist.render_mode", "normal.spine", "assist.spine", "assist.hide_cosmetics",
+            "normal.spine_mine", "assist.spine_mine",
             "normal.spine_width", "assist.spine_width", "normal.snake_shadow", "assist.snake_shadow",
         ) }.forEach { setting ->
             setting.raw.toFloatOrNull()?.let { host?.onWriteSetting(setting.id, floatArrayOf(it)) }
@@ -5481,6 +5604,9 @@ class WyrmOverlay(private val activity: Activity) :
      * therefore guards Android Back here, at the host boundary, and keeps its
      * promised single exit: the acknowledgement button at the bottom.
      */
+    /** Back belongs to the app's own pages now (the tour, What's new or any page on screen). */
+    fun ownsSystemBack(): Boolean = WyrmTour.active || whatsNewState != null || shown
+
     fun consumeSystemBack(): Boolean {
         // The tour: back is its Back; on the welcome card it is Skip.
         if (WyrmTour.active) {
@@ -5496,9 +5622,9 @@ class WyrmOverlay(private val activity: Activity) :
             onBackPressedDispatcher.onBackPressed()
             return true
         }
-        // The classic Skin page goes back to Skin Studio.
-        if (route == Route.SKIN && skinClassicOpen) {
-            skinClassicOpen = false
+        // Skin Studio goes back to the classic Skin page (the tab's default).
+        if (route == Route.SKIN && !skinClassicOpen) {
+            skinClassicOpen = true
             return true
         }
         // A tab with nothing open: back to Home first; Home (and the sign-in
@@ -5719,9 +5845,9 @@ class WyrmOverlay(private val activity: Activity) :
                     }
                     failures = 0
                     counted = true
-                    val additions = result.getOrThrow().map { it.toWyrmNotification() }
-                    val known = pendingAchievements.mapTo(mutableSetOf()) { it.id }
-                    pendingAchievements = pendingAchievements + additions.filter { known.add(it.id) }
+                    // The run's achievements land in Notifications (refreshed below);
+                    // no popup on Home (OM, 2026-10-14).
+                    result.getOrThrow()
                 }
                 // Once for the whole outbox, not once per run.
                 if (counted) {
@@ -6104,6 +6230,7 @@ class WyrmOverlay(private val activity: Activity) :
                     // The old address is dead now; drop the copy held in memory
                     // so nothing redraws a face that no longer exists.
                     AvatarImages.forget(profile.avatarUrl)
+                    AvatarImages.forget(avatarSource(profile.avatarUrl, big = false))
                     acceptPlayer(player)
                     formBusy = false
                 }
@@ -6265,7 +6392,18 @@ class WyrmOverlay(private val activity: Activity) :
     private fun syncIngameName() {
         val name = nickname.trim()
         if (!repository.hasSession || name == profile.ingameName) return
-        if (!name.matches(Regex("^[A-Za-z0-9_]{3,20}$"))) return
+        // No name now (OM, 2026-10-14): the account forgets the old one, so chat,
+        // the online list and the Observatory show the username instead.
+        if (name.isEmpty()) {
+            scope.launch {
+                runCatching { repository.updateProfile(clearIngameName = true) }
+                    .onSuccess { profile = it.toWyrmProfile() }
+            }
+            return
+        }
+        // Any arena name, shared with others (OM, 2026-10-14): the server only
+        // wants 1-24 characters and no control codes now.
+        if (name.isEmpty() || name.length > 24 || name.any { it.code < 32 || it.code == 127 }) return
         if (name.lowercase() in refusedIngameNames) return
         scope.launch {
             runCatching { repository.updateProfile(ingameName = name) }
@@ -6376,6 +6514,7 @@ class WyrmOverlay(private val activity: Activity) :
 
     /** What is the same on every platform: skin, look, arena background, in-game name. */
     private fun sharedSettingsDocument(): org.json.JSONObject = org.json.JSONObject()
+        .put("rainSettings", rain.document())
         .put("schema", 1)
         .put("skin", skinState.toTrailSkin(WyrmLookStore.spec()).toJson())
         .put("arenaBackground", arenaBackground)
@@ -6386,7 +6525,6 @@ class WyrmOverlay(private val activity: Activity) :
             .put("on", JoystickLaserStore.on)
             .put("length", JoystickLaserStore.length.toDouble()))
         .put("playPortrait", com.wyrm.omrajput.data.PlayOrientation.portrait)
-        .put("performanceMode", com.wyrm.omrajput.data.WyrmPerformance.mode.key)
         // Home › Near Original (OM, 2026-10-02): the same switch on every platform.
         .put("nearOriginal", NearOriginalStore.on)
         // Controls › play feel (OM, 2026-10-05): the same on every platform.
@@ -6395,6 +6533,8 @@ class WyrmOverlay(private val activity: Activity) :
         .put("zoomSpring", PlayFeelStore.zoomSpring)
         // Controls › Joystick knob (OM, 2026-10-13): the same on every platform.
         .put("joystickKnobCentre", PlayFeelStore.knobCentre)
+        // Custom arenas (OM, 2026-10-13): the id community arenas know you by.
+        .put("customArenaId", com.wyrm.omrajput.data.CustomArenas.id(activity))
         // Auto restart (OM, 2026-10-05): the on-screen toggle's state, the engine's
         // `general.auto_respawn`. Only when the engine has said what it is, so an
         // empty read never uploads "off" over the account's "on".
@@ -6412,6 +6552,10 @@ class WyrmOverlay(private val activity: Activity) :
             reported.firstOrNull { it.id == "assist.render_mode" }?.let {
                 put("renderModeAssist", it.number.toInt().coerceIn(0, 3))
             }
+            // Wyrm skin (OM, 2026-10-13): part of the look, the same everywhere.
+            reported.firstOrNull { it.id == "skin.wyrm" }?.let {
+                put("wyrmSkin", it.number.toInt().coerceIn(0, 255))
+            }
             reported.firstOrNull { it.id == "normal.spine" }?.let {
                 put("spineNormal", it.number >= 0.5f)
             }
@@ -6420,6 +6564,20 @@ class WyrmOverlay(private val activity: Activity) :
             }
             reported.firstOrNull { it.id == "assist.hide_cosmetics" }?.let {
                 put("assistHideCosmetics", it.number >= 0.5f)
+            }
+            // Spine on my snake only (OM, 2026-10-14), each mode apart.
+            reported.firstOrNull { it.id == "normal.spine_mine" }?.let {
+                put("spineMineNormal", it.number >= 0.5f)
+            }
+            reported.firstOrNull { it.id == "assist.spine_mine" }?.let {
+                put("spineMineAssist", it.number >= 0.5f)
+            }
+            // Boost on my snake only (OM, 2026-10-18), each mode apart.
+            reported.firstOrNull { it.id == "normal.boost_own" }?.let {
+                put("boostOwnNormal", it.number >= 0.5f)
+            }
+            reported.firstOrNull { it.id == "assist.boost_own" }?.let {
+                put("boostOwnAssist", it.number >= 0.5f)
             }
             // Spine width and snake shadow (OM, 2026-10-09), each mode apart.
             reported.firstOrNull { it.id == "normal.spine_width" }?.let {
@@ -6437,6 +6595,7 @@ class WyrmOverlay(private val activity: Activity) :
         }
 
     private fun applySharedSettings(doc: org.json.JSONObject) {
+        doc.optJSONObject("rainSettings")?.takeIf { it.optInt("v") == 1 }?.let { rain.restore(it) }
         com.wyrm.omrajput.data.TrailSkin.from(doc.optJSONObject("skin"))?.let { skin ->
             val state = skin.toSkinState()
             // A preset keeps the player's own pattern underneath, as picking one does.
@@ -6485,6 +6644,11 @@ class WyrmOverlay(private val activity: Activity) :
             host?.onWriteSetting("assist.render_mode",
                 floatArrayOf(doc.optInt("renderModeAssist", 0).coerceIn(0, 3).toFloat()))
         }
+        // Wyrm skin (OM, 2026-10-13); an unknown number reads as none in the engine.
+        if (doc.has("wyrmSkin")) {
+            val skin = doc.optInt("wyrmSkin", -1)
+            if (skin in 0..255) host?.onWriteSetting("skin.wyrm", floatArrayOf(skin.toFloat()))
+        }
         if (doc.has("spineNormal")) {
             host?.onWriteSetting("normal.spine",
                 floatArrayOf(if (doc.optBoolean("spineNormal", false)) 1f else 0f))
@@ -6492,6 +6656,20 @@ class WyrmOverlay(private val activity: Activity) :
         if (doc.has("spineAssist")) {
             host?.onWriteSetting("assist.spine",
                 floatArrayOf(if (doc.optBoolean("spineAssist", false)) 1f else 0f))
+        }
+        if (doc.has("spineMineNormal")) {
+            host?.onWriteSetting("normal.spine_mine",
+                floatArrayOf(if (doc.optBoolean("spineMineNormal", false)) 1f else 0f))
+        }
+        if (doc.has("spineMineAssist")) {
+            host?.onWriteSetting("assist.spine_mine",
+                floatArrayOf(if (doc.optBoolean("spineMineAssist", false)) 1f else 0f))
+        }
+        (doc.opt("boostOwnNormal") as? Boolean)?.let { on ->
+            host?.onWriteSetting("normal.boost_own", floatArrayOf(if (on) 1f else 0f))
+        }
+        (doc.opt("boostOwnAssist") as? Boolean)?.let { on ->
+            host?.onWriteSetting("assist.boost_own", floatArrayOf(if (on) 1f else 0f))
         }
         if (doc.has("assistHideCosmetics")) {
             host?.onWriteSetting("assist.hide_cosmetics",
@@ -6519,12 +6697,10 @@ class WyrmOverlay(private val activity: Activity) :
             if (doc.has("zoomSpring")) putBoolean("zoom_spring", doc.optBoolean("zoomSpring", false))
             (doc.opt("joystickKnobCentre") as? Boolean)?.let { putBoolean("knob_centre", it) }
         }.commit()
-        doc.optString("performanceMode").takeIf { key ->
-            com.wyrm.omrajput.data.WyrmPerformance.Mode.entries.any { it.key == key }
-        }?.let { key ->
-            activity.getSharedPreferences("wyrm_performance", android.content.Context.MODE_PRIVATE).edit()
-                .putString("mode", key).commit()
-        }
+        // Custom arenas (OM, 2026-10-13): a missing or bad id keeps the phone's.
+        com.wyrm.omrajput.data.CustomArenas.adopt(activity, doc.opt("customArenaId"))
+        // "performanceMode" (Settings › Performance, removed 2026-10-18): an old
+        // document may still carry it; it is skipped.
         // The orientation swaps layouts, so it waits until the restored layout
         // is in the engine (see tryRestoreAccountSettings).
         sharedPortraitPending = if (doc.has("playPortrait")) doc.optBoolean("playPortrait") else null
@@ -6540,12 +6716,13 @@ class WyrmOverlay(private val activity: Activity) :
         WyrmLookStore.reload(activity)
         com.wyrm.omrajput.data.DropWatch.reloadPrefs()
         com.wyrm.omrajput.data.CrashWatch.reloadPrefs()
-        com.wyrm.omrajput.data.WyrmPerformance.reload(activity)
         com.wyrm.omrajput.data.PlayOrientation.reload(activity)
         JoystickLaserStore.reload(activity)
+        com.wyrm.omrajput.data.CustomArenas.publish()
         PlayFeelStore.reload(activity)
         TeamHudStore.reload(activity)
         NearOriginalStore.reload(activity)
+        rain.reload()
         chosenArena().takeIf { it.isNotEmpty() }?.let {
             arenaLabel = it
             host?.onSelectArena(it)
@@ -6815,7 +6992,6 @@ class WyrmOverlay(private val activity: Activity) :
         globalUnread = 0
         highlightedNotification = null
         pendingNotificationOpen = null
-        pendingAchievements = emptyList()
         voiceState = VoiceScreenState()
         whatsNewBackdropVisible = false
         whatsNewState = null
@@ -7392,7 +7568,7 @@ class WyrmOverlay(private val activity: Activity) :
     private suspend fun prefetchBoardFaces(extra: List<ApiPlayer> = emptyList()) {
         if (repository.shouldStayQuiet) return
         AvatarImages.prefetch(
-            (scoreBoard.take(BOARD_PREFETCH) + killBoard.take(BOARD_PREFETCH) + extra).map { it.avatarUrl },
+            (scoreBoard.take(BOARD_PREFETCH) + killBoard.take(BOARD_PREFETCH) + extra).map { avatarSource(it.avatarUrl, big = false) },
         )
     }
 
@@ -7517,6 +7693,7 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     fun onActivityResumed() {
+        if (rain.enabled) rain.connect()
         activityResumed = true
         if (shown) lifecycleRegistry.currentState = Lifecycle.State.RESUMED
         refreshNotificationPreferences()
@@ -7584,6 +7761,7 @@ class WyrmOverlay(private val activity: Activity) :
             lastTouchAt = System.currentTimeMillis()
             presenceIdle = false
             pushPresence()
+            if (screen == SCREEN_PLAYING) startArenaFeed()
         }
     }
 
@@ -7656,9 +7834,19 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     fun onActivityPaused() {
+        rain.background()
         activityResumed = false
         stopLiveInbox()
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
+    }
+
+    fun onRainKey(event: android.view.KeyEvent): Boolean {
+        if (shown || !rain.enabled || !rain.alive ||
+            (Build.VERSION.SDK_INT >= 30 && activity.window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true) ||
+            event.action != android.view.KeyEvent.ACTION_DOWN || event.repeatCount > 0) return false
+        val key = if (event.keyCode in android.view.KeyEvent.KEYCODE_F1..android.view.KeyEvent.KEYCODE_F12)
+            "F${event.keyCode - android.view.KeyEvent.KEYCODE_F1 + 1}" else event.unicodeChar.takeIf { it > 0 }?.toChar()?.toString() ?: return false
+        return rain.handleKey(key)
     }
 
     /** The engine has finished starting: it needs the worn Studio skin again. */
@@ -7667,6 +7855,7 @@ class WyrmOverlay(private val activity: Activity) :
     }
 
     fun onActivityDestroyed() {
+        rain.close()
         if (pushReceiverRegistered) {
             runCatching { activity.unregisterReceiver(pushReceiver) }
             pushReceiverRegistered = false
@@ -7677,6 +7866,7 @@ class WyrmOverlay(private val activity: Activity) :
         store.clear()
         root = null
         voiceHud = null
+        rainHud = null
     }
 }
 

@@ -1,9 +1,12 @@
 #include "redraw.h"
+#include "../platform/android_team.h"
+#include "ui_overlay.h"
 
 #include "../user.h"
 #include "backgrounds.h"
 #include "tags.h"
 #include "studio.h"
+#include "wyrm_skins.h"
 #include "../mobile/mobile_controls.h"
 #if defined(WYRM_SDL_JNI)
 #include "../platform/android_look.h"
@@ -47,6 +50,15 @@ void minimap_float_to_u8(const float* src, uint8_t* dst, int mmsz) {
  * Everyone else, and the arena, get the slither colours the join carried.
  * 0 draws our snake from those slither colours too. */
 #define WYRM_BUILT_BEADS_IN_ARENA 1
+
+/* Boost glow (OM, 2026-10-18): light and fixed. The glow used to be a sprite
+   2-3x a bead (Simple) plus one 6x a bead (Normal) on every body point, which
+   alone could drop the frame rate while a long snake boosted. Now about half
+   the size, a softer alpha and every third point; no strength slider. */
+#define WYRM_BOOST_ALPHA 0.6f
+#define WYRM_BOOST_SIMPLE 0.45f
+#define WYRM_BOOST_WIDE 1.7f
+#define WYRM_BOOST_STRIDE 3
 
 static uint32_t built_skin_rgba(tenv* env, snake* o, int index) {
   tuser_data* usr = env->usr;
@@ -879,6 +891,7 @@ static void draw_snake_imgui_eyes(tenv* env, snake* o, float fang, float hx,
 }
 
 void redraw(tenv* env) {
+  android_team_begin_frame();
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
   game_data* gdata = &usr->gdata;
@@ -1079,6 +1092,8 @@ void redraw(tenv* env) {
   ImDrawList* name_draw_list = igGetWindowDrawList();
   ImDrawList_PushTexture(name_draw_list,
                          snake_name_font->ContainerAtlas->TexRef);
+  /* Names on any floor (OM, 2026-10-18): the floor picks the ink once. */
+  const float name_floor_luma = wyrm_floor_luma_now(env);
 #endif
   for (int i = snakes_len - 1; i >= 0; i--) {
     snake* o = gdata->data.snakes + i;
@@ -1136,12 +1151,27 @@ void redraw(tenv* env) {
 
 #if defined(__ANDROID__)
           // The font atlas is bound once around the snake loop (above).
-          ImDrawList_AddText_FontPtr(
-              name_draw_list, snake_name_font, snake_name_font->LegacySize,
-              (ImVec2){ntx, nty},
-              igColorConvertFloat4ToU32(
-                  (ImVec4){ncolor[0], ncolor[1], ncolor[2], a}),
-              usrs->snake_scores ? nk_label_buff : o->nk, NULL, 0, NULL);
+          // The floor picks a light or dark ink, with a soft shadow of the
+          // other tone under it (OM, 2026-10-18).
+          {
+            ImU32 name_ink, name_shadow;
+            wyrm_name_inks(name_floor_luma, *scolor, a, &name_ink, &name_shadow);
+            if (o->id != gdata->data.snake_id &&
+                android_team_is_teammate(env, o->ntl_id, o->nk)) {
+              name_ink = igColorConvertFloat4ToU32((ImVec4){0.224f, 1.0f, 0.353f, a});
+              name_shadow = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.9f * a});
+            }
+            const char* label = usrs->snake_scores ? nk_label_buff : o->nk;
+            float size = snake_name_font->LegacySize;
+            float lift = size * 0.07f;
+            if (lift < 1.0f) lift = 1.0f;
+            ImDrawList_AddText_FontPtr(name_draw_list, snake_name_font, size,
+                                       (ImVec2){ntx + lift, nty + lift},
+                                       name_shadow, label, NULL, 0, NULL);
+            ImDrawList_AddText_FontPtr(name_draw_list, snake_name_font, size,
+                                       (ImVec2){ntx, nty}, name_ink, label,
+                                       NULL, 0, NULL);
+          }
 #else
           if (mode->player_names_outline) {
             const ImVec2 shadow_offsets[] = {
@@ -1537,7 +1567,23 @@ void redraw(tenv* env) {
             env->usr->mobile_hotkeys.rope_mode && o->id == gdata->data.snake_id;
         if (rope_mode) draw_rope_backbone(env, o, bp, mww2, mhh2, a);
 
-        if (!rope_mode) {
+        /* Wyrm skins (OM, 2026-10-13, wyrm_skins.c): a creature or strip look
+           takes the place of the beads, eyes, boost glow, tag and accessory.
+           Yours from your setting, everyone else's from their corner. */
+        const int wyrm_skin =
+            rope_mode ? 0
+            : o->id == gdata->data.snake_id ? user_settings_wyrm_skin(usrs)
+                                            : o->wyrm_skin;
+        if (wyrm_skin) {
+          float skin_r, skin_g, skin_b;
+          snake_strip_colour(env, o, &skin_r, &skin_g, &skin_b);
+          wyrm_skin_draw(wyrm_skin, gdata->data.pbx, gdata->data.pby,
+                         gdata->data.pbu, bp, gdata->data.view_xx,
+                         gdata->data.view_yy, gdata->data.gsc, mww2, mhh2, lsz,
+                         fang, o->wang, &o->wyrm_skin_look, o->tsp > o->fsp,
+                         o->alive_amt * (1 - o->dead_amt), skin_r, skin_g,
+                         skin_b);
+        } else if (!rope_mode) {
           bool show_snake_shadows = mode->show_shadows;
 #if defined(WYRM_SDL_JNI)
           // Dense private servers can put hundreds of tiny remote snakes in the
@@ -2087,7 +2133,10 @@ void redraw(tenv* env) {
               }
           }
 
-          if (mode->show_boost && mode->render_mode != 3) {
+          /* Show boost on (OM, 2026-10-18): only mine, or every snake's. */
+          if (mode->show_boost && mode->render_mode != 3 &&
+              (!usrs->ext.boost_own[mode == usrs->modes ? 0 : 1] ||
+               o->id == gdata->data.snake_id)) {
             if (mode->render_mode == 2) {
               if (o->tsp > o->fsp) {
                 m = a *
@@ -2095,12 +2144,12 @@ void redraw(tenv* env) {
                 om = m * .37;
                 mr = powf(m, .5);
                 float glsz =
-                    (1 + mode->boost_type + mr) * gdata->data.gsc * lsz;
-                float strength = 1 + mode->boost_type * mode->boost_strength;
+                    (0.7f + 0.5f * mode->boost_type + 0.6f * mr) * gdata->data.gsc * lsz;
+                float strength = (1 + mode->boost_type * WYRM_BOOST_SIMPLE) * WYRM_BOOST_ALPHA;
 
                 if (o->cusk) {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2135,7 +2184,7 @@ void redraw(tenv* env) {
                     }
                 } else {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2172,12 +2221,12 @@ void redraw(tenv* env) {
               }
               // boost effect 2:
               if (mode->boost_type == 0 && o->tsp > o->fsp) {
-                float glsz = lsz * 3 * gdata->data.gsc;
-                float strength = 0.7f * mode->boost_strength;
+                float glsz = lsz * WYRM_BOOST_WIDE * gdata->data.gsc;
+                float strength = 0.7f * WYRM_BOOST_SIMPLE;
 
                 if (o->cusk) {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2212,7 +2261,7 @@ void redraw(tenv* env) {
                     }
                 } else {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2255,12 +2304,12 @@ void redraw(tenv* env) {
                 om = m * .37;
                 mr = powf(m, .5);
                 float glsz =
-                    (1 + mode->boost_type + mr) * gdata->data.gsc * lsz;
-                float strength = 1 + mode->boost_type * mode->boost_strength;
+                    (0.7f + 0.5f * mode->boost_type + 0.6f * mr) * gdata->data.gsc * lsz;
+                float strength = (1 + mode->boost_type * WYRM_BOOST_SIMPLE) * WYRM_BOOST_ALPHA;
 
                 if (o->cusk) {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2295,7 +2344,7 @@ void redraw(tenv* env) {
                     }
                 } else {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2334,12 +2383,12 @@ void redraw(tenv* env) {
               }
               // boost effect 2:
               if (mode->boost_type == 0 && o->tsp > o->fsp) {
-                float glsz = lsz * 3 * gdata->data.gsc;
-                float strength = 0.7f * mode->boost_strength;
+                float glsz = lsz * WYRM_BOOST_WIDE * gdata->data.gsc;
+                float strength = 0.7f * WYRM_BOOST_SIMPLE;
 
                 if (o->cusk) {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2374,7 +2423,7 @@ void redraw(tenv* env) {
                     }
                 } else {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2435,7 +2484,12 @@ void redraw(tenv* env) {
              and end up on top (OM, 2026-10-05). */
           {
             int assist_on = usrs->hotkeys[HOTKEY_ASSIST].active ? 1 : 0;
-            int spine_on = usrs->ext.spine[assist_on] ? 1 : 0;
+            /* Mine only, or everyone (OM, 2026-10-14). */
+            int spine_on = usrs->ext.spine[assist_on] &&
+                                   (!usrs->ext.spine_mine[assist_on] ||
+                                    o->id == gdata->data.snake_id)
+                               ? 1
+                               : 0;
             int spine_mesh = 0;
             if (spine_on)
               spine_mesh = draw_snake_spine(env, o, bp, mww2, mhh2, a,

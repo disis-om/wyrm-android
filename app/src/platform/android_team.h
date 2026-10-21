@@ -28,6 +28,9 @@ void android_team_poll(tenv* env);
 /** Takes one immutable member snapshot for everything drawn this frame. */
 void android_team_begin_frame(void);
 
+/** Same-arena roster membership; sid first, name only when no id is known. */
+bool android_team_is_teammate(tenv* env, int sid, const char* name);
+
 /** Teammates on the minimap, for those in the same arena as this player. */
 void android_team_draw_minimap(tenv* env, float left, float top,
                                float diameter);
@@ -96,6 +99,13 @@ void android_team_release_chat(tenv* env);
  * keeps steering.
  */
 void android_team_set_chat(const char* packed);
+/* Arena chat tabs (OM, 2026-10-14): Wyrm's global chat (same packing as the
+   team chat), players online (`name<TAB>@username - server` lines), and the
+   tab shown (0 team, 1 global, 2 online). */
+void android_team_set_global_chat(const char* packed);
+void android_team_set_online(const char* packed);
+int android_team_chat_tab(void);
+void android_team_set_chat_tab(int tab);
 void android_team_set_hud_style(const float* values, int count);
 /** The stats panel's BACK, 0..1 (its plate only; text keeps OPACITY). */
 float android_team_stats_panel(void);

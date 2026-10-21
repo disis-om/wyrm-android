@@ -173,6 +173,18 @@ object TrailsStore {
     var loadingMore by mutableStateOf(false); private set
     var reachedEnd by mutableStateOf(false); private set
     var loaded by mutableStateOf(false); private set
+    /** The next page failed: the feed's foot offers Try again instead of hanging (OM, 2026-10-17). */
+    var moreFailed by mutableStateOf(false); private set
+    /**
+     * Newer trails found while the feed was open (OM, 2026-10-17, Instagram's
+     * "New posts" button): the list never moves under the reader's thumb; a
+     * pill says how many, and a tap puts them on top and goes there.
+     */
+    var fresh by mutableStateOf<List<Trail>>(emptyList()); private set
+    /** The page [fresh] came from, used whole when the gap is wider than one page. */
+    private var freshPage: com.wyrm.omrajput.data.TrailPage? = null
+    private var checkingNew = false
+    private var fetchedAt = 0L
     var error by mutableStateOf("")
     var posting by mutableStateOf<TrailPostPhase>(TrailPostPhase.Idle); private set
     var pendingActive by mutableStateOf(false); private set
@@ -205,6 +217,18 @@ object TrailsStore {
 
     private fun persistFeed() { cache?.saveTrails("feed", trails.take(20)) }
 
+    /** An edited profile updates every loaded copy without resetting pagination. */
+    fun updateAuthor(player: com.wyrm.omrajput.data.ApiPlayer) {
+        fun update(author: com.wyrm.omrajput.data.TrailAuthor) = if (author.playerId == player.id)
+            author.copy(name = player.displayName, handle = player.handle, avatarUrl = player.avatarUrl, avatarKey = player.avatarKey) else author
+        val copies = (trails.toList() + loose.values + authors.values.flatMap { it.trails }).distinctBy { it.id }
+        copies.filter { it.author.playerId == player.id }.forEach { trail -> patch(trail.id) { it.copy(author = update(it.author)) } }
+        fresh = fresh.map { it.copy(author = update(it.author)) }
+        comments.toMap().forEach { (id, rows) -> comments[id] = rows.map { it.copy(author = update(it.author)) } }
+        persistFeed()
+        authors[player.id]?.let { cache?.saveTrails("author_${player.id}", it.trails.take(30)) }
+    }
+
     /** Sign-out: "liked" and "mine" belong to the account that signed out. */
     fun reset() {
         trails.clear()
@@ -214,6 +238,10 @@ object TrailsStore {
         cursor = null
         reachedEnd = false
         loaded = false
+        moreFailed = false
+        fresh = emptyList()
+        freshPage = null
+        fetchedAt = 0L
         error = ""
         liking.clear()
         TrailFeedPlayer.stop()
@@ -239,12 +267,18 @@ object TrailsStore {
                 cursor = page.nextCursor
                 reachedEnd = page.nextCursor == null
                 error = ""
+                moreFailed = false
+                fresh = emptyList()
+                freshPage = null
+                fetchedAt = System.currentTimeMillis()
                 prefetch(page.trails)
                 persistFeed()
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (failure: Exception) {
                 error = message(failure)
+                // Old trails still on screen: say so once instead of nothing.
+                if (trails.isNotEmpty()) toast = "Couldn't refresh Trails"
             } finally {
                 loading = false
                 loaded = true
@@ -258,7 +292,20 @@ object TrailsStore {
         val next = cursor ?: return
         // Three cards before the end, so the next page is there when the thumb gets there.
         val at = trails.indexOfFirst { it.id == id }
-        if (at < 0 || at < trails.size - 3 || reachedEnd || loadingMore || loading) return
+        if (at < 0 || at < trails.size - 3 || reachedEnd || loadingMore || loading || moreFailed) return
+        loadMore(repo, next)
+    }
+
+    /** The feed's foot "Try again" after a failed page. */
+    fun retryMore() {
+        val repo = repository ?: return
+        val next = cursor ?: return
+        if (loadingMore || loading) return
+        moreFailed = false
+        loadMore(repo, next)
+    }
+
+    private fun loadMore(repo: WyrmRepository, next: String) {
         loadingMore = true
         scope.launch {
             try {
@@ -271,11 +318,60 @@ object TrailsStore {
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (failure: Exception) {
-                error = message(failure)
+                moreFailed = true
             } finally {
                 loadingMore = false
             }
         }
+    }
+
+    /**
+     * A quiet look for newer trails while the feed is open (at most once a
+     * minute; the screen calls it on open, on return and every minute). Found
+     * ones wait in [fresh] behind the pill.
+     */
+    fun checkNew(force: Boolean = false) {
+        val repo = repository ?: return
+        if (!loaded || loading || checkingNew || trails.isEmpty()) return
+        if (!force && System.currentTimeMillis() - fetchedAt < 60_000) return
+        checkingNew = true
+        scope.launch {
+            try {
+                val page = repo.trails(null)
+                fetchedAt = System.currentTimeMillis()
+                val known = trails.map { it.id }.toSet()
+                val newer = page.trails.takeWhile { it.id !in known }
+                if (newer.isNotEmpty()) {
+                    fresh = newer
+                    freshPage = page
+                    prefetch(newer)
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                // Quiet: the reader keeps what they have; the next look tries again.
+            } finally {
+                checkingNew = false
+            }
+        }
+    }
+
+    /** The pill's tap: newer trails on top. A gap wider than one page starts the feed again from that page. */
+    fun showFresh() {
+        val page = freshPage ?: return
+        val newer = fresh
+        if (newer.size >= page.trails.size) {
+            trails.clear()
+            trails.addAll(page.trails)
+            cursor = page.nextCursor
+            reachedEnd = page.nextCursor == null
+            moreFailed = false
+        } else {
+            trails.addAll(0, newer)
+        }
+        fresh = emptyList()
+        freshPage = null
+        persistFeed()
     }
 
     /** The trail fresh from the server, wherever it is shown. One not in the feed stays out of it. */
@@ -362,17 +458,15 @@ object TrailsStore {
 
     /**
      * A video trail (OM, 2026-10-05). Returns at once; then, on the phone, the
-     * clip is trimmed and compressed (`TrailVideoExport`), sent, its poster
+     * cut ([spec]: pieces, transitions, crop, sound, 2026-10-17) is made and
+     * compressed (`TrailVideoExport`), sent, its poster
      * sent as a photo and thumbnail, and the trail made. The pending card shows
      * the poster and one progress for the whole way: the export is the first
      * 45%, the clip the next 45%, the poster the rest.
      */
     internal fun postVideo(
         context: android.content.Context,
-        clip: TrailClip,
-        startMs: Long,
-        endMs: Long,
-        muted: Boolean,
+        spec: TrailEditSpec,
         effects: List<androidx.media3.common.Effect>,
         overlay: (Int, Int) -> Bitmap?,
         poster: Bitmap?,
@@ -385,16 +479,16 @@ object TrailsStore {
         pendingCaption = words
         pendingSkin = null
         pendingShareSkin = null
-        pendingVideoRetry = { postVideo(context, clip, startMs, endMs, muted, effects, overlay, poster, caption) }
+        pendingVideoRetry = { postVideo(context, spec, effects, overlay, poster, caption) }
         pendingActive = true
         posting = TrailPostPhase.Uploading(0f)
         scope.launch {
             var file: File? = null
             try {
-                file = TrailVideoExport.export(context, clip, startMs, endMs, muted, effects, overlay) { done ->
+                file = TrailVideoExport.export(context, spec, effects, overlay) { done ->
                     posting = TrailPostPhase.Uploading(done.coerceIn(0f, 1f) * 0.45f)
                 }
-                val still = poster ?: withContext(Dispatchers.IO) { TrailVideoExport.poster(context, clip, startMs, null, overlay) }
+                val still = poster ?: withContext(Dispatchers.IO) { TrailVideoExport.poster(context, spec, null, overlay) }
                     ?: throw java.io.IOException("No poster")
                 val files = withContext(Dispatchers.Default) { TrailEncoder.prepare(still) }
                 val videoId = repo.uploadTrailVideo(file) { value ->
@@ -1206,10 +1300,18 @@ fun TrailsFeedScreen(
     onAuthor: (String) -> Unit,
     onTrySkin: (Trail) -> Unit = {},
 ) {
-    LaunchedEffect(Unit) { if (!TrailsStore.loaded) TrailsStore.refresh() }
+    val desktop = LocalCentredDialogs.current
+    LaunchedEffect(Unit) { if (!TrailsStore.loaded) TrailsStore.refresh() else TrailsStore.checkNew() }
+    // A quiet look for newer trails every minute while the feed is open (OM, 2026-10-17).
+    LaunchedEffect(Unit) { while (true) { delay(60_000); TrailsStore.checkNew() } }
     val list = rememberLazyListState()
+    val feedScope = rememberCoroutineScope()
     LaunchedEffect(list) {
-        snapshotFlow { list.layoutInfo.visibleItemsInfo.lastOrNull()?.key as? String }.collect { key ->
+        snapshotFlow {
+            val visible = list.layoutInfo.visibleItemsInfo
+            if (desktop) visible.mapNotNull { it.key as? String }.lastOrNull { TrailsStore.trail(it) != null }
+            else visible.lastOrNull()?.key as? String
+        }.collect { key ->
             key?.let { TrailsStore.loadMoreIfNeeded(it) }
         }
     }
@@ -1229,7 +1331,7 @@ fun TrailsFeedScreen(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
                 androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> TrailFeedPlayer.pause()
-                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> TrailFeedPlayer.resume()
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> { TrailFeedPlayer.resume(); TrailsStore.checkNew() }
                 else -> Unit
             }
         }
@@ -1254,8 +1356,14 @@ fun TrailsFeedScreen(
                     IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Link, size = 16.dp, semibold = true)
                     Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.Link)
                 }
-                Text("Trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Wyrm.Ink,
-                    modifier = Modifier.align(Alignment.Center))
+                Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Wyrm.Ink)
+                    // Saved trails on screen while the fresh ones load (not during a pull: that has its own).
+                    if (TrailsStore.loading && TrailsStore.trails.isNotEmpty() && !pulling) {
+                        CircularProgressIndicator(color = Wyrm.Quiet, strokeWidth = 1.8.dp, modifier = Modifier.size(14.dp))
+                    }
+                }
                 val shown by androidx.compose.animation.core.animateFloatAsState(
                     if (hasTrails) 1f else 0f, spring(0.7f, 400f), label = "new button",
                 )
@@ -1279,7 +1387,10 @@ fun TrailsFeedScreen(
                         }
                     }
                     when {
-                        !TrailsStore.loaded && TrailsStore.trails.isEmpty() -> items(3, key = { "placeholder-$it" }) { TrailPlaceholder() }
+                        !TrailsStore.loaded && TrailsStore.trails.isEmpty() -> {
+                            item(key = "first-load") { TrailsLoading() }
+                            items(3, key = { "placeholder-$it" }) { TrailPlaceholder() }
+                        }
                         !hasTrails -> item(key = "empty") { TrailsEmpty(onNew) }
                         else -> {
                             if (TrailsStore.pendingActive) item(key = "pending") { Box(Modifier.animateItem()) { TrailPendingCard() } }
@@ -1295,9 +1406,13 @@ fun TrailsFeedScreen(
                                     CircularProgressIndicator(color = Wyrm.Quiet, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                                 }
                             }
-                            if (TrailsStore.reachedEnd && TrailsStore.trails.size > 3) item(key = "end") {
-                                Text("You're all caught up", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp,
-                                    color = Wyrm.Quiet, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(18.dp))
+                            if (TrailsStore.moreFailed) item(key = "more-failed") {
+                                TrailsMoreFailed { TrailsStore.retryMore() }
+                            }
+                            if (TrailsStore.reachedEnd && TrailsStore.trails.isNotEmpty()) item(key = "end") {
+                                TrailsCaughtUp(showTop = TrailsStore.trails.size > 2) {
+                                    feedScope.launch { list.animateScrollToItem(0) }
+                                }
                             }
                         }
                     }
@@ -1309,7 +1424,82 @@ fun TrailsFeedScreen(
                 }
             }
         }
+        TrailFreshPill(
+            count = TrailsStore.fresh.size,
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = insetTop + 64.dp),
+        ) {
+            TrailsStore.showFresh()
+            feedScope.launch { list.animateScrollToItem(0) }
+        }
         TrailToast(Modifier.align(Alignment.TopCenter).padding(top = insetTop + 60.dp))
+    }
+}
+
+/** The very first open: what is happening, above the card shapes. */
+@Composable
+private fun TrailsLoading() {
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(color = Wyrm.Quiet, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text("Loading trails…", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Quiet)
+    }
+}
+
+/** The next page did not come: say so, and let the reader try again (OM, 2026-10-17). */
+@Composable
+private fun TrailsMoreFailed(onRetry: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Couldn't load more trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Mute)
+        Row(
+            Modifier.clip(CircleShape).border(1.dp, Wyrm.Rule, CircleShape).background(Wyrm.Card)
+                .clickable(onClick = onRetry).padding(horizontal = 16.dp).height(34.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            IosIcon(IosGlyph.ARROW_CLOCKWISE, Wyrm.Ink, size = 14.dp, semibold = true)
+            Text("Try again", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Ink)
+        }
+    }
+}
+
+/** The end of the feed, Instagram's "You're all caught up" (OM, 2026-10-17). */
+@Composable
+private fun TrailsCaughtUp(showTop: Boolean, onTop: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(44.dp).clip(CircleShape).border(1.5.dp, Wyrm.Live, CircleShape), contentAlignment = Alignment.Center) {
+            IosIcon(IosGlyph.CHECKMARK, Wyrm.Live, size = 20.dp, semibold = true)
+        }
+        Spacer(Modifier.height(2.dp))
+        Text("You're all caught up", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+        Text("You've seen every trail. New ones show up at the top.", fontFamily = Wyrm.Body, fontSize = 12.5.sp,
+            color = Wyrm.Mute, textAlign = TextAlign.Center)
+        if (showTop) Text("Back to top", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Link,
+            modifier = Modifier.padding(top = 4.dp).clip(CircleShape).clickable(onClick = onTop)
+                .padding(horizontal = 10.dp, vertical = 6.dp))
+    }
+}
+
+/** "N new trails": newer ones wait here, the list never jumps by itself (Instagram's New posts button). */
+@Composable
+private fun TrailFreshPill(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    var last by remember { mutableStateOf(count) }
+    if (count > 0) last = count
+    AnimatedVisibility(count > 0, modifier = modifier,
+        enter = fadeIn(tween(220)) + androidx.compose.animation.slideInVertically(spring(0.75f, 420f)) { -it },
+        exit = fadeOut(tween(160)) + androidx.compose.animation.slideOutVertically(tween(180)) { -it }) {
+        Row(
+            Modifier.shadow(10.dp, CircleShape, clip = false).clip(CircleShape).background(Wyrm.Ink)
+                .clickable(onClick = onClick).padding(horizontal = 16.dp).height(36.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            IosIcon(IosGlyph.ARROW_UP, Wyrm.OnInk, size = 13.dp, semibold = true)
+            Text(if (last == 1) "1 new trail" else if (last >= 10) "New trails" else "$last new trails",
+                fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.OnInk)
+        }
     }
 }
 

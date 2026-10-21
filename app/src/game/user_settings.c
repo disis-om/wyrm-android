@@ -6,6 +6,7 @@
 #include <thermite.h>
 
 #include "../mobile/mobile_hotkeys.h"
+#include "wyrm_skins.h"
 
 #ifdef WYRM_DESKTOP
 #define USER_SETTINGS_TEMP_FILE wyrm_desktop_user_file(".tmp")
@@ -174,10 +175,19 @@ void user_settings_set_arena(user_settings* settings, const char* address) {
 #ifdef WYRM_DESKTOP
 _Static_assert(offsetof(user_settings_ext, arena) == 48,
                "Wyrm Desktop's ext.arena moved");
+_Static_assert(offsetof(user_settings_ext, wyrm_skin) == 112,
+               "Wyrm Desktop's ext.wyrm_skin moved");
 #else
 _Static_assert(offsetof(user_settings_ext, arena) == 44,
                "the phones' ext.arena moved");
+_Static_assert(offsetof(user_settings_ext, wyrm_skin) == 108,
+               "the phones' ext.wyrm_skin moved");
 #endif
+
+int user_settings_wyrm_skin(const user_settings* settings) {
+  int skin = settings->ext.wyrm_skin;
+  return wyrm_skin_valid(skin) ? skin : 0;
+}
 
 void user_settings_ext_default(user_settings_ext* x) {
   memset(x, 0, sizeof(*x));
@@ -195,6 +205,13 @@ void user_settings_ext_default(user_settings_ext* x) {
   x->spine_width[1] = 0.1f;
   x->snake_shadow[0] = false;
   x->snake_shadow[1] = false;
+  x->rain_x = 0.50f;
+  x->rain_y = 0.12f;
+  x->rain_scale = 1.0f;
+  x->rain_opacity = 0.90f;
+  x->keys_white_v1 = true;
+  x->keys_grey_fill_v1 = true;
+  for (int i = 0; i < 20; ++i) x->key_fill[i] = 9;
 #ifdef WYRM_DESKTOP
   x->eyes_back_key = GLFW_KEY_E;
 #endif
@@ -204,6 +221,7 @@ float* user_settings_key_scale(user_settings* settings, int action) {
   if (action >= 0 && action < NUM_STORED_MOBILE_ACTIONS)
     return &settings->hotkey_scale[action];
   if (action == MOBILE_HOTKEY_EYES_BACK) return &settings->ext.eyes_back_scale;
+  if (action == MOBILE_HOTKEY_RAIN) return &settings->ext.rain_scale;
   return NULL;
 }
 
@@ -212,6 +230,7 @@ float* user_settings_key_opacity(user_settings* settings, int action) {
     return &settings->hotkey_opacity[action];
   if (action == MOBILE_HOTKEY_EYES_BACK)
     return &settings->ext.eyes_back_opacity;
+  if (action == MOBILE_HOTKEY_RAIN) return &settings->ext.rain_opacity;
   return NULL;
 }
 
@@ -264,7 +283,7 @@ bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
   fixed |= ext_take_float(&ext->eyes_back_y, written >= eb_y_at + 4, 0.0f,
                           1.0f, 0.33f);
   fixed |= ext_take_float(&ext->eyes_back_scale, written >= eb_scale_at + 4,
-                          0.65f, 2.50f, settings->mobile_hotkeys.key_scale);
+                          0.65f, 5.00f, settings->mobile_hotkeys.key_scale);
   fixed |= ext_take_float(&ext->eyes_back_opacity,
                           written >= eb_opacity_at + 4, 0.05f, 1.0f,
                           settings->mobile_hotkeys.opacity);
@@ -285,6 +304,75 @@ bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
         (ext->arena[0] && !server_address_is_valid(ext->arena)))
       memset(ext->arena, 0, sizeof(ext->arena));
   }
+  {
+    /* The Wyrm skin (OM, 2026-10-13). A file without it, or with a number
+       this build does not know, wears none. */
+    size_t skin_at = offsetof(user_settings_ext, wyrm_skin);
+    if (written < skin_at + 4 ||
+        (ext->wyrm_skin != 0 && !wyrm_skin_valid(ext->wyrm_skin))) {
+      ext->wyrm_skin = 0;
+      fixed = 1;
+    }
+  }
+  {
+    /* The Rain key (OM, 2026-10-14): a file without it gets the defaults. */
+    size_t rain_at = offsetof(user_settings_ext, rain_x);
+    fixed |= ext_take_float(&ext->rain_x, written >= rain_at + 4, 0.0f, 1.0f,
+                            0.50f);
+    fixed |= ext_take_float(&ext->rain_y, written >= rain_at + 8, 0.0f, 1.0f,
+                            0.12f);
+    fixed |= ext_take_float(&ext->rain_scale, written >= rain_at + 12, 0.65f,
+                            5.00f, settings->mobile_hotkeys.key_scale);
+    fixed |= ext_take_float(&ext->rain_opacity, written >= rain_at + 16,
+                            0.05f, 1.0f, 0.90f);
+  }
+  {
+    /* Key colours (OM, 2026-10-14): missing or unknown = theme (0). */
+    size_t colour_at = offsetof(user_settings_ext, key_colour);
+    for (int i = 0; i < 20; ++i) {
+      if (written < colour_at + 4 * (size_t)(i + 1) ||
+          ext->key_colour[i] < 0 || ext->key_colour[i] > 8) {
+        if (written >= colour_at + 4 * (size_t)(i + 1)) fixed = 1;
+        ext->key_colour[i] = 0;
+      }
+    }
+  }
+  {
+    /* Key fills (OM, 2026-10-14): missing or unknown = theme (0). */
+    size_t fill_at = offsetof(user_settings_ext, key_fill);
+    for (int i = 0; i < 20; ++i) {
+      if (written < fill_at + 4 * (size_t)(i + 1) ||
+          ext->key_fill[i] < 0 || ext->key_fill[i] > 9) {
+        if (written >= fill_at + 4 * (size_t)(i + 1)) fixed = 1;
+        ext->key_fill[i] = 0;
+      }
+    }
+    size_t mine_at = offsetof(user_settings_ext, spine_mine);
+    fixed |= ext_take_bool(&ext->spine_mine[0], written >= mine_at + 1);
+    fixed |= ext_take_bool(&ext->spine_mine[1], written >= mine_at + 2);
+  }
+  {
+    unsigned char white = 0;
+    size_t white_at = offsetof(user_settings_ext, keys_white_v1);
+    if (written >= white_at + 1 && bytes_read >= ext_at + white_at + 1)
+      memcpy(&white, &ext->keys_white_v1, 1);
+    if (white != 1) {
+      memset(ext->key_colour, 0, sizeof(ext->key_colour));
+      ext->keys_white_v1 = true;
+      fixed = 1;
+    }
+  }
+  {
+    unsigned char grey = 0;
+    size_t grey_at = offsetof(user_settings_ext, keys_grey_fill_v1);
+    if (written >= grey_at + 1 && bytes_read >= ext_at + grey_at + 1)
+      memcpy(&grey, &ext->keys_grey_fill_v1, 1);
+    if (grey != 1) {
+      for (int i = 0; i < 20; ++i) ext->key_fill[i] = 9;
+      ext->keys_grey_fill_v1 = true;
+      fixed = 1;
+    }
+  }
 #ifdef WYRM_DESKTOP
   {
     /* Eyes Back's key: a file without it, or with a key this build cannot
@@ -298,6 +386,18 @@ bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
     }
   }
 #endif
+  {
+    /* Boost on my snake only (OM, 2026-10-18): missing = everyone's. */
+    size_t boost_at = offsetof(user_settings_ext, boost_own);
+    fixed |= ext_take_bool(&ext->boost_own[0], written >= boost_at + 1);
+    fixed |= ext_take_bool(&ext->boost_own[1], written >= boost_at + 2);
+  }
+  {
+    /* Arrow sensitivity (OM, 2026-10-18): missing = 0, the original 1x. */
+    size_t sens_at = offsetof(user_settings_ext, arrow_sens);
+    fixed |= ext_take_float(&ext->arrow_sens, written >= sens_at + 4, 0.0f,
+                            1.0f, 0.0f);
+  }
   /* A longer tail belongs to a newer build. Do not shrink it just to rewrite
      the size we already understood. A shorter one is missing fields, so save. */
   if (written < (uint32_t)sizeof(user_settings_ext)) fixed = 1;
@@ -800,7 +900,7 @@ void read_user_settings(user_settings* usr_settings) {
   if (normalize_on_screen_buttons(usr_settings)) save_user_settings(usr_settings);
   if (!isfinite(usr_settings->mobile_hotkeys.key_scale) ||
       usr_settings->mobile_hotkeys.key_scale < 0.65f ||
-      usr_settings->mobile_hotkeys.key_scale > 2.50f) {
+      usr_settings->mobile_hotkeys.key_scale > 5.00f) {
     usr_settings->mobile_hotkeys.key_scale = 1.0f;
     save_user_settings(usr_settings);
   }
@@ -877,7 +977,7 @@ void read_user_settings(user_settings* usr_settings) {
   for (int action = 0; action < NUM_MOBILE_ACTIONS; ++action) {
     float* key_scale = user_settings_key_scale(usr_settings, action);
     float* key_opacity = user_settings_key_opacity(usr_settings, action);
-    REPAIR_APPEARANCE(*key_scale, 0.65f, 2.50f,
+    REPAIR_APPEARANCE(*key_scale, 0.65f, 5.00f,
                       usr_settings->mobile_hotkeys.key_scale);
     REPAIR_APPEARANCE(*key_opacity, 0.05f, 1.0f,
                       usr_settings->mobile_hotkeys.opacity);

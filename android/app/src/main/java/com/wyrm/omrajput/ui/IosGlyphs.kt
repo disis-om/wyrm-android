@@ -39,6 +39,8 @@ enum class IosGlyph {
     BELL,
     /** The Trails tab (OM, 2026-10-04): a post whose trail leaves the frame for a bead. */
     TRAILS,
+    /** Snakey Rain on Loadout (OM, 2026-10-14): SF Symbols' cloud.rain. */
+    CLOUD_RAIN,
 }
 
 @Composable
@@ -173,6 +175,10 @@ private fun buildGlyph(glyph: IosGlyph, weight: Float): ImageVector {
             strokes += "M7.3,9.4 V12.6 M5.7,11 H8.9"
             fills += circle(15.9f, 10f, 0.95f)
             fills += circle(17.7f, 11.9f, 0.95f)
+        }
+        IosGlyph.CLOUD_RAIN -> {
+            strokes += "M7.2,15.2 C4.9,15.2 3.2,13.5 3.2,11.4 C3.2,9.4 4.8,7.7 6.8,7.6 C7.6,5.2 9.8,3.6 12.4,3.6 C15.6,3.6 18.2,6 18.4,9.1 C20,9.4 21.2,10.8 21.2,12.4 C21.2,14 19.9,15.2 18.3,15.2 Z"
+            strokes += "M8.2,17.6 L7.2,20.4 M12.4,17.6 L11.4,20.4 M16.6,17.6 L15.6,20.4"
         }
         IosGlyph.SCOPE -> {
             strokes += circle(12f, 12f, 7.4f)

@@ -7,6 +7,7 @@
 #include "arena_trace.h"
 #include "../game/oef.h"
 #include "callback.h"
+#include "../platform/rain_bridge.h"
 
 void arena_send(struct mg_connection* c, const void* data, size_t len) {
   /* A match can end inside the frame that reads the controls: the poll which
@@ -14,6 +15,7 @@ void arena_send(struct mg_connection* c, const void* data, size_t len) {
      hung up is what turns a finished match into a crash, so the check lives
      here rather than being remembered at every call site. */
   if (!c || !data || len == 0) return;
+  wyrm_rain_capture(c, data, len);
   arena_trace_out(((const uint8_t*)data)[0], len);
   mg_ws_send(c, data, len, WEBSOCKET_OP_BINARY);
 }
@@ -36,6 +38,7 @@ int server_connects_last_minute(void) {
 }
 
 void server_init(tenv* env) {
+  wyrm_rain_init();
   tuser_data* usr = env->usr;
   game_data* gdata = &usr->gdata;
   user_settings* usrs = &usr->usrs;
@@ -142,6 +145,7 @@ static void server_poll_drain(tenv* env, int first_wait_ms) {
 }
 
 void server_poll(tenv* env) {
+  wyrm_rain_tick(env);
   tuser_data* usr = env->usr;
   game_data* gdata = &usr->gdata;
 

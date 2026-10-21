@@ -6,6 +6,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,6 +54,16 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.composed
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -73,12 +85,75 @@ import kotlin.math.roundToInt
 
 private val nums = TextStyle(fontFeatureSettings = "tnum")
 
+/** Desktop supplies a window-level modal registry; phone defaults do nothing. */
+val LocalDialogPresence = androidx.compose.runtime.staticCompositionLocalOf<(Any, Boolean) -> Unit> { { _, _ -> } }
+val LocalSearchShortcut = androidx.compose.runtime.staticCompositionLocalOf<(Any, (() -> Unit)?) -> Unit> { { _, _ -> } }
+
+fun Modifier.centredDialogKeys(onDismiss: () -> Unit, onConfirm: (() -> Unit)? = null): Modifier = composed {
+    if (!LocalCentredDialogs.current) return@composed this
+    val id = remember { Any() }
+    val registry = LocalDialogPresence.current
+    val focus = remember { FocusRequester() }
+    androidx.compose.runtime.DisposableEffect(id) {
+        registry(id, true)
+        onDispose { registry(id, false) }
+    }
+    androidx.compose.runtime.LaunchedEffect(Unit) { focus.requestFocus() }
+    this.focusRequester(focus).onPreviewKeyEvent {
+        if (it.type != KeyEventType.KeyDown) false
+        else when (it.key) {
+            Key.Escape -> { onDismiss(); true }
+            Key.Enter -> if (onConfirm != null) { onConfirm(); true } else false
+            else -> false
+        }
+    }.focusable()
+}
+
+/** Desktop Enter sends; Shift+Enter keeps the multiline editor. */
+fun Modifier.chatSendKeys(onSend: () -> Unit): Modifier = composed {
+    if (!LocalCentredDialogs.current) return@composed this
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    this.onPreviewKeyEvent {
+        if (it.type != KeyEventType.KeyDown) false
+        else when {
+            it.key == Key.Enter && !it.isShiftPressed -> { onSend(); true }
+            it.key == Key.Escape -> { focus.clearFocus(); true }
+            else -> false
+        }
+    }
+}
+
+/** A full-window popup keeps the card sharp while the desktop page blurs. */
+@Composable
+fun CentredDialog(onDismiss: () -> Unit, onConfirm: (() -> Unit)? = null, content: @Composable () -> Unit) {
+    val appear = remember { Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { appear.animateTo(1f, tween(180)) }
+    androidx.compose.ui.window.Popup(alignment = Alignment.Center, onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.PopupProperties(focusable = true)) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.34f * appear.value))
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDismiss), contentAlignment = Alignment.Center) {
+            Box(Modifier.widthIn(max = 500.dp).fillMaxWidth().padding(20.dp)
+                .scale(0.96f + 0.04f * appear.value)
+                .clip(wyrmRounded(26.dp)).background(Wyrm.Card)
+                .clickable(remember { MutableInteractionSource() }, indication = null) {}
+                .centredDialogKeys(onDismiss, onConfirm).padding(20.dp)) { content() }
+        }
+    }
+}
+
 /**
  * True where a settings page is shown inside another layout that has its own
  * title (Wyrm Desktop's two-pane Settings): the page drops its "‹ Settings"
  * bar and keeps its section tabs and content. Android never sets it.
  */
 val LocalSettingsEmbedded = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
+ * Wyrm Desktop (OM, 2026-10-19): sheets and prompts (log out, a crash, an
+ * arena drop) open in the middle of the window as a computer's dialog, not
+ * from the bottom edge. Phones never set it.
+ */
+val LocalCentredDialogs = androidx.compose.runtime.staticCompositionLocalOf { false }
 
 /** False where there is no touch screen (Wyrm Desktop): joystick-only sections are left out. */
 val LocalTouchControls = androidx.compose.runtime.staticCompositionLocalOf { true }
@@ -856,7 +931,11 @@ internal fun formatSettingValue(setting: Setting): String = when (setting.type) 
     SettingType.BOOL -> if (setting.enabled) "On" else "Off"
     SettingType.ENUM -> setting.options.getOrNull(setting.index).orEmpty()
     SettingType.INT -> setting.number.roundToInt().toString()
-    SettingType.FLOAT -> if (setting.id == "general.death_hold") {
+    // Arrow Sensitivity shows 0-100% (OM, 2026-10-18).
+    SettingType.FLOAT -> if (setting.id == "arrow.sensitivity") {
+        val pct = (setting.number * 100f).roundToInt()
+        if (pct == 0) "Same as original slither" else "$pct%"
+    } else if (setting.id == "general.death_hold") {
         "%.2f s".format(setting.number)
     } else {
         "%.2f".format(setting.number)

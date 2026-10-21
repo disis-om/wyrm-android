@@ -40,6 +40,81 @@ static void texture_terminal_failure(const char* title, const char* detail) {
 #endif
 }
 
+/* Arena floors with their mip chain made on the CPU (OM, 2026-10-15). Mali
+   gets no GPU mip blits (see below), so a floor was a single full-size level:
+   zoomed out, every screen pixel read texels far apart and the floor pass
+   thrashed the texture cache. Players saw it as FPS that dropped on any floor
+   but black. The levels are 2 x 2 box averages, uploaded with plain buffer
+   copies (no blit), so Mali gets the same chain the other GPUs blit. Only
+   floors, and only up to this many pixels (the 4K floor is 2048 x 1774). */
+#define TEXTURE_CPU_MIP_MAX_PIXELS (2048u * 2048u)
+/* The game atlas gets the same on Mali (OM, 2026-10-18), only the levels
+   its sampler reads (BEAD_ATLAS_MAX_LOD), which keeps the extra memory to a
+   third of the atlas. */
+#define TEXTURE_CPU_MIP_ATLAS_MAX_PIXELS (4096u * 4096u)
+
+static int texture_full_levels(int w, int h) {
+  return (int)(floorf(log2f((float)GLM_MAX(w, h))) + 1);
+}
+
+/* Every level of `rgba` one after the other; `offsets[i]` is where level i
+   starts. NULL when memory runs out (the caller keeps one level). */
+static unsigned char* texture_cpu_mip_chain(const unsigned char* rgba, int w,
+                                            int h, int levels,
+                                            VkDeviceSize* offsets,
+                                            VkDeviceSize* total) {
+  VkDeviceSize size = 0;
+  for (int i = 0; i < levels; i++) {
+    offsets[i] = size;
+    size += (VkDeviceSize)GLM_MAX(1, w >> i) * (VkDeviceSize)GLM_MAX(1, h >> i) * 4;
+  }
+  unsigned char* out = malloc((size_t)size);
+  if (!out) return NULL;
+  memcpy(out, rgba, (size_t)w * (size_t)h * 4);
+  for (int i = 1; i < levels; i++) {
+    const int sw = GLM_MAX(1, w >> (i - 1)), sh = GLM_MAX(1, h >> (i - 1));
+    const int dw = GLM_MAX(1, w >> i), dh = GLM_MAX(1, h >> i);
+    const unsigned char* src = out + offsets[i - 1];
+    unsigned char* dst = out + offsets[i];
+    for (int y = 0; y < dh; y++) {
+      const int y0 = GLM_MIN(sh - 1, y * 2), y1 = GLM_MIN(sh - 1, y * 2 + 1);
+      for (int x = 0; x < dw; x++) {
+        const int x0 = GLM_MIN(sw - 1, x * 2), x1 = GLM_MIN(sw - 1, x * 2 + 1);
+        const unsigned char* a = src + ((size_t)y0 * sw + x0) * 4;
+        const unsigned char* b = src + ((size_t)y0 * sw + x1) * 4;
+        const unsigned char* c = src + ((size_t)y1 * sw + x0) * 4;
+        const unsigned char* d = src + ((size_t)y1 * sw + x1) * 4;
+        unsigned char* o = dst + ((size_t)y * dw + x) * 4;
+        for (int k = 0; k < 4; k++) o[k] = (unsigned char)((a[k] + b[k] + c[k] + d[k] + 2) / 4);
+      }
+    }
+  }
+  *total = size;
+  return out;
+}
+
+/* One copy region per level of a CPU-made chain. */
+static void texture_copy_levels(VkCommandBuffer cmd, VkBuffer staging,
+                                VkImage image, int w, int h, int levels,
+                                const VkDeviceSize* offsets) {
+  VkBufferImageCopy regions[16];
+  int n = GLM_MIN(levels, 16);
+  for (int i = 0; i < n; i++) {
+    regions[i] = (VkBufferImageCopy){
+        .bufferOffset = offsets[i],
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                             .mipLevel = (uint32_t)i,
+                             .baseArrayLayer = 0,
+                             .layerCount = 1},
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {(uint32_t)GLM_MAX(1, w >> i), (uint32_t)GLM_MAX(1, h >> i), 1}};
+  }
+  vkCmdCopyBufferToImage(cmd, staging, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         (uint32_t)n, regions);
+}
+
 texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
   texture* r = calloc(1, sizeof(texture));
   if (!r) texture_terminal_failure("Texture allocation failed",
@@ -85,7 +160,11 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
     using_fallback = true;
   }
 #endif
-  bool generate_mipmaps = strstr(filename, "tex_atlas") == NULL;
+  /* The game atlas is mipmapped too since 2026-10-18 (renderer.c
+     bead_sampler), but only the levels whose cells stay clean. */
+  const bool is_atlas = strstr(filename, "tex_atlas") != NULL;
+  bool generate_mipmaps = true;
+  const bool wants_mips = generate_mipmaps;
 #ifdef WYRM_SDL_JNI
   // Several Android Mali drivers terminate the device when asked to blit a
   // freshly uploaded image through a full mip chain. Keep the original source
@@ -99,6 +178,8 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
   int mip_levels = generate_mipmaps
                        ? (uint32_t)(floorf(log2f(GLM_MAX(w, h))) + 1)
                        : 1;
+  if (is_atlas && mip_levels > (int)BEAD_ATLAS_MAX_LOD + 1)
+    mip_levels = (int)BEAD_ATLAS_MAX_LOD + 1;
   if (generate_mipmaps) {
     VkFormatProperties format_properties = {0};
     vkGetPhysicalDeviceFormatProperties(ctx->ph_device,
@@ -114,8 +195,31 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
       mip_levels = 1;
     }
   }
-  const VkDeviceSize image_size =
-      (VkDeviceSize)w * (VkDeviceSize)h * (VkDeviceSize)4;
+  /* A floor that got no GPU mip chain gets one made on the CPU. */
+  bool cpu_mips = false;
+  VkDeviceSize level_offsets[16] = {0};
+  unsigned char* chain = NULL;
+  VkDeviceSize image_size = (VkDeviceSize)w * (VkDeviceSize)h * (VkDeviceSize)4;
+  const bool cpu_floor = strstr(filename, "background") != NULL &&
+                         (uint64_t)w * (uint64_t)h <= TEXTURE_CPU_MIP_MAX_PIXELS;
+  const bool cpu_atlas = is_atlas &&
+                         (uint64_t)w * (uint64_t)h <= TEXTURE_CPU_MIP_ATLAS_MAX_PIXELS;
+  if (wants_mips && mip_levels == 1 && !using_fallback && (cpu_floor || cpu_atlas)) {
+    const int levels =
+        GLM_MIN(texture_full_levels(w, h),
+                cpu_atlas ? (int)BEAD_ATLAS_MAX_LOD + 1 : 16);
+    VkDeviceSize total = 0;
+    chain = texture_cpu_mip_chain(data, w, h, levels, level_offsets, &total);
+    if (chain && levels > 1) {
+      cpu_mips = true;
+      mip_levels = levels;
+      image_size = total;
+      texture_startup_step(filename, "mip chain made on the CPU");
+    } else {
+      free(chain);
+      chain = NULL;
+    }
+  }
 
   texture_startup_step(filename, "allocating upload memory");
   VkResult result = vmaCreateBuffer(
@@ -140,7 +244,8 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
     texture_terminal_failure("Texture upload memory unavailable", detail);
   }
 
-  memcpy(staging_info.pMappedData, data, (size_t)image_size);
+  memcpy(staging_info.pMappedData, cpu_mips ? chain : data, (size_t)image_size);
+  free(chain);
   result = vmaFlushAllocation(ctx->allocator, staging_memory, 0, image_size);
   if (result != VK_SUCCESS) {
     char detail[192];
@@ -166,7 +271,7 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
                            .tiling = VK_IMAGE_TILING_OPTIMAL,
                            .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                     VK_IMAGE_USAGE_SAMPLED_BIT |
-                                    (mip_levels > 1
+                                    (mip_levels > 1 && !cpu_mips
                                          ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT
                                          : 0),
                            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -219,9 +324,13 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
           .image = r->image,
           .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                                .baseMipLevel = 0,
-                               .levelCount = 1,
+                               .levelCount = cpu_mips ? mip_levels : 1,
                                .baseArrayLayer = 0,
                                .layerCount = 1}});
+  if (cpu_mips) {
+    texture_copy_levels(ctx->transfer_cmd, staging_buffer, r->image, w, h,
+                        mip_levels, level_offsets);
+  } else {
   vkCmdCopyBufferToImage(
       ctx->transfer_cmd, staging_buffer, r->image,
       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &(VkBufferImageCopy){
@@ -234,8 +343,9 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
                              .layerCount = 1},
         .imageOffset = {0, 0, 0},
         .imageExtent = {w, h, 1}});
+  }
 
-  if (mip_levels > 1) {
+  if (mip_levels > 1 && !cpu_mips) {
     vkCmdPipelineBarrier(
         ctx->transfer_cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1,
@@ -343,7 +453,7 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
             .image = r->image,
             .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                                  .baseMipLevel = 0,
-                                 .levelCount = 1,
+                                 .levelCount = cpu_mips ? mip_levels : 1,
                                  .baseArrayLayer = 0,
                                  .layerCount = 1}});
   }
@@ -486,7 +596,7 @@ static void texture_barrier(VkCommandBuffer cmd, VkImage image, int level,
 }
 
 texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
-                                     int w, int h) {
+                                     int w, int h, bool is_floor) {
   if (!ctx || !rgba || w <= 0 || h <= 0) return NULL;
   VkPhysicalDeviceProperties gpu = {0};
   vkGetPhysicalDeviceProperties(ctx->ph_device, &gpu);
@@ -509,14 +619,36 @@ texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
                                       VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
     if ((format.optimalTilingFeatures & need) != need) mip_levels = 1;
   }
+  /* A floor without GPU mips gets its chain made on the CPU (see
+     texture_cpu_mip_chain), and so does a small atlas such as Skin Studio's
+     1024 x 1024 (2026-10-18), up to the levels the bead sampler reads. */
+  bool cpu_mips = false;
+  VkDeviceSize level_offsets[16] = {0};
+  unsigned char* chain = NULL;
+  VkDeviceSize bytes = (VkDeviceSize)w * (VkDeviceSize)h * 4;
+  const bool small_atlas = !is_floor && (uint64_t)w * (uint64_t)h <= 1024u * 1024u;
+  if ((is_floor || small_atlas) && mip_levels == 1 &&
+      (uint64_t)w * (uint64_t)h <= TEXTURE_CPU_MIP_MAX_PIXELS) {
+    const int levels = GLM_MIN(texture_full_levels(w, h),
+                               small_atlas ? (int)BEAD_ATLAS_MAX_LOD + 1 : 16);
+    VkDeviceSize total = 0;
+    chain = texture_cpu_mip_chain(rgba, w, h, levels, level_offsets, &total);
+    if (chain && levels > 1) {
+      cpu_mips = true;
+      mip_levels = levels;
+      bytes = total;
+    } else {
+      free(chain);
+      chain = NULL;
+    }
+  }
 
   texture_upload* up = calloc(1, sizeof(*up));
-  if (!up) return NULL;
+  if (!up) { free(chain); return NULL; }
   up->tex = calloc(1, sizeof(texture));
-  if (!up->tex) { free(up); return NULL; }
+  if (!up->tex) { free(up); free(chain); return NULL; }
   up->mip_levels = mip_levels;
 
-  const VkDeviceSize bytes = (VkDeviceSize)w * (VkDeviceSize)h * 4;
   VmaAllocationInfo info = {0};
   if (vmaCreateBuffer(
           ctx->allocator,
@@ -533,9 +665,11 @@ texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
     up->staging = VK_NULL_HANDLE;
     texture_upload_drop_image(ctx, up);
     texture_upload_release(ctx, up);
+    free(chain);
     return NULL;
   }
-  memcpy(info.pMappedData, rgba, (size_t)bytes);
+  memcpy(info.pMappedData, cpu_mips ? chain : rgba, (size_t)bytes);
+  free(chain);
   vmaFlushAllocation(ctx->allocator, up->staging_memory, 0, bytes);
 
   texture* t = up->tex;
@@ -551,7 +685,7 @@ texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
               .samples = VK_SAMPLE_COUNT_1_BIT,
               .tiling = VK_IMAGE_TILING_OPTIMAL,
               .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                       (mip_levels > 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0),
+                       (mip_levels > 1 && !cpu_mips ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0),
               .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
               .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED},
           &(VmaAllocationCreateInfo){.usage = VMA_MEMORY_USAGE_AUTO, .priority = 1.0f},
@@ -584,10 +718,13 @@ texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
   vkBeginCommandBuffer(cmd, &(VkCommandBufferBeginInfo){
                                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                                 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
-  texture_barrier(cmd, t->image, 0, 1, VK_IMAGE_LAYOUT_UNDEFINED,
+  texture_barrier(cmd, t->image, 0, cpu_mips ? mip_levels : 1, VK_IMAGE_LAYOUT_UNDEFINED,
                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_NONE,
                   VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                   VK_PIPELINE_STAGE_TRANSFER_BIT);
+  if (cpu_mips) {
+    texture_copy_levels(cmd, up->staging, t->image, w, h, mip_levels, level_offsets);
+  } else
   vkCmdCopyBufferToImage(
       cmd, up->staging, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
       &(VkBufferImageCopy){
@@ -596,7 +733,7 @@ texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
                                .baseArrayLayer = 0,
                                .layerCount = 1},
           .imageExtent = {w, h, 1}});
-  if (mip_levels > 1) {
+  if (mip_levels > 1 && !cpu_mips) {
     texture_barrier(cmd, t->image, 0, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                     VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
@@ -630,7 +767,7 @@ texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
                     VK_PIPELINE_STAGE_TRANSFER_BIT,
                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
   } else {
-    texture_barrier(cmd, t->image, 0, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    texture_barrier(cmd, t->image, 0, cpu_mips ? mip_levels : 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                     VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
                     VK_PIPELINE_STAGE_TRANSFER_BIT,

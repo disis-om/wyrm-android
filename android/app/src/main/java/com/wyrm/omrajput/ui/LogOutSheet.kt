@@ -67,26 +67,32 @@ internal fun LogOutSheet(
                 .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onCancel),
         )
     }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+    val centred = LocalCentredDialogs.current
+    Box(Modifier.fillMaxSize(), contentAlignment = if (centred) Alignment.Center else Alignment.BottomCenter) {
         AnimatedVisibility(
             visible,
-            enter = slideInVertically(iosSpring(0.42f, 0.86f)) { it } + fadeIn(tween(120)),
-            exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
+            enter = if (centred) fadeIn(tween(160)) + androidx.compose.animation.scaleIn(tween(200), initialScale = 0.94f)
+            else slideInVertically(iosSpring(0.42f, 0.86f)) { it } + fadeIn(tween(120)),
+            exit = if (centred) fadeOut(tween(140)) + androidx.compose.animation.scaleOut(tween(160), targetScale = 0.96f)
+            else slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
         ) {
             Column(
                 Modifier
-                    .widthIn(max = 520.dp)
+                    .widthIn(max = if (centred) 440.dp else 520.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 10.dp)
-                    .padding(bottom = insetBottom + 10.dp)
+                    .padding(bottom = if (centred) 0.dp else insetBottom + 10.dp)
+                    .centredDialogKeys(onCancel, onLogOut)
                     .clip(wyrmRounded(30.dp))
                     .background(Wyrm.Card)
                     .clickable(remember { MutableInteractionSource() }, indication = null) {}
                     .padding(horizontal = 22.dp, vertical = 22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Box(Modifier.width(38.dp).height(5.dp).clip(wyrmRounded(3.dp)).background(Wyrm.Rule))
-                Spacer(Modifier.height(18.dp))
+                if (!centred) {
+                    Box(Modifier.width(38.dp).height(5.dp).clip(wyrmRounded(3.dp)).background(Wyrm.Rule))
+                    Spacer(Modifier.height(18.dp))
+                }
                 WyrmAvatar(url = avatarUrl, avatarKey = avatarKey, initial = name.take(1).uppercase(), size = 64.dp)
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -109,7 +115,7 @@ internal fun LogOutSheet(
                     Icon(painterResource(LucideR.drawable.lucide_ic_cloud_upload), null, tint = Wyrm.Ink, modifier = Modifier.size(19.dp))
                     Text(
                         "Your settings, skin and layouts are saved to your account first. " +
-                            "Then this phone forgets everything, and it all comes back when you log in again.",
+                            "Then this ${if (centred) "computer" else "phone"} forgets everything, and it all comes back when you log in again.",
                         fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = Wyrm.Mute,
                     )
                 }
@@ -133,7 +139,7 @@ internal fun LogOutSaveFailed(
     onLogOutAnyway: () -> Unit,
     onStay: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize().background(Wyrm.Paper), contentAlignment = Alignment.Center) {
+    val card: @Composable () -> Unit = {
         Column(
             Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -160,6 +166,8 @@ internal fun LogOutSaveFailed(
             SheetButton("Stay logged in", filled = Color.Transparent, text = Wyrm.Mute, onClick = onStay)
         }
     }
+    if (LocalCentredDialogs.current) CentredDialog(onStay, onRetry, card)
+    else Box(Modifier.fillMaxSize().background(Wyrm.Paper), contentAlignment = Alignment.Center) { card() }
 }
 
 @Composable

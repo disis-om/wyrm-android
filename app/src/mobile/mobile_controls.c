@@ -436,10 +436,21 @@ static void arrow_seed(tenv* env, float x, float y) {
  * smooths only the arrow it draws, and smoothing the heading is what made this
  * feel like a stick with lag.
  */
+/* Sensitivity (OM, 2026-10-18): the finger's move times this. 0 on the
+   slider = 1x, the original; full (100%) = ARROW_SENS_MAX, which is what the
+   first build's half-way was (sqrt 12); exponential between. */
+#define ARROW_SENS_MAX 3.4641f
+static float arrow_gain(tenv* env) {
+  if (arrow_original_motion()) return 1.0f;
+  float s = clampf(env->usr->usrs.ext.arrow_sens, 0.0f, 1.0f);
+  return powf(ARROW_SENS_MAX, s);
+}
+
 static void update_arrow(tenv* env, float x, float y) {
   mobile_controls_state* state = &env->usr->mobile_controls;
-  state->arrow_vec[0] += x - state->arrow_last[0];
-  state->arrow_vec[1] += y - state->arrow_last[1];
+  float gain = arrow_gain(env);
+  state->arrow_vec[0] += (x - state->arrow_last[0]) * gain;
+  state->arrow_vec[1] += (y - state->arrow_last[1]) * gain;
   state->arrow_last[0] = x;
   state->arrow_last[1] = y;
 
@@ -932,7 +943,6 @@ void mobile_controls_update(tenv* env) {
    * engine's own frame factor, which is what those rates are per.
    */
   {
-    mobile_arrow_settings* arrow = &env->usr->usrs.arrow_controls;
     game_data* gdata = &env->usr->gdata;
     float vfr = gdata->data.vfr;
     if (!(vfr > 0.0f) || vfr > 4.0f) vfr = 1.0f;
@@ -944,12 +954,13 @@ void mobile_controls_update(tenv* env) {
        slither eases at 0.6, which is a smoothness of 0.4. */
     /* The original motion eases 0.6 every frame, as Main.as does (not per
        unit of time); Wyrm's own uses the player's lag, frame-rate free. */
+    /* With Customise on it is the same 0.6, frame-rate free (Sensitivity
+       replaced the lag slider, OM 2026-10-18). */
     float ease;
     if (arrow_original_motion()) {
       ease = 0.6f;
     } else {
-      ease = clampf(1.0f - arrow->smoothness, 0.05f, 0.95f);
-      ease = 1.0f - powf(1.0f - ease, vfr);
+      ease = 1.0f - powf(0.4f, vfr);
     }
     state->arrow_draw[0] += (state->arrow_vec[0] - state->arrow_draw[0]) * ease;
     state->arrow_draw[1] += (state->arrow_vec[1] - state->arrow_draw[1]) * ease;

@@ -19,6 +19,10 @@ typedef struct snake {
      index into the tag sheet plus one: 0 is none, so a zeroed snake (the AI
      arena's) wears nothing. */
   int skin_tag;
+  /* The Wyrm skin in this snake's corner (game/wyrm_skins.h), 0 for none;
+     and where its eyes look, eased (NAN until the first frame). */
+  int wyrm_skin;
+  float wyrm_skin_look;
   bool local_player;
   int cv;
   int fpos;

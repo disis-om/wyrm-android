@@ -1338,6 +1338,9 @@ retry:
             ANativeWindow_release(data->native_window);
             data->native_window = NULL;
         }
+        /* Wyrm (2026-10-13): the property kept the released pointer; the app
+           reads it to know a surface is there to rebuild on. */
+        SDL_SetPointerProperty(SDL_GetWindowProperties(Android_Window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, NULL);
 
         // GL Context handling is done in the event loop because this function is run from the Java thread
     }

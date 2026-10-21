@@ -40,6 +40,8 @@ class SkinTextures(
     val looks: Map<Int, ImageBitmap> = emptyMap(),
     /** Each look cell cut to its art and turned to face up, for the picker tiles. */
     val lookThumbnails: Map<Int, ImageBitmap> = emptyMap(),
+    /** Wyrm skins (`WyrmSkins`): each skin's picture, by its number. */
+    val wyrmSkins: Map<Int, ImageBitmap> = emptyMap(),
 ) {
     companion object {
         private val lock = Mutex()
@@ -172,7 +174,31 @@ class SkinTextures(
             }.toMap()
             val looks = lookCells.mapValues { it.value.asImageBitmap() }
             val lookThumbs = lookCells.mapNotNull { (cell, bitmap) -> lookThumbnail(bitmap)?.let { cell to it.asImageBitmap() } }.toMap()
-            return SkinTextures(beads, airBeads, airShadow, airWheel, accessories, accessoryThumbs, tags, tagThumbs, backgrounds, wyrmBeads, looks, lookThumbs)
+            val skinSheet = decode(context, "textures/wyrm_skins.webp", 4096)
+            val wyrmSkins = if (skinSheet == null) emptyMap() else WyrmSkins.all.withIndex().mapNotNull { (cell, skin) ->
+                crop(
+                    skinSheet, (cell % WyrmSkins.SHEET_COLUMNS).toDouble() / WyrmSkins.SHEET_COLUMNS,
+                    (cell / WyrmSkins.SHEET_COLUMNS).toDouble() / WyrmSkins.SHEET_ROWS,
+                    1.0 / WyrmSkins.SHEET_COLUMNS, 1.0 / WyrmSkins.SHEET_ROWS,
+                )?.let { skin.number to it.asImageBitmap() }
+            }.toMap()
+            return SkinTextures(beads, airBeads, airShadow, airWheel, accessories, accessoryThumbs, tags, tagThumbs, backgrounds, wyrmBeads, looks, lookThumbs, wyrmSkins)
+        }
+    }
+}
+
+/**
+ * A Wyrm skin's moving preview (OM, 2026-10-13): its sheet of
+ * [WyrmSkins.LIVE_FRAMES] frames, `textures/wyrm_skins_live/<number>.webp`.
+ */
+@Composable
+internal fun rememberWyrmSkinFrames(number: Int): State<ImageBitmap?> {
+    val context = LocalContext.current
+    return produceState<ImageBitmap?>(initialValue = null, number) {
+        value = if (number <= 0) null else withContext(Dispatchers.IO) {
+            runCatching {
+                context.assets.open("textures/wyrm_skins_live/$number.webp").use { BitmapFactory.decodeStream(it) }?.asImageBitmap()
+            }.getOrNull()
         }
     }
 }

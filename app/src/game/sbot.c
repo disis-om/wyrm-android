@@ -22,17 +22,11 @@
  * offsets .38 / .22 / -.8 / .16. NTL's code is quoted by its names in the
  * comments (`Ue`, `pe`, `Xe`, `Vf`, `fe`, `Re`...).
  *
- * Wyrm keeps three things of its own:
- *  - the border guard (`avoid_border_emergency`, OM 2026-10-12): it outranks
- *    every state and turns the snake back inward before it reaches the wall;
- *  - the wall is measured from the head, not the eased camera, and obeys the
- *    server's border while a shrink is still easing on screen;
- *  - surrounded = flee with boost, always (OM): NTL boosts only when the
- *    snake surrounding it is boosting. Coiled, NTL never looked; Wyrm checks
- *    for one snake wrapped round it (its points outside our own coil) and
- *    breaks out with boost too.
- *  And one fix: NTL's open-gap search (`Xe`) loses a gap that starts at
- *  sector 0 (JavaScript treats the index 0 as false); Wyrm keeps it.
+ * Nothing of Wyrm's own is left (OM, 2026-10-14): no border guard, the wall
+ * is measured from the camera as NTL does, surrounded boosts only when the
+ * snake around is boosting, no break-out from the coil, and the open-gap
+ * search keeps NTL's JavaScript truthiness (a gap starting at sector 0 is
+ * not seen). See Wyrm iOS/Scripts/engine_bot_ntl_exact_2026_10_14.py.
  */
 
 #define NTL_ARC ((double)M_PI / 8.0)       /* re */
@@ -283,16 +277,6 @@ static snake* find_me(game_data* gdata) {
   return NULL;
 }
 
-/* During a shrink the renderer eases flux_grd over several frames, but the
-   server's border (real_flux_grd) has already moved: the bot obeys the smaller
-   (OM, 2026-10-12, from the reference client). */
-static inline double safe_border_radius(const game_data* gdata) {
-  double smoothed = gdata->data.flux_grd;
-  double server = gdata->data.real_flux_grd;
-  if (server > 0.0 && (smoothed <= 0.0 || server < smoothed)) return server;
-  return smoothed;
-}
-
 /* tf.Df: a snake's width. */
 static inline double ntl_width(double sc) { return js_round(NTL_WIDTH * sc); }
 
@@ -354,12 +338,12 @@ static bool every(game_data* gdata) {
 
   B.centre = gdata->data.grd;
   B.he = 0.98 * gdata->data.grd;
-  B.pts_r = safe_border_radius(gdata);
-  if (B.pts_r <= 0) B.pts_r = B.he;
-  /* H9: the server is shrinking the arena; then its radius (Xl) is the wall. */
+  /* H9: the server is shrinking the arena; then its radius (Xl) is the wall.
+     NTL: wall points on (H9 ? Xl : he), nearness against (H9 ? Xl : af). */
   bool shrinking = gdata->data.real_flux_grd > 0 &&
                    gdata->data.real_flux_grd < gdata->data.grd * 0.98 - 1.0;
-  B.prox_r = shrinking ? B.pts_r : B.centre;
+  B.pts_r = shrinking ? gdata->data.real_flux_grd : B.he;
+  B.prox_r = shrinking ? gdata->data.real_flux_grd : B.centre;
 
   B.hx = me->xx;
   B.hy = me->yy;
@@ -369,9 +353,9 @@ static bool every(game_data* gdata) {
   B.aang = me->ehang;
   B.ca = cos(B.ang);
   B.sa = sin(B.ang);
-  /* gu / iu: from the head, not the eased camera (Wyrm). */
-  B.gu = sqrt(dist2(B.hx, B.hy, B.centre, B.centre));
-  B.iu = atan2(B.hy - B.centre, B.hx - B.centre);
+  /* gu / iu: NTL measures the wall from the camera (view_xx / view_yy). */
+  B.gu = sqrt(dist2(gdata->data.view_xx, gdata->data.view_yy, B.centre, B.centre));
+  B.iu = atan2(gdata->data.view_yy - B.centre, gdata->data.view_xx - B.centre);
   B.follow = fabs(B.centre - B.gu) < NTL_WALL_NEAR
                  ? (v2){B.centre + cos(B.iu + 64.0 * B.dir / B.centre) * B.he,
                         B.centre + sin(B.iu + 64.0 * B.dir / B.centre) * B.he}
@@ -451,15 +435,15 @@ static void gather(game_data* gdata) {
       if (d2 <= reach * reach) push_se((cpt){po->xx, po->yy, d2, er, i, false});
     }
   }
-  /* The wall, as NTL draws it: a point every 8 units along 2000 of it.
-     Tagged -1 (NTL tagged it snake 0, which counted the wall as that snake). */
+  /* The wall, as NTL draws it: a point every 8 units along 2000 of it,
+     tagged snake 0 as NTL does (it counts with that snake when surrounded). */
   if (fabs(B.prox_r - B.gu) < NTL_WALL_NEAR) {
     for (int b = -1000; b <= 1000; b += 8) {
       double wx = B.centre + cos(B.iu + b / B.centre) * B.pts_r;
       double wy = B.centre + sin(B.iu + b / B.centre) * B.pts_r;
       double d2 = dist2(B.hx, B.hy, wx, wy);
-      note_sector(wx, wy, d2, 8.0, -1);
-      push_se((cpt){wx, wy, d2, 8.0, -1, false});
+      note_sector(wx, wy, d2, 8.0, 0);
+      push_se((cpt){wx, wy, d2, 8.0, 0, false});
     }
   }
   qsort(B.se, B.se_n, sizeof(cpt), se_cmp);
@@ -499,7 +483,9 @@ static void widest_gap(void) {
       if (start < 0) start = i;
     } else {
       d = B.ie[i].d2;
-      if (start >= 0) {
+      /* NTL's `ab&&`: a gap starting at sector 0 is falsy, so it is kept
+         open and never pushed (NTL as it is). */
+      if (start > 0) {
         opens[no++] = (gap){start, i - 1, i - 1 - start};
         start = -1;
       }
@@ -509,7 +495,7 @@ static void widest_gap(void) {
       far_i = i;
     }
   }
-  if (start >= 0) {
+  if (start > 0) {
     if (no > 0) {
       opens[0].s = start;
       opens[0].sz = opens[0].e - start;
@@ -529,23 +515,33 @@ static void widest_gap(void) {
   }
 }
 
-/* tf.pe: surrounded — by one snake over half the sectors, or by anything
-   close in over half of them. Wyrm: always flee with boost. */
+/* tf.pe: surrounded, by one snake over half the sectors (boost only if that
+   snake is boosting and does not fill every sector), or by anything close in
+   over half of them (no boost). NTL as it is (OM, 2026-10-14). */
 static bool surrounded(game_data* gdata) {
-  (void)gdata;
   int count[1024];
   memset(count, 0, sizeof(count));
-  int most = 0, close = 0;
+  int most = 0, close = 0, most_si = -1;
   for (int i = 0; i < NTL_ARCS; i++) {
     if (!B.ie_set[i]) continue;
     int si = B.ie[i].si;
-    if (si >= 0 && si < 1024 && ++count[si] > most) most = count[si];
-    double near = B.radius * NTL_ENCIRCLE_DIST;
-    if (B.ie[i].d2 < near * near) close++;
+    if (si >= 0 && si < 1024 && ++count[si] > most) {
+      most = count[si];
+      most_si = si;
+    }
+    double near_d = B.radius * NTL_ENCIRCLE_DIST;
+    if (B.ie[i].d2 < near_d * near_d) close++;
   }
-  if (most > NTL_ARCS * NTL_ENCIRCLE_ONE || close > NTL_ARCS * NTL_ENCIRCLE_ALL) {
+  if (most > NTL_ARCS * NTL_ENCIRCLE_ONE) {
     widest_gap();
-    B.boost = true;
+    int ns = tdarray_length(gdata->data.snakes);
+    B.boost = most != NTL_ARCS && most_si >= 0 && most_si < ns &&
+              gdata->data.snakes[most_si].sp > 10.0f;
+    return true;
+  }
+  if (close > NTL_ARCS * NTL_ENCIRCLE_ALL) {
+    widest_gap();
+    B.boost = false;
     return true;
   }
   B.boost = false;
@@ -744,50 +740,6 @@ static void danger_zone(double off, v2 target, v2 norm, double close_dist, v2 pa
   poly_box(out);
 }
 
-/* Coiled, a snake wrapped round us (Wyrm, OM 2026-10-13): one snake's points
-   outside our own coil fill more than half the sectors. Then break out of the
-   coil to the widest gap, with boost. */
-static bool wrapped_round(game_data* gdata, const poly* inside) {
-  memset(B.ie_set, 0, sizeof(B.ie_set));
-  int ns = tdarray_length(gdata->data.snakes);
-  int most = 0;
-  for (int i = 0; i < ns; i++) {
-    snake* s = gdata->data.snakes + i;
-    if (s->id == B.id || s->dead) continue;
-    bool mine[NTL_ARCS] = {0};
-    int count = 0;
-    double er = ntl_width(s->sc) / 2.0;
-    int pn = tdarray_length(s->pts);
-    for (int j = -1; j < pn; j++) {
-      double x, y, r;
-      if (j < 0) {
-        x = s->xx;
-        y = s->yy;
-        r = B.ne.r;
-      } else {
-        body_part* po = s->pts + j;
-        if (po->dying) continue;
-        x = po->xx;
-        y = po->yy;
-        r = er;
-      }
-      if (!in_box(x, y) || in_poly((v2){x, y}, inside)) continue;
-      note_sector(x, y, dist2(B.hx, B.hy, x, y), r, i);
-      int sec = sector_of(ntl_atan2(js_round(y - B.hy), js_round(x - B.hx)));
-      if (!mine[sec]) {
-        mine[sec] = true;
-        count++;
-      }
-    }
-    if (count > most) most = count;
-  }
-  if (most <= NTL_ARCS * NTL_ENCIRCLE_ONE) return false;
-  widest_gap();
-  B.boost = true;
-  B.state = BOT_TOCIRCLE;
-  return true;
-}
-
 /* tf.Re: follow our own body round, keeping the coil clear. */
 static void coil(game_data* gdata) {
   own_body(gdata);
@@ -813,7 +765,6 @@ static void coil(game_data* gdata) {
   for (double t = from; t < to && inside.n < MAX_INSIDE; t += w) inside_buf[inside.n++] = body_at(t);
   poly_box(&inside);
 
-  if (wrapped_round(gdata, &inside)) return;
 
   double target_t = eb, target_far = 0, step = w / 64;
   for (double h = close_dist, a = course; h >= 0.125 * w;) {
@@ -905,46 +856,6 @@ static void coil(game_data* gdata) {
     B.goal = (v2){js_round(gx), js_round(gy)};
 }
 
-/* ------------------------------------------------------------ the border (Wyrm) */
-
-/* Border safety outranks every state (OM, 2026-10-12, from the reference
-   client): a coiling snake could follow its own body into the wall. This
-   predictive guard breaks the food or coil state early and turns towards a
-   safe point inward. */
-static bool avoid_border_emergency(game_data* gdata) {
-  const double border_radius = safe_border_radius(gdata);
-  const double center = gdata->data.grd;
-  if (border_radius <= 0.0 || center <= 0.0) return false;
-
-  double dx = B.hx - center;
-  double dy = B.hy - center;
-  double dist = sqrt(dx * dx + dy * dy);
-  if (dist < 1.0) return false;
-
-  double outward_x = dx / dist;
-  double outward_y = dy / dist;
-  double clearance = border_radius - dist - B.radius;
-  double guard = fmax(700.0, B.ne.r + B.width * (4.0 + B.speed_mult));
-  double lookahead = fmax(500.0, B.width * (5.0 + 2.0 * B.speed_mult));
-  double predicted_x = B.hx + B.ca * lookahead;
-  double predicted_y = B.hy + B.sa * lookahead;
-  double predicted_dist = sqrt(dist2(predicted_x, predicted_y, center, center));
-  double predicted_clearance = border_radius - predicted_dist - B.radius;
-  double outward_heading = B.ca * outward_x + B.sa * outward_y;
-
-  bool imminent = clearance <= guard * 0.45 || predicted_clearance <= guard * 0.70;
-  bool unsafe_course = clearance <= guard &&
-                       (outward_heading > -0.25 || B.state == BOT_CIRCLE);
-  if (!imminent && !unsafe_course) return false;
-
-  double retreat = fmax(1000.0, guard * 1.75);
-  B.goal = (v2){js_round(B.hx - outward_x * retreat), js_round(B.hy - outward_y * retreat)};
-  B.state = BOT_GROW;
-  B.action_at = 0;
-  B.boost = false;
-  return true;
-}
-
 /* ------------------------------------------------------------ go */
 
 /* tf.go, once a drawn frame; tf.Se (the timer) at its end. */
@@ -953,8 +864,6 @@ static void think(game_data* gdata, int follow_circle) {
   if (!alive) return;
   uint64_t now = SDL_GetTicks();
   B.boost = false;
-
-  if (avoid_border_emergency(gdata)) return;
 
   /* Smart bot, always on: grow below the length, then circle. */
   if (B.len_score < follow_circle)

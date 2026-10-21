@@ -10,6 +10,11 @@
 #include "backgrounds.h"
 #include "../user.h"
 
+#ifdef WYRM_DESKTOP
+void wyrm_desktop_laser(float x, float y, float r, float g, float b, float a,
+                       float thickness, int assist);
+#endif
+
 /*
  * The arena's overlay, in Wyrm's language.
  *
@@ -321,6 +326,16 @@ static const struct {
     {"wyrm_carbon", 46, 50, 57},   {"wyrm_abyss", 23, 50, 57},
     {"wyrm_nebula", 23, 22, 35},   {"wyrm_dotgrid", 34, 36, 40},
     {"wyrm_contours", 32, 44, 51}, {"wyrm_scales", 35, 51, 43},
+    {"wyrm_ember", 50, 37, 30}, {"wyrm_dunes", 62, 51, 36},
+    {"wyrm_moss", 27, 41, 31}, {"wyrm_cells", 24, 48, 51},
+    {"wyrm_aurora", 22, 28, 37}, {"wyrm_facets", 45, 55, 68},
+    {"wyrm_frost", 29, 46, 62}, {"wyrm_tartan", 39, 31, 35},
+    {"wyrm_reptile", 72, 58, 37}, {"wyrm_sage", 108, 119, 102},
+    {"wyrm_shore", 139, 129, 107}, {"wyrm_terrazzo", 147, 127, 124},
+    {"wyrm_mist", 117, 125, 133}, {"wyrm_lavender", 131, 122, 142},
+    {"wyrm_clay", 143, 118, 105}, {"wyrm_paper", 138, 134, 127},
+    {"wyrm_seafoam", 115, 137, 134}, {"wyrm_marble", 135, 133, 128},
+    {"wyrm_pebbles", 124, 139, 128},
 };
 
 static vec3s original_minimap_floor(int floor) {
@@ -596,6 +611,16 @@ static const struct {
     {"wyrm_carbon", 25, 28, 33},   {"wyrm_abyss", 8, 28, 34},
     {"wyrm_nebula", 8, 7, 17},     {"wyrm_dotgrid", 16, 18, 21},
     {"wyrm_contours", 15, 24, 29}, {"wyrm_scales", 17, 29, 23},
+    {"wyrm_ember", 28, 18, 13}, {"wyrm_dunes", 37, 29, 18},
+    {"wyrm_moss", 11, 21, 14}, {"wyrm_cells", 9, 27, 29},
+    {"wyrm_aurora", 8, 12, 18}, {"wyrm_facets", 25, 32, 42},
+    {"wyrm_frost", 12, 25, 37}, {"wyrm_tartan", 20, 14, 17},
+    {"wyrm_reptile", 44, 34, 18}, {"wyrm_sage", 145, 158, 137},
+    {"wyrm_shore", 185, 171, 143}, {"wyrm_terrazzo", 196, 169, 165},
+    {"wyrm_mist", 156, 167, 178}, {"wyrm_lavender", 175, 163, 189},
+    {"wyrm_clay", 191, 157, 140}, {"wyrm_paper", 184, 179, 169},
+    {"wyrm_seafoam", 153, 183, 179}, {"wyrm_marble", 180, 177, 171},
+    {"wyrm_pebbles", 166, 185, 171},
 };
 
 /* Deep ink for every halo: Wyrm's black with a little blue, never #000. */
@@ -639,6 +664,44 @@ static ImU32 wyrm_snake_ink(vec3s c, float alpha) {
     c.z += (1.0f - c.z) * t;
   }
   return igColorConvertFloat4ToU32((ImVec4){c.x, c.y, c.z, alpha});
+}
+
+/* Snake names on any floor (OM, 2026-10-18): the floor's mean luma, once a
+   frame; 0 where no floor shows (None, Black, a mode that hides it). */
+float wyrm_floor_luma_now(tenv* env) {
+  vec3s mean;
+  return wyrm_floor_mean(env, &mean) ? wyrm_luma(mean) : 0.0f;
+}
+
+/* A name's ink and its shadow for a floor of `floor_luma`: light over a dark
+   shadow on dark and mid floors, dark over a light shadow from 0.40, both in
+   the snake's own hue. */
+void wyrm_name_inks(float floor_luma, vec3s c, float alpha, unsigned int* text,
+                    unsigned int* shadow) {
+  float l = wyrm_luma(c);
+  if (floor_luma < 0.40f) {
+    const float target = 0.74f;
+    if (l < target) {
+      float t = (target - l) / (1.0f - l + 0.0001f);
+      c.x += (1.0f - c.x) * t;
+      c.y += (1.0f - c.y) * t;
+      c.z += (1.0f - c.z) * t;
+    }
+    *shadow = igColorConvertFloat4ToU32(
+        (ImVec4){WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, 0.85f * alpha});
+  } else {
+    const float target = 0.20f;
+    const float halo = 0.2126f * WYRM_HALO.x + 0.7152f * WYRM_HALO.y +
+                       0.0722f * WYRM_HALO.z;
+    if (l > target) {
+      float t = (l - target) / (l - halo + 0.0001f);
+      c.x += (WYRM_HALO.x - c.x) * t;
+      c.y += (WYRM_HALO.y - c.y) * t;
+      c.z += (WYRM_HALO.z - c.z) * t;
+    }
+    *shadow = igColorConvertFloat4ToU32((ImVec4){1.0f, 1.0f, 1.0f, 0.6f * alpha});
+  }
+  *text = igColorConvertFloat4ToU32((ImVec4){c.x, c.y, c.z, alpha});
 }
 
 /* Text in Wyrm's ink halo: a wide, low shadow and a tight outline. */
@@ -843,8 +906,22 @@ void ui_overlay(tenv* env) {
 
       float arrow_x = 0.0f;
       float arrow_y = 0.0f;
+#ifdef WYRM_DESKTOP
+      if (mobile_controls_get_arrow_position(env, &arrow_x, &arrow_y)) {
+#else
       if (usrs->hotkeys[HOTKEY_ASSIST].active &&
           mobile_controls_get_arrow_position(env, &arrow_x, &arrow_y)) {
+#endif
+#ifdef WYRM_DESKTOP
+        /* Draw the line with the latest Compose pointer, after the Vulkan
+           readback. Baking the endpoint into that older image made it lag
+           behind the Windows pointer. The head stays tied to its own frame. */
+        wyrm_desktop_laser(mww2 + (hx - gdata->data.view_xx) * gdata->data.gsc,
+                          mhh2 + (hy - gdata->data.view_yy) * gdata->data.gsc,
+                          usrs->laser_color[0], usrs->laser_color[1],
+                          usrs->laser_color[2], usrs->laser_color[3] * a,
+                          usrs->laser_thickness, usrs->hotkeys[HOTKEY_ASSIST].active);
+#else
         ImDrawList_AddLine(
             igGetWindowDrawList(),
             (ImVec2){mww2 + (hx - gdata->data.view_xx) * gdata->data.gsc,
@@ -854,6 +931,7 @@ void ui_overlay(tenv* env) {
                 (ImVec4){usrs->laser_color[0], usrs->laser_color[1],
                          usrs->laser_color[2], usrs->laser_color[3] * a}),
             usrs->laser_thickness);
+#endif
       }
 
 #ifndef WYRM_DESKTOP
@@ -938,6 +1016,27 @@ void ui_overlay(tenv* env) {
     ImDrawList* draw = igGetWindowDrawList();
     const float edge = 16.0f;
     const float pad = 14.0f;
+
+    /* Eyes Back locked here (OM, 2026-10-13, as NTL VANCED): 5 s at the
+       top centre, a dark pill with orange text (input.c). */
+    {
+      extern const char* eyes_back_lock_message(void);
+      const char* lock = eyes_back_lock_message();
+      if (lock) {
+        ImFont* lock_font = usr->imgui_data.regular_font_bold[0];
+        float lock_w = measure(lock_font, lock);
+        float lock_h = lock_font->LegacySize;
+        float lock_pad_x = 12.0f, lock_pad_y = 5.0f;
+        ImVec2 lock_min = {mww2 - lock_w * 0.5f - lock_pad_x, 8.0f};
+        ImVec2 lock_max = {mww2 + lock_w * 0.5f + lock_pad_x,
+                           8.0f + lock_h + 2.0f * lock_pad_y};
+        ImDrawList_AddRectFilled(draw, lock_min, lock_max, 0x8C000000u, 6.0f, 0);
+        ImDrawList_AddText_FontPtr(
+            draw, lock_font, lock_h,
+            (ImVec2){lock_min.x + lock_pad_x, lock_min.y + lock_pad_y},
+            0xFF4AB1FFu, lock, NULL, 0, NULL);
+      }
+    }
 
     /* The leaderboard setting now scales every piece of leaderboard type,
        including its title, ranks and hint — not only the names. */

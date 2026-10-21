@@ -295,8 +295,10 @@ private fun PlayerRankRow(rank: Int, player: ApiPlayer, value: Long, onClick: ()
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("$rank", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Quiet,
-                textAlign = TextAlign.Center, modifier = Modifier.width(24.dp))
+            Text("$rank", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold,
+                fontSize = if (rank >= 10000) 9.5.sp else if (rank >= 1000) 11.sp else 13.sp, color = Wyrm.Quiet,
+                maxLines = 1, softWrap = false,
+                textAlign = TextAlign.Center, modifier = Modifier.width(34.dp))
             WyrmAvatar(player.avatarUrl, player.avatarKey, initialsOf(player.displayName), 35.dp)
             PersonText(player.displayName, player.handle, Modifier.weight(1f))
             Text(groupedNumber(value), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Wyrm.Ink)
@@ -985,6 +987,7 @@ fun IosChatComposer(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 46.dp)
+                    .chatSendKeys { send() }
                     .liquidGlass(
                         backdrop = backdrop,
                         shape = wyrmRounded(22.dp),
@@ -1058,6 +1061,21 @@ class IosSheetAction(val title: String, val destructive: Boolean = false, val on
 /** SwiftUI `confirmationDialog`: a titled group of actions and a separate Cancel. */
 @Composable
 fun IosActionSheet(title: String, actions: List<IosSheetAction>, insetBottom: Dp, onDismiss: () -> Unit) {
+    if (LocalCentredDialogs.current) {
+        val confirm = actions.singleOrNull()?.onClick
+        CentredDialog(onDismiss, confirm?.let { action -> { onDismiss(); action() } }) {
+            Column {
+                Text(title, fontFamily = Wyrm.Display, fontSize = 23.sp, color = Wyrm.Ink, modifier = Modifier.padding(bottom = 16.dp))
+                actions.forEach { action ->
+                    Text(action.title, fontFamily = Wyrm.Body, color = if (action.destructive) Wyrm.Badge else Wyrm.Link,
+                        modifier = Modifier.fillMaxWidth().clickable { onDismiss(); action.onClick() }.padding(vertical = 16.dp))
+                }
+                Text("Cancel · Esc", fontFamily = Wyrm.Body, color = Wyrm.Quiet,
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onDismiss).padding(vertical = 12.dp))
+            }
+        }
+        return
+    }
     val appear = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { appear.animateTo(1f, iosSpring(0.4f, 0.9f)) }
@@ -1189,6 +1207,13 @@ fun IosConnectionsScreen(
 
 // The profile page is IosProfile.kt (OM, 2026-09-29).
 
+class ProfileEditDraft(name: String, arena: String, user: String, about: String) {
+    val name = mutableStateOf(name)
+    val arena = mutableStateOf(arena)
+    val user = mutableStateOf(user)
+    val about = mutableStateOf(about)
+}
+
 @Composable
 fun IosEditProfileScreen(
     displayName: String,
@@ -1207,11 +1232,13 @@ fun IosEditProfileScreen(
     onPickPhoto: () -> Unit,
     onRemovePhoto: () -> Unit,
     onDeleteAccount: () -> Unit,
+    draft: ProfileEditDraft? = null,
 ) {
-    var name by remember { mutableStateOf(displayName) }
-    var arena by remember { mutableStateOf(ingameName) }
-    var user by remember { mutableStateOf(username) }
-    var about by remember { mutableStateOf(bio) }
+    val form = draft ?: remember { ProfileEditDraft(displayName, ingameName, username, bio) }
+    var name by form.name
+    var arena by form.arena
+    var user by form.user
+    var about by form.about
     var confirmDelete by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         IosPageChrome("Edit profile", insetTop, onBack, actionTitle = "Save", onAction = { onSave(name, arena, user, about) }) {
@@ -1242,7 +1269,8 @@ fun IosEditProfileScreen(
                     if (busy) IosSpinner(size = 20.dp)
                 }
                 EditField("Display name", name) { name = it }
-                EditField("Arena name", arena) { arena = it }
+                // No Arena name here (OM, 2026-10-14): the name typed in the
+                // lobby is the only one, and it follows the player everywhere.
                 EditField("Username", user) { user = it }
                 EditField("Bio", about) { about = it }
                 if (renames.isNotEmpty()) {

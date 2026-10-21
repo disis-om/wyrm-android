@@ -338,7 +338,7 @@ fun IosProfileScreen(
             )
         }
 
-        AnimatedVisibility(visible = badgeShown != null, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(visible = badgeShown != null && !LocalCentredDialogs.current, enter = fadeIn(), exit = fadeOut()) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -348,8 +348,13 @@ fun IosProfileScreen(
         }
         var lastBadge by remember { mutableStateOf<Badge?>(null) }
         badgeShown?.let { lastBadge = it }
+        if (LocalCentredDialogs.current && badgeShown != null) {
+            CentredDialog(onDismiss = { badgeShown = null }, onConfirm = { badgeShown = null }) {
+                ProfileBadgeSheet(badgeShown!!, 0.dp) { badgeShown = null }
+            }
+        }
         AnimatedVisibility(
-            visible = badgeShown != null,
+            visible = badgeShown != null && !LocalCentredDialogs.current,
             enter = slideInVertically(iosSpring(0.4f, 0.84f)) { it } + fadeIn(),
             exit = slideOutVertically(tween(220)) { it } + fadeOut(tween(220)),
             modifier = Modifier.align(Alignment.BottomCenter),

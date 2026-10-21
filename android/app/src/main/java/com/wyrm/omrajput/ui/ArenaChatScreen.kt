@@ -66,6 +66,8 @@ fun ArenaChatScreen(
     onSend: () -> Unit,
     @Suppress("UNUSED_PARAMETER") onHandoverChange: (Int) -> Unit,
     onClose: () -> Unit,
+    /** The tab the message box was tapped on: team or everyone (OM, 2026-10-14). */
+    placeholder: String = "Message the team",
 ) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -128,7 +130,7 @@ fun ArenaChatScreen(
             Box(Modifier.weight(1f)) {
                 if (draft.isEmpty()) {
                     Text(
-                        text = "Message the team",
+                        text = placeholder,
                         fontFamily = Wyrm.Body,
                         fontSize = 15.sp,
                         color = Wyrm.Quiet,

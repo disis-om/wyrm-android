@@ -139,8 +139,6 @@ internal object WyrmTour {
             "Display: scores, names, minimap and text sizes. Controls: steering, boost and the zoom bar. On-screen buttons: which ones show and how they fire."),
         TourStep(TourPlace.SETTINGS, "settings.help", "Playing help",
             "Modes: Normal or Assist, helper lines and arena colours. Bot: when it circles and how wide it swings."),
-        TourStep(TourPlace.SETTINGS, "settings.performance", "Performance",
-            "Auto: full speed while the phone is cool, slower when it warms up or Battery Saver is on. Balanced: a steady 60 FPS, cooler and easier on the battery. Performance: the highest frame rate and least delay; the phone runs warmer."),
         TourStep(TourPlace.SETTINGS, "settings.account", "Account",
             "Profile: name, username, photo and bio. Notifications: choose what reaches you. Privacy: who can reach you and what is stored."),
         TourStep(TourPlace.SETTINGS, "settings.support", "Help & feedback",

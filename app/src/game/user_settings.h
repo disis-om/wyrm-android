@@ -157,6 +157,39 @@ typedef struct user_settings_ext {
      field. Phones: offset 44; Wyrm Desktop: 48 (after eyes_back_key). Read and
      written only through user_settings_arena / user_settings_set_arena. */
   char arena[MAX_ARENA_LEN + 1];
+  /* Wyrm skin (OM, 2026-10-13): a creature or strip look worn over the snake
+     (game/wyrm_skins.h), 0 for none. Phones: offset 108; Wyrm Desktop: 112.
+     Read through user_settings_wyrm_skin. */
+  int32_t wyrm_skin;
+  /* Snakey Rain key (OM, 2026-10-14), on-screen action 16: place, size
+     and opacity. Shown only while Rain is on, so no visible flag.
+     Phones: offset 112; Wyrm Desktop: 116. */
+  float rain_x;
+  float rain_y;
+  float rain_scale;
+  float rain_opacity;
+  /* On-screen key colours (OM, 2026-10-14), by action: one of the team
+     roster's nine colours, 0 = the theme. Phones: offset 128. */
+  int32_t key_colour[20];
+  /* A key's fill colour (OM, 2026-10-14); key_colour is its label and
+     border. Phones: offset 208. */
+  int32_t key_fill[20];
+  /* Spine on my snake only (OM, 2026-10-14), normal and assist; false =
+     every snake, as before. Phones: offset 288. */
+  bool spine_mine[2];
+  /* Skip the old tail padding; it must never be read as a setting. */
+  uint8_t reserved_white_alignment[2];
+  /* White keys migration; append only, never account-wide. */
+  bool keys_white_v1;
+  /* Skip padding written by 723/724; never interpret it as a flag. */
+  uint8_t reserved_grey_alignment[3];
+  bool keys_grey_fill_v1;
+  /* Boost glow on my snake only (OM, 2026-10-18), normal and assist;
+     false = every snake's, as before. Append only. */
+  bool boost_own[2];
+  /* Arrow sensitivity 0..1 (OM, 2026-10-18): 0 = the original 1x. Append
+     only. */
+  float arrow_sens;
 } user_settings_ext;
 
 typedef struct user_settings {
@@ -310,6 +343,8 @@ void user_settings_ext_default(user_settings_ext* ext);
    `ipv4`. Setting one writes ext.arena, and `ipv4` too when it is IPv4 (older
    builds read that field). */
 const char* user_settings_arena(const user_settings* settings);
+/* The Wyrm skin worn, or 0 (an unknown number reads as none). */
+int user_settings_wyrm_skin(const user_settings* settings);
 void user_settings_set_arena(user_settings* settings, const char* address);
 /* True when a missing or damaged ext field was put back, so the caller saves. */
 bool user_settings_ext_fix(user_settings* settings, size_t bytes_read);

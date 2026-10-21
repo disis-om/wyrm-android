@@ -63,6 +63,9 @@ typedef struct renderer {
 
   VkSampler linear_sampler;
   VkSampler atlas_sampler;
+  /* The game atlas (beads, eyes, accessories): mipmapped up to
+     BEAD_ATLAS_MAX_LOD. See renderer.c. */
+  VkSampler bead_sampler;
   VkSampler nearest_sampler;
 
   VkRenderPass render_pass;

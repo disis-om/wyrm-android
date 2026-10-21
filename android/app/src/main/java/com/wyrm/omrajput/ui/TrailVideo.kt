@@ -73,6 +73,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -102,6 +107,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.Crop
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.TextureOverlay
@@ -132,18 +138,21 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 /*
- * Trails videos (OM, 2026-10-05): "a video editor like Instagram's", clips of
- * at most 30 seconds, compressed in the app to 360p-720p.
+ * Trails videos (OM, 2026-10-05): "a video editor like Instagram's", at most
+ * 30 seconds, compressed in the app to 360p-720p.
  *
- * The studio's Video page records (CameraX, at most 30 s) or takes a clip from
- * the phone. The editor is the photo editor itself over a playing clip: the
- * same text, drawing, stickers and looks (`TrailLooks`), plus a trim window,
- * a cover frame and sound on or off. Export is Media3 Transformer: the trim,
- * the size (short side 720, 540 or 360, the clip's own if smaller), the look as
- * an RgbMatrix and the overlay as one bitmap the size of the output frame,
- * H.264 + AAC, HDR tone-mapped to SDR. The player previews with the same
- * effects, so the editor shows what goes up. The server takes it as it is
- * (`backend/src/trail-video.mjs`). Wyrm iOS: `WyrmTrailVideo.swift`.
+ * The studio's camera records (hold the shutter, or tap it on the Video page,
+ * CameraX, at most 30 s; `TrailCamera.kt`) or a clip comes from the gallery.
+ * The editor is the photo editor itself over the playing clip: the same text,
+ * drawing, stickers and looks (`TrailLooks`), plus, since 2026-10-17, a
+ * professional cut (`TrailTimeline.kt`): pieces split, trimmed and dropped,
+ * transitions at the cuts, a crop, and a cover picked while the picture shows
+ * that frame. Export is Media3 Transformer: one clipped item per piece with
+ * the crop, the size (short side 720, 540 or 360, the crop's own if smaller),
+ * the transitions, the look as an RgbMatrix and the overlay as one bitmap the
+ * size of the output frame, H.264 + AAC, HDR tone-mapped to SDR. The player
+ * previews the same cut, so the editor shows what goes up. The server takes it
+ * as it is (`backend/src/trail-video.mjs`). Wyrm iOS: `WyrmTrailVideo.swift`.
  *
  * The feed plays one clip at a time, the one most in view, muted until the
  * player taps for sound, from a disk cache (`TrailFeedPlayer`).
@@ -265,49 +274,83 @@ internal fun clipTime(ms: Long): String {
 // ---------------------------------------------------------------- editor
 
 /**
- * The clip being edited: the player, the trim window (at most 30 s), the
- * cover frame and the sound. The look and the overlays live on the studio's
- * draft, shared with the photo editor.
+ * The clip being edited (OM, 2026-10-17): its cut (`TrailEdit`: pieces,
+ * transitions, crop, cover, sound) and the player that previews it. The
+ * player holds one clipped item per piece and loops over all of them; the
+ * look and the overlays live on the studio's draft, shared with the photo
+ * editor. While a piece's end is dragged the player shows the clip itself at
+ * that moment, then goes back to the pieces.
  */
 internal class TrailVideoSession(context: Context, val clip: TrailClip) {
+    val edit = TrailEdit(clip)
     val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext).build().apply {
-        repeatMode = Player.REPEAT_MODE_ONE
+        repeatMode = Player.REPEAT_MODE_ALL
         // Effects must be set once before prepare; the looks replace them later.
         setVideoEffects(emptyList())
     }
-    var trimStart by mutableLongStateOf(0L)
-    var trimEnd by mutableLongStateOf(min(clip.durationMs, TRAIL_VIDEO_MAX_MS))
-    /** Absolute time of the cover frame in the clip. */
-    var coverMs by mutableLongStateOf(0L)
-    var muted by mutableStateOf(false)
-    /** Where the player is, relative to [trimStart]. */
+    /** Where the player is in the finished video. */
     var playhead by mutableLongStateOf(0L)
+    var playing by mutableStateOf(false)
+    /** The whole clip is loaded (a piece's end is being dragged), not the pieces. */
+    private var showingSource = false
     private var effects: List<Effect> = emptyList()
 
-    val lengthMs: Long get() = trimEnd - trimStart
+    private fun items(): List<MediaItem> = edit.segments.map { s ->
+        MediaItem.Builder().setUri(clip.uri).setMediaId(s.id.toString())
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder().setStartPositionMs(s.startMs).setEndPositionMs(s.endMs).build(),
+            )
+            .build()
+    }
 
-    fun load() {
-        player.setMediaItem(
-            MediaItem.Builder().setUri(clip.uri)
-                .setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(trimStart)
-                        .setEndPositionMs(trimEnd)
-                        .build(),
-                )
-                .build(),
-        )
+    /** The pieces into the player, from the playhead. */
+    fun load(play: Boolean = true) {
+        showingSource = false
+        val (index, into) = edit.locate(playhead)
+        player.setMediaItems(items(), index, into)
+        player.volume = if (edit.muted) 0f else 1f
         player.prepare()
-        player.play()
+        if (play) player.play() else player.pause()
     }
 
-    fun setTrim(start: Long, end: Long) {
-        val s = start.coerceIn(0L, (clip.durationMs - TRAIL_VIDEO_MIN_MS).coerceAtLeast(0L))
-        val e = end.coerceIn(s + min(TRAIL_VIDEO_MIN_MS, clip.durationMs - s), min(clip.durationMs, s + TRAIL_VIDEO_MAX_MS))
-        trimStart = s
-        trimEnd = e
-        coverMs = coverMs.coerceIn(s, e)
+    /** After a split, a delete or a trim: the same place, the new pieces. */
+    fun reload() {
+        playhead = playhead.coerceIn(0L, (edit.totalMs - 1).coerceAtLeast(0L))
+        load(play = playing)
     }
+
+    /** Reads the player once a frame. */
+    fun tick() {
+        playing = player.isPlaying
+        if (showingSource) return
+        val index = player.currentMediaItemIndex
+        if (index in 0 until edit.segments.size) {
+            playhead = (edit.startOf(index) + player.currentPosition.coerceAtLeast(0L)).coerceIn(0L, edit.totalMs)
+        }
+    }
+
+    fun seekEdited(ms: Long, play: Boolean) {
+        if (showingSource) load(play = false)
+        val (index, into) = edit.locate(ms)
+        playhead = ms.coerceIn(0L, edit.totalMs)
+        player.seekTo(index, into)
+        if (play) player.play() else player.pause()
+    }
+
+    /** The clip itself at [sourceMs], while a piece's end is dragged. */
+    fun showSource(sourceMs: Long) {
+        if (!showingSource) {
+            showingSource = true
+            player.setMediaItem(MediaItem.fromUri(clip.uri))
+            player.prepare()
+            player.pause()
+        }
+        player.seekTo(sourceMs.coerceIn(0L, clip.durationMs))
+    }
+
+    fun play() { if (showingSource) load(play = true) else player.play() }
+    fun pause() = player.pause()
+    fun togglePlay() { if (player.isPlaying) pause() else play() }
 
     fun applyEffects(next: List<Effect>) {
         if (next == effects) return
@@ -316,425 +359,90 @@ internal class TrailVideoSession(context: Context, val clip: TrailClip) {
     }
 
     fun toggleSound() {
-        muted = !muted
-        player.volume = if (muted) 0f else 1f
+        edit.muted = !edit.muted
+        player.volume = if (edit.muted) 0f else 1f
     }
 
     fun release() = player.release()
 }
 
-/** The playing clip, under the studio's canvas. */
+/**
+ * The playing clip under the studio's canvas, as it will go up: cropped (the
+ * picture is laid out larger than the canvas and moved so the crop fills it),
+ * with the transitions drawn over it at each cut.
+ */
 @Composable
 internal fun TrailVideoPreview(session: TrailVideoSession, modifier: Modifier = Modifier) {
     LaunchedEffect(session) {
         while (isActive) {
-            session.playhead = session.player.currentPosition.coerceAtLeast(0L)
-            delay(80)
+            withFrameNanos { }
+            session.tick()
         }
     }
-    AndroidView(
-        factory = { ctx -> TextureView(ctx).also { session.player.setVideoTextureView(it) } },
-        onRelease = { session.player.clearVideoTextureView(it) },
-        modifier = modifier,
-    )
-}
-
-/** The editor's video tools under the canvas: Trim, Cover and Sound, Instagram-style. */
-@Composable
-internal fun TrailVideoBar(session: TrailVideoSession) {
-    val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
-    var tab by remember { mutableStateOf(0) }
-    var frames by remember(session.clip) { mutableStateOf(emptyList<Bitmap>()) }
-    LaunchedEffect(session.clip) { frames = withContext(Dispatchers.IO) { TrailClips.strip(context, session.clip, 10, 160) } }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Trim", "Cover").forEachIndexed { index, label ->
-                TrailVideoChip(label, tab == index) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); tab = index }
-            }
-            Spacer(Modifier.weight(1f))
-            TrailVideoChip(if (session.muted) "Sound off" else "Sound on", !session.muted) {
-                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                session.toggleSound()
-            }
-        }
-        if (tab == 0) {
-            TrailTrimStrip(session, frames)
-            Text(
-                "${"%.1f".format(session.lengthMs / 1000f)} s of ${TRAIL_VIDEO_MAX_MS / 1000} s",
-                fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = Wyrm.Quiet,
-                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+    val edit = session.edit
+    val (kind, k) = TrailTransitions.at(edit.segments, session.playhead)
+    BoxWithConstraints(modifier.clipToBounds().background(Color.Black)) {
+        val cw = constraints.maxWidth
+        val ch = constraints.maxHeight
+        val r = edit.crop.rect(session.clip)
+        val fullW = (cw / r.width().coerceAtLeast(0.01f)).roundToInt().coerceAtLeast(1)
+        val fullH = (ch / r.height().coerceAtLeast(0.01f)).roundToInt().coerceAtLeast(1)
+        val offX = -(r.left * fullW).roundToInt()
+        val offY = -(r.top * fullH).roundToInt()
+        val zoom = if (kind == TrailTransition.ZOOM) 1f + TrailTransitions.ZOOM * k else 1f
+        Box(Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom }) {
+            AndroidView(
+                factory = { ctx -> TextureView(ctx).also { session.player.setVideoTextureView(it) } },
+                onRelease = { session.player.clearVideoTextureView(it) },
+                modifier = Modifier.layout { measurable, c ->
+                    val placeable = measurable.measure(Constraints.fixed(fullW, fullH))
+                    layout(c.maxWidth, c.maxHeight) { placeable.place(offX, offY) }
+                },
             )
-        } else {
-            TrailCoverStrip(session, frames)
-            Text("The picture people see before it plays", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
-                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
-    }
-}
-
-@Composable
-private fun TrailVideoChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier.clip(CircleShape).background(if (selected) Wyrm.Ink else Wyrm.Well)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .padding(horizontal = 13.dp).height(32.dp),
-        contentAlignment = Alignment.Center,
-    ) { Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = if (selected) Wyrm.OnInk else Wyrm.Ink) }
-}
-
-@Composable
-private fun TrailFrameRow(frames: List<Bitmap>) {
-    Row(Modifier.fillMaxSize()) {
-        if (frames.isEmpty()) Box(Modifier.fillMaxSize().background(Wyrm.Well))
-        frames.forEach { bitmap ->
-            Image(remember(bitmap) { bitmap.asImageBitmap() }, null, contentScale = ContentScale.Crop,
-                modifier = Modifier.weight(1f).fillMaxHeight())
-        }
-    }
-}
-
-/**
- * The trim window over the whole clip: drag either handle, or the window
- * itself; it never runs past 30 s nor under 1 s. The player restarts on the
- * new window when the finger lifts.
- */
-@Composable
-private fun TrailTrimStrip(session: TrailVideoSession, frames: List<Bitmap>) {
-    val density = LocalDensity.current
-    val haptics = LocalHapticFeedback.current
-    val clip = session.clip
-    BoxWithConstraints(Modifier.fillMaxWidth().height(56.dp).clip(wyrmRounded(10.dp))) {
-        val widthPx = with(density) { maxWidth.toPx() }
-        val handle = with(density) { 14.dp.toPx() }
-        fun xOf(ms: Long) = (ms.toFloat() / clip.durationMs.coerceAtLeast(1L)) * widthPx
-        fun msOf(x: Float) = ((x / widthPx).coerceIn(0f, 1f) * clip.durationMs).toLong()
-        TrailFrameRow(frames)
-        val left = xOf(session.trimStart)
-        val right = xOf(session.trimEnd)
-        Canvas(
-            Modifier.fillMaxSize().pointerInput(clip) {
-                var grab = 0 // 1 left, 2 right, 3 window
-                var startAt = 0L
-                var endAt = 0L
-                var downX = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { p ->
-                        val l = xOf(session.trimStart)
-                        val r = xOf(session.trimEnd)
-                        grab = when {
-                            kotlin.math.abs(p.x - l) < handle * 1.6f -> 1
-                            kotlin.math.abs(p.x - r) < handle * 1.6f -> 2
-                            p.x in l..r -> 3
-                            else -> 0
-                        }
-                        startAt = session.trimStart
-                        endAt = session.trimEnd
-                        downX = p.x
-                        if (grab != 0) {
-                            session.player.pause()
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        }
-                    },
-                    onHorizontalDrag = { change, _ ->
-                        val moved = msOf(change.position.x) - msOf(downX)
-                        when (grab) {
-                            1 -> session.setTrim(startAt + moved, endAt)
-                            2 -> session.setTrim(startAt, endAt + moved)
-                            3 -> {
-                                val span = endAt - startAt
-                                val s = (startAt + moved).coerceIn(0L, clip.durationMs - span)
-                                session.setTrim(s, s + span)
-                            }
-                        }
-                        if (grab != 0) {
-                            change.consume()
-                            session.player.seekTo(if (grab == 2) session.lengthMs else 0L)
-                        }
-                    },
-                    onDragEnd = { if (grab != 0) session.load(); grab = 0 },
-                    onDragCancel = { if (grab != 0) session.load(); grab = 0 },
-                )
-            },
-        ) {
-            val dim = Color.Black.copy(alpha = 0.55f)
-            drawRect(dim, Offset.Zero, Size(left, size.height))
-            drawRect(dim, Offset(right, 0f), Size(size.width - right, size.height))
-            val gold = Color(0xFFF2B84B)
-            drawRect(gold, Offset(left, 0f), Size(right - left, size.height), style = Stroke(3.dp.toPx()))
-            drawRect(gold, Offset(left, 0f), Size(handle, size.height))
-            drawRect(gold, Offset(right - handle, 0f), Size(handle, size.height))
-            val play = left + (session.playhead.toFloat() / session.lengthMs.coerceAtLeast(1L)) * (right - left)
-            drawLine(Color.White, Offset(play, 0f), Offset(play, size.height), 2.dp.toPx())
-        }
-    }
-}
-
-/** The cover: a frame inside the trim window, chosen by dragging along the strip. */
-@Composable
-private fun TrailCoverStrip(session: TrailVideoSession, frames: List<Bitmap>) {
-    val context = LocalContext.current
-    val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
-    val clip = session.clip
-    var cover by remember(clip) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(session.coverMs) {
-        delay(120)
-        cover = withContext(Dispatchers.IO) { TrailClips.frame(context, clip, session.coverMs, 220) }
-    }
-    BoxWithConstraints(Modifier.fillMaxWidth().height(64.dp)) {
-        val widthPx = with(density) { maxWidth.toPx() }
-        fun xOf(ms: Long) = (ms.toFloat() / clip.durationMs.coerceAtLeast(1L)) * widthPx
-        Box(Modifier.fillMaxWidth().height(44.dp).align(Alignment.Center).clip(wyrmRounded(8.dp))) { TrailFrameRow(frames) }
-        val x = xOf(session.coverMs)
-        Box(
-            Modifier
-                .offset { IntOffset((x - with(density) { 22.dp.toPx() }).roundToInt(), 0) }
-                .size(44.dp, 64.dp).clip(wyrmRounded(8.dp)).border(3.dp, Color.White, wyrmRounded(8.dp)).background(Wyrm.Well),
-        ) {
-            cover?.let { Image(remember(it) { it.asImageBitmap() }, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
-        }
-        Box(
-            Modifier.fillMaxSize().pointerInput(clip) {
-                detectHorizontalDragGestures { change, _ ->
-                    change.consume()
-                    val ms = ((change.position.x / widthPx).coerceIn(0f, 1f) * clip.durationMs).toLong()
-                    session.coverMs = ms.coerceIn(session.trimStart, session.trimEnd)
-                    scope.launch { session.player.seekTo((session.coverMs - session.trimStart).coerceAtLeast(0L)) }
-                }
-            },
-        )
-    }
-}
-
-// ----------------------------------------------------------------- picker
-
-/**
- * The Video page: a camera that records up to 30 s (hold or tap the button;
- * the ring fills as the time runs), and the phone's recent clips below.
- */
-@SuppressLint("MissingPermission")
-@Composable
-internal fun TrailVideoPicker(onClip: (Uri) -> Unit) {
-    val context = LocalContext.current
-    val lifecycle = LocalLifecycleOwner.current
-    val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-    var cameraAllowed by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-    }
-    var micAllowed by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-    }
-    var clipsAllowed by remember { mutableStateOf(TrailClips.hasAccess(context)) }
-    var clips by remember { mutableStateOf(emptyList<Pair<Uri, Long>>()) }
-    var front by remember { mutableStateOf(false) }
-    var recording by remember { mutableStateOf<Recording?>(null) }
-    var recordedMs by remember { mutableLongStateOf(0L) }
-    val recorder = remember {
-        Recorder.Builder()
-            .setQualitySelector(QualitySelector.from(Quality.HD, FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)))
-            .build()
-    }
-    val capture = remember { VideoCapture.withOutput(recorder) }
-    val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
-
-    val askAll = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        cameraAllowed = result[Manifest.permission.CAMERA] ?: cameraAllowed
-        micAllowed = result[Manifest.permission.RECORD_AUDIO] ?: micAllowed
-        clipsAllowed = TrailClips.hasAccess(context)
-    }
-    val pickOne = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(onClip) }
-    LaunchedEffect(Unit) {
-        val wanted = buildList {
-            if (!cameraAllowed) add(Manifest.permission.CAMERA)
-            if (!micAllowed) add(Manifest.permission.RECORD_AUDIO)
-            if (!clipsAllowed) addAll(TrailClips.permissions())
-        }
-        if (wanted.isNotEmpty()) askAll.launch(wanted.toTypedArray())
-    }
-    LaunchedEffect(clipsAllowed) { if (clipsAllowed) clips = withContext(Dispatchers.IO) { TrailClips.recent(context) } }
-
-    DisposableEffect(cameraAllowed, front) {
-        var provider: ProcessCameraProvider? = null
-        // Only this page's own use cases are let go: the Photo and Video pages
-        // overlap while one slides over the other (OM, 2026-10-05).
-        var bound = emptyArray<androidx.camera.core.UseCase>()
-        if (cameraAllowed) {
-            val future = ProcessCameraProvider.getInstance(context)
-            future.addListener({
-                runCatching {
-                    provider = future.get().also { p ->
-                        val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-                        p.unbindAll()
-                        p.bindToLifecycle(lifecycle, if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA,
-                            preview, capture)
-                        bound = arrayOf(preview, capture)
-                    }
-                }
-            }, ContextCompat.getMainExecutor(context))
-        }
-        onDispose {
-            runCatching { recording?.stop() }
-            runCatching { provider?.unbind(*bound) }
-        }
-    }
-
-    fun startRecording() {
-        if (recording != null) return
-        val folder = File(context.cacheDir, "trails-video").apply { mkdirs() }
-        folder.listFiles()?.filter { it.name.startsWith("rec-") }?.forEach { it.delete() }
-        val file = File(folder, "rec-${System.currentTimeMillis()}.mp4")
-        val options = FileOutputOptions.Builder(file).setDurationLimitMillis(TRAIL_VIDEO_MAX_MS).build()
-        var pending = recorder.prepareRecording(context, options)
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            pending = pending.withAudioEnabled()
-        }
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        recordedMs = 0L
-        recording = pending.start(ContextCompat.getMainExecutor(context)) { event ->
-            when (event) {
-                is VideoRecordEvent.Status -> recordedMs = event.recordingStats.recordedDurationNanos / 1_000_000L
-                is VideoRecordEvent.Finalize -> {
-                    recording = null
-                    val ok = !event.hasError() || event.error == VideoRecordEvent.Finalize.ERROR_DURATION_LIMIT_REACHED
-                    if (ok && file.length() > 0L) onClip(Uri.fromFile(file))
-                }
-                else -> Unit
-            }
-        }
-    }
-
-    fun stopRecording() {
-        runCatching { recording?.stop() }
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.padding(horizontal = 12.dp).fillMaxWidth().aspectRatio(0.8f).clip(wyrmRounded(22.dp)).background(Wyrm.Well)) {
-            if (cameraAllowed) {
-                AndroidView({ previewView }, Modifier.fillMaxSize())
-                if (recording != null) {
-                    Text(clipTime(recordedMs), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White,
-                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 14.dp).clip(CircleShape)
-                            .background(Color(0xCCE5484D)).padding(horizontal = 10.dp, vertical = 4.dp))
-                }
-                Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.size(44.dp))
-                    Spacer(Modifier.weight(1f))
-                    val progress = (recordedMs.toFloat() / TRAIL_VIDEO_MAX_MS).coerceIn(0f, 1f)
-                    Box(
-                        Modifier.size(78.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                            if (recording == null) startRecording() else stopRecording()
-                        },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Canvas(Modifier.fillMaxSize()) {
-                            drawCircle(Color.White, radius = size.minDimension / 2 - 3.dp.toPx(), style = Stroke(5.dp.toPx()))
-                            if (recording != null) {
-                                drawArc(Color(0xFFE5484D), -90f, 360f * progress, false, style = Stroke(5.dp.toPx()),
-                                    topLeft = Offset(3.dp.toPx(), 3.dp.toPx()),
-                                    size = Size(size.width - 6.dp.toPx(), size.height - 6.dp.toPx()))
-                            }
-                        }
-                        Box(
-                            Modifier.size(if (recording != null) 28.dp else 56.dp)
-                                .clip(if (recording != null) wyrmRounded(7.dp) else CircleShape)
-                                .background(Color(0xFFE5484D)),
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Box(
-                        Modifier.size(44.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.42f))
-                            .clickable(enabled = recording == null) { front = !front },
-                        contentAlignment = Alignment.Center,
-                    ) { Text("⟲", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White) }
-                }
-            } else {
-                Column(Modifier.align(Alignment.Center).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Camera is off for Wyrm", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
-                    Text("Allow the camera to record a clip, or pick one below.", fontFamily = Wyrm.Body, fontSize = 12.5.sp,
-                        color = Wyrm.Mute, textAlign = TextAlign.Center)
-                }
-            }
-        }
-        Text("Up to 30 seconds · trim longer clips in the editor", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
-            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (clipsAllowed) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
-                    modifier = Modifier.padding(horizontal = 12.dp).clip(wyrmRounded(14.dp)),
-                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    item {
-                        Box(
-                            Modifier.aspectRatio(1f).background(Wyrm.Well).clickable {
-                                pickOne.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-                            },
-                            contentAlignment = Alignment.Center,
-                        ) { Text("All videos", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, color = Wyrm.Mute) }
-                    }
-                    items(clips, key = { it.first.toString() }) { (uri, length) ->
-                        var thumb by remember(uri) { mutableStateOf<Bitmap?>(null) }
-                        LaunchedEffect(uri) { thumb = withContext(Dispatchers.IO) { TrailClips.thumbnail(context, uri) } }
-                        Box(Modifier.aspectRatio(1f).background(Wyrm.Well).clickable { onClip(uri) }) {
-                            thumb?.let { Image(remember(it) { it.asImageBitmap() }, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
-                            Text(clipTime(length), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color.White,
-                                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 5.dp, vertical = 1.dp))
-                        }
-                    }
-                }
-            } else {
-                Column(Modifier.align(Alignment.TopCenter).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Your videos", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
-                    PaperPrimaryButton(label = "Choose a video", onClick = {
-                        pickOne.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-                    })
-                }
-            }
-        }
+        if (kind == TrailTransition.FADE && k > 0f) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = k)))
+        if (kind == TrailTransition.FLASH && k > 0f) Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = k)))
     }
 }
 
 // ----------------------------------------------------------------- export
 
 /**
- * The clip as it goes up: Media3 Transformer, on the main thread as it asks.
- * Size tiers by the short side: 720 (about 2.2 Mbit/s), 540 (1.5), 360 (0.9);
- * a clip smaller than a tier keeps its own size. A result over 15 MB is done
- * again a tier lower; 30 s at 720p is about 8.5 MB.
+ * The video as it goes up: Media3 Transformer, on the main thread as it asks.
+ * One clipped item per piece; each gets the crop, the size, its transitions,
+ * the look and the overlay. Size tiers by the short side of the cropped
+ * picture: 720 (about 3.5 Mbit/s), 540 (2.0), 360 (1.0); a crop smaller than a
+ * tier keeps its own size, never scaled up. A result over 15 MB is done again
+ * a tier lower; 30 s at 720p is about 13.5 MB. 3.5 Mbit/s since 2026-10-17
+ * (OM: 720p without losing quality; 2.2 was soft on fast motion), the same on
+ * iOS.
  */
 internal object TrailVideoExport {
-    private val tiers = listOf(720 to 2_200_000, 540 to 1_500_000, 360 to 900_000)
+    private val tiers = listOf(720 to 3_500_000, 540 to 2_000_000, 360 to 1_000_000)
     private const val MAX_BYTES = 15L * 1024 * 1024
 
-    /** The output size for a tier: even sides, the clip's own shape. */
-    fun outputSize(clip: TrailClip, tier: Int): Pair<Int, Int> {
-        val short = min(clip.width, clip.height)
-        val target = min(tiers[tier].first, short).coerceAtLeast(2)
-        val k = target.toFloat() / short
+    /** The output size for a tier: even sides, the crop's own shape. */
+    fun outputSize(spec: TrailEditSpec, tier: Int): Pair<Int, Int> {
+        val r = spec.crop.rect(spec.clip)
+        val cw = r.width() * spec.clip.width
+        val ch = r.height() * spec.clip.height
+        val short = min(cw, ch).coerceAtLeast(2f)
+        val target = min(tiers[tier].first.toFloat(), short).coerceAtLeast(2f)
+        val k = target / short
         fun even(v: Float) = (v.roundToInt() / 2 * 2).coerceAtLeast(2)
-        return even(clip.width * k) to even(clip.height * k)
+        return even(cw * k) to even(ch * k)
     }
 
     suspend fun export(
         context: Context,
-        clip: TrailClip,
-        startMs: Long,
-        endMs: Long,
-        muted: Boolean,
+        spec: TrailEditSpec,
         look: List<Effect>,
         overlay: (Int, Int) -> Bitmap?,
         progress: (Float) -> Unit,
     ): File {
         var tier = 0
         while (true) {
-            val file = once(context, clip, startMs, endMs, muted, look, overlay, tier, progress)
+            val file = once(context, spec, look, overlay, tier, progress)
             if (file.length() <= MAX_BYTES || tier == tiers.lastIndex) return file
             tier += 1
         }
@@ -742,35 +450,47 @@ internal object TrailVideoExport {
 
     private suspend fun once(
         context: Context,
-        clip: TrailClip,
-        startMs: Long,
-        endMs: Long,
-        muted: Boolean,
+        spec: TrailEditSpec,
         look: List<Effect>,
         overlay: (Int, Int) -> Bitmap?,
         tier: Int,
         progress: (Float) -> Unit,
     ): File = withContext(Dispatchers.Main) {
-        val (outW, outH) = outputSize(clip, tier)
+        val (outW, outH) = outputSize(spec, tier)
         val folder = File(context.cacheDir, "trails-video").apply { mkdirs() }
         folder.listFiles()?.filter { it.name.startsWith("out-") }?.forEach { it.delete() }
         val file = File(folder, "out-${System.currentTimeMillis()}.mp4")
-        val effects = buildList<Effect> {
-            add(Presentation.createForWidthAndHeight(outW, outH, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-            addAll(look)
-            overlay(outW, outH)?.let { add(OverlayEffect(ImmutableList.of<TextureOverlay>(BitmapOverlay.createStaticBitmapOverlay(it)))) }
+        val top = overlay(outW, outH)
+        val r = spec.crop.rect(spec.clip)
+        val pieces = spec.segments
+        val items = pieces.mapIndexed { i, s ->
+            val into = if (i > 0) pieces[i - 1].after else TrailTransition.NONE
+            val out = if (i < pieces.lastIndex) s.after else TrailTransition.NONE
+            val inUs = if (i > 0) TrailTransitions.halfAfter(pieces, i - 1) * 1000 else 0L
+            val outUs = if (i < pieces.lastIndex) TrailTransitions.halfAfter(pieces, i) * 1000 else 0L
+            val lengthUs = s.lengthMs * 1000
+            val effects = buildList<Effect> {
+                // The crop in the frame's own -1..1 space (y up), then the size.
+                if (!spec.crop.untouched) add(Crop(2f * r.left - 1f, 2f * r.right - 1f, 1f - 2f * r.bottom, 1f - 2f * r.top))
+                add(Presentation.createForWidthAndHeight(outW, outH, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+                if (into == TrailTransition.ZOOM || out == TrailTransition.ZOOM) add(TrailTransitionZoom(lengthUs, into, inUs, out, outUs))
+                addAll(look)
+                val toned = { t: TrailTransition -> t == TrailTransition.FADE || t == TrailTransition.FLASH }
+                if (toned(into) || toned(out)) add(TrailTransitionTone(lengthUs, into, inUs, out, outUs))
+                top?.let { add(OverlayEffect(ImmutableList.of<TextureOverlay>(BitmapOverlay.createStaticBitmapOverlay(it)))) }
+            }
+            val item = MediaItem.Builder().setUri(spec.clip.uri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder().setStartPositionMs(s.startMs).setEndPositionMs(s.endMs).build(),
+                )
+                .build()
+            EditedMediaItem.Builder(item)
+                .setRemoveAudio(spec.muted)
+                .setEffects(Effects(emptyList(), effects))
+                .build()
         }
-        val item = MediaItem.Builder().setUri(clip.uri)
-            .setClippingConfiguration(
-                MediaItem.ClippingConfiguration.Builder().setStartPositionMs(startMs).setEndPositionMs(endMs).build(),
-            )
-            .build()
-        val edited = EditedMediaItem.Builder(item)
-            .setRemoveAudio(muted)
-            .setEffects(Effects(emptyList(), effects))
-            .build()
         @Suppress("DEPRECATION")
-        val composition = Composition.Builder(EditedMediaItemSequence.Builder(edited).build())
+        val composition = Composition.Builder(EditedMediaItemSequence.Builder(items).build())
             .setHdrMode(if (Build.VERSION.SDK_INT >= 29) Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL else Composition.HDR_MODE_KEEP_HDR)
             .build()
         val encoder = DefaultEncoderFactory.Builder(context.applicationContext)
@@ -807,20 +527,23 @@ internal object TrailVideoExport {
     }
 
     /**
-     * The poster: the cover frame with the look and the overlay, the size of
-     * the clip's 720p tier (the photo encoder makes the full and thumb JPEGs).
+     * The poster: the cover frame, cropped, in the look with the overlay, the
+     * size of the video's 720p tier (the photo encoder makes the full and
+     * thumb JPEGs).
      */
-    fun poster(context: Context, clip: TrailClip, atMs: Long, filter: android.graphics.ColorMatrixColorFilter?, overlay: (Int, Int) -> Bitmap?): Bitmap? {
-        val (outW, outH) = outputSize(clip, 0)
-        val frame = TrailClips.frame(context, clip, atMs, max(outW, outH)) ?: return null
+    fun poster(context: Context, spec: TrailEditSpec, filter: android.graphics.ColorMatrixColorFilter?, overlay: (Int, Int) -> Bitmap?): Bitmap? {
+        val (outW, outH) = outputSize(spec, 0)
+        val r = spec.crop.rect(spec.clip)
+        val longest = (max(outW / r.width().coerceAtLeast(0.05f), outH / r.height().coerceAtLeast(0.05f))).roundToInt().coerceIn(256, 2400)
+        val frame = TrailClips.frame(context, spec.clip, spec.sourceAt(spec.coverMs), longest) ?: return null
         val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(out)
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { colorFilter = filter }
-        // Cover the output frame, as Presentation's crop layout does.
-        val k = max(outW.toFloat() / frame.width, outH.toFloat() / frame.height)
-        val w = frame.width * k
-        val h = frame.height * k
-        canvas.drawBitmap(frame, null, RectF((outW - w) / 2, (outH - h) / 2, (outW + w) / 2, (outH + h) / 2), paint)
+        val src = android.graphics.Rect(
+            (r.left * frame.width).roundToInt(), (r.top * frame.height).roundToInt(),
+            (r.right * frame.width).roundToInt().coerceAtLeast(1), (r.bottom * frame.height).roundToInt().coerceAtLeast(1),
+        )
+        canvas.drawBitmap(frame, src, RectF(0f, 0f, outW.toFloat(), outH.toFloat()), paint)
         overlay(outW, outH)?.let { canvas.drawBitmap(it, 0f, 0f, null) }
         return out
     }
@@ -944,6 +667,3 @@ internal fun TrailVideoView(trailId: String, video: com.wyrm.omrajput.data.Trail
         }
     }
 }
-
-/** The editor's playback progress as a fraction, for small progress rings. */
-internal fun TrailVideoSession.fraction(): Float = (playhead.toFloat() / lengthMs.coerceAtLeast(1L)).coerceIn(0f, 1f)

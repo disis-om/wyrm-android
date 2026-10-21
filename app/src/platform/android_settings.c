@@ -129,6 +129,10 @@ static const setting_desc GLOBAL_FIELDS[] = {
      "While assist is on, your tag, accessory and Wyrm look are hidden.",
      SETTING_BOOL, 0, 1, NULL, OWNER_SETTINGS,
      SETTINGS_FIELD(ext.assist_hide_cosmetics)},
+    /* Wyrm skin (OM, 2026-10-13): set from the Skin tab, never listed. */
+    {"skin.wyrm", "skin", "Wyrm skin",
+     "A creature or strip look drawn over your snake. 0 is none.",
+     SETTING_INT, 0, 255, NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.wyrm_skin)},
     /* TAGS. These are bridged like everything else but they are not listed in
        the settings tree — the skin editor's Tags tab shows them, next to the
        preview, because every one of them is a thing you judge by looking at
@@ -182,15 +186,15 @@ static const setting_desc GLOBAL_FIELDS[] = {
     {"general.laser_thickness", "general.bot", "Laser thickness", "",
      SETTING_INT, 1, 4, NULL, OWNER_SETTINGS, SETTINGS_FIELD(laser_thickness)},
     {"general.bot_circle", "general.bot", "Circle after score",
-     "Below this score the bot eats. Above it, it turns until its head meets "
-     "its own body and coils round itself, keeping the coil clear and closing "
-     "it on a snake caught inside. NTL's bot length; 2000 is NTL's.",
+     "Below this score the bot hunts for food. From this score on it coils "
+     "round itself to guard its length and closes the coil on any snake "
+     "caught inside.",
      SETTING_INT, 1000, 50000, NULL, OWNER_SETTINGS,
      SETTINGS_FIELD(bot_follow_circle_score)},
     {"general.bot_radius", "general.bot", "Bot radius",
-     "How far ahead of its head the bot watches for snakes, in half snake "
-     "widths. Smaller goes closer to snakes for food; bigger dodges sooner. "
-     "12 is NTL's.", SETTING_INT, 10, 40, NULL,
+     "How far around its head the bot watches for danger. Smaller lets it go "
+     "closer to other snakes for food; bigger makes it dodge them earlier.",
+     SETTING_INT, 10, 40, NULL,
      OWNER_SETTINGS, SETTINGS_FIELD(bot_radius_mult)},
 
     /* CONTROLS. Steering is one choice of three rather than a checkbox and a
@@ -238,15 +242,18 @@ static const setting_desc GLOBAL_FIELDS[] = {
      "How far ahead of the head the arrow begins. It moves from there with "
      "your thumb.",
      SETTING_FLOAT, 0.40f, 2.00f, NULL, OWNER_ARROW, ARROW_FIELD(separation)},
-    {"arrow.smoothness", "controls.arrow", "Arrow lag",
-     "How lazily the arrow follows your thumb. Steering is never smoothed — "
-     "only the arrow you are looking at.",
-     SETTING_FLOAT, 0.0f, 0.85f, NULL, OWNER_ARROW, ARROW_FIELD(smoothness)},
+    /* Sensitivity replaced Arrow lag (OM, 2026-10-18); `smoothness` stays in
+       the file, unread. */
+    {"arrow.sensitivity", "controls.arrow", "Sensitivity",
+     "How far the arrow moves for a finger move. 0% moves like the original "
+     "slither; 100% moves it furthest.",
+     SETTING_FLOAT, 0.0f, 1.0f, NULL, OWNER_SETTINGS,
+     SETTINGS_FIELD(ext.arrow_sens)},
     {"arrow.color", "controls.arrow", "Arrow colour", "", SETTING_COLOR3, 0, 1,
      NULL, OWNER_ARROW, ARROW_FIELD(color)},
 
     /* ON-SCREEN BUTTONS. Positions and per-action modes use their own bridge. */
-    {"keys.key_scale", "keys", "Button size", "", SETTING_FLOAT, 0.65f, 2.50f,
+    {"keys.key_scale", "keys", "Button size", "", SETTING_FLOAT, 0.65f, 5.00f,
      NULL, OWNER_KEYS, KEYS_FIELD(key_scale)},
     {"keys.opacity", "keys", "Button opacity", "", SETTING_FLOAT, 0.25f, 1.0f,
      NULL, OWNER_KEYS, KEYS_FIELD(opacity)},
@@ -258,7 +265,7 @@ static const setting_desc GLOBAL_FIELDS[] = {
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(zoom_opacity)},
 #define KEY_APPEARANCE(action)                                                \
     {"layout.key_" #action "_scale", "layout", "", "", SETTING_FLOAT,     \
-     0.65f, 2.50f, NULL, OWNER_SETTINGS,                                      \
+     0.65f, 5.00f, NULL, OWNER_SETTINGS,                                      \
      SETTINGS_ARRAY_FIELD(hotkey_scale, action)},                             \
     {"layout.key_" #action "_opacity", "layout", "", "", SETTING_FLOAT,   \
      0.05f, 1.0f, NULL, OWNER_SETTINGS,                                       \
@@ -276,10 +283,73 @@ static const setting_desc GLOBAL_FIELDS[] = {
 #undef KEY_APPEARANCE
     /* Eyes Back (OM, 2026-10-06): action 15's size and opacity live in the
        ext block, under the same ids the layout editor builds for any key. */
-    {"layout.key_15_scale", "layout", "", "", SETTING_FLOAT, 0.65f, 2.50f,
+    {"layout.key_15_scale", "layout", "", "", SETTING_FLOAT, 0.65f, 5.00f,
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.eyes_back_scale)},
     {"layout.key_15_opacity", "layout", "", "", SETTING_FLOAT, 0.05f, 1.0f,
      NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.eyes_back_opacity)},
+    /* Snakey Rain key (OM, 2026-10-14), action 16, in the ext block too. */
+    {"layout.key_16_scale", "layout", "", "", SETTING_FLOAT, 0.65f, 5.00f,
+     NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.rain_scale)},
+    {"layout.key_16_opacity", "layout", "", "", SETTING_FLOAT, 0.05f, 1.0f,
+     NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.rain_opacity)},
+    /* On-screen key fills (OM, 2026-10-14), ext.key_fill by action. */
+    {"layout.key_1_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 1)},
+    {"layout.key_2_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 2)},
+    {"layout.key_3_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 3)},
+    {"layout.key_4_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 4)},
+    {"layout.key_6_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 6)},
+    {"layout.key_7_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 7)},
+    {"layout.key_8_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 8)},
+    {"layout.key_9_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 9)},
+    {"layout.key_14_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 14)},
+    {"layout.key_15_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 15)},
+    {"layout.key_16_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 16)},
+    /* Spine on my snake only (OM, 2026-10-14). No label: the Modes page
+       shows it under Spine as Mine / Everyone. */
+    {"normal.spine_mine", "normal", "", "", SETTING_BOOL, 0, 1, NULL,
+     OWNER_SETTINGS, SETTINGS_FIELD(ext.spine_mine[0])},
+    {"assist.spine_mine", "assist", "", "", SETTING_BOOL, 0, 1, NULL,
+     OWNER_SETTINGS, SETTINGS_FIELD(ext.spine_mine[1])},
+    /* Boost glow on my snake only (OM, 2026-10-18). No label: the Modes page
+       shows it under Boost as Mine / Everyone. */
+    {"normal.boost_own", "normal", "", "", SETTING_BOOL, 0, 1, NULL,
+     OWNER_SETTINGS, SETTINGS_FIELD(ext.boost_own[0])},
+    {"assist.boost_own", "assist", "", "", SETTING_BOOL, 0, 1, NULL,
+     OWNER_SETTINGS, SETTINGS_FIELD(ext.boost_own[1])},
+    /* On-screen key colours (OM, 2026-10-14), ext.key_colour by action. */
+    {"layout.key_1_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 1)},
+    {"layout.key_2_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 2)},
+    {"layout.key_3_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 3)},
+    {"layout.key_4_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 4)},
+    {"layout.key_6_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 6)},
+    {"layout.key_7_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 7)},
+    {"layout.key_8_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 8)},
+    {"layout.key_9_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 9)},
+    {"layout.key_14_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 14)},
+    {"layout.key_15_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 15)},
+    {"layout.key_16_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
+     OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 16)},
     /* Auto restart (OM, 2026-10-05): the on-screen toggle's state, so it goes
        to the account. Never listed as a row. */
     {"general.auto_respawn", "layout", "", "", SETTING_INT, 0, 1, NULL,
@@ -353,8 +423,6 @@ static const mode_desc MODE_FIELDS[] = {
      MODE_FIELD(show_boost)},
     {"boost_type", "Boost style", "", SETTING_ENUM, 0, 1, "Normal|Simple",
      MODE_FIELD(boost_type)},
-    {"boost_strength", "Boost strength", "", SETTING_FLOAT, 0.25f, 3.0f, NULL,
-     MODE_FIELD(boost_strength)},
     {"food_type", "Food style", "", SETTING_ENUM, 0, 8,
      "Original|Rings|Mixed|Star|Triangle|Diamond|Hexagon|Square|Flower",
      MODE_FIELD(food_type)},
@@ -825,7 +893,8 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeHotkeysSnapshot(JNIEnv* env,
 #ifdef WYRM_DESKTOP
     /* Wyrm Desktop: every action is a key there; full screen is the
        window's F11 / Alt+Enter, and rope mode is Auto restart's slot. */
-    if (action == MOBILE_HOTKEY_FULLSCREEN) continue;
+    if (action == MOBILE_HOTKEY_FULLSCREEN || action == MOBILE_HOTKEY_RAIN)
+      continue;
 #else
     if (!mobile_hotkey_is_on_screen_button(action)) continue;
 #endif

@@ -43,16 +43,19 @@ vs_output vs_main(vs_input input) {
 
 float4 fs_main(vs_output input) {
   /* A uv shifted right by 4 samples the Studio atlas (game/studio.h).
-     The gradients are taken before the branch, so the mip choice stays
-     defined whichever texture a sprite reads. */
+     Plain Sample, as before the Studio and as the reference client (OM,
+     2026-10-13, Android FPS): this shader draws every bead of every snake,
+     and the explicit-gradient SampleGrad of 7.1.3 cost it on phones. The
+     branch is the same for a whole 2x2 quad (one bead sprite reads one
+     atlas; its uv is >= 4 or <= 1), so the implicit mip choice stays
+     defined. */
   float2 uv = input.uv2;
-  float2 gx = ddx(uv);
-  float2 gy = ddy(uv);
   float4 c;
+  [branch]
   if (uv.x >= 3.0)
-    c = studio_tex.SampleGrad(uv - float2(4.0, 0.0), gx, gy).rgba;
+    c = studio_tex.Sample(uv - float2(4.0, 0.0)).rgba;
   else
-    c = tex_atlas.SampleGrad(uv, gx, gy).rgba;
+    c = tex_atlas.Sample(uv).rgba;
   float d = length(2 * input.uv - 1);
   float p = length(float2(ddx(d), ddy(d)));
   float a = smoothstep(0.0, EDGE_SOFTNESS, (1 - d) / p);

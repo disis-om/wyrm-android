@@ -211,20 +211,29 @@ private fun CrashPromptOverlay(
         }
     }
 
+    val centred = LocalCentredDialogs.current
     Box(Modifier.fillMaxSize().imePadding()) {
         Box(
             Modifier
                 .fillMaxSize()
                 .background(Wyrm.Ink.copy(alpha = 0.34f * appear))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.clearFocus() },
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.clearFocus(); if (centred && !busy) appeared = false },
         )
         Column(
             Modifier
-                .align(Alignment.BottomCenter)
-                .padding(start = 12.dp, end = 12.dp, bottom = 12.dp + insetBottom)
+                .align(if (centred) Alignment.Center else Alignment.BottomCenter)
+                .centredDialogKeys(onDismiss = { if (!busy) appeared = false }, onConfirm = { if (!busy && phase != CrashPhase.SENT) send() else if (!busy) appeared = false })
+                .padding(start = 12.dp, end = 12.dp, bottom = if (centred) 12.dp else 12.dp + insetBottom)
                 .widthIn(max = 520.dp)
                 .fillMaxWidth()
-                .graphicsLayer { translationY = with(density) { 520.dp.toPx() } * (1f - appear) }
+                .graphicsLayer {
+                    if (centred) {
+                        // a computer's dialog: in the middle, fading and growing in
+                        alpha = appear.coerceIn(0f, 1f)
+                        scaleX = 0.94f + 0.06f * appear
+                        scaleY = 0.94f + 0.06f * appear
+                    } else translationY = with(density) { 520.dp.toPx() } * (1f - appear)
+                }
                 .shadow(30.dp, wyrmRounded(28.dp), ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
                 .clip(wyrmRounded(28.dp))
                 .background(Wyrm.Card)
@@ -525,7 +534,8 @@ private fun DropPromptOverlay(
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         // Upright (OM, 2026-10-02): a bottom sheet on the bottom edge, top
         // corners only, with a grab handle; sideways keeps the floating card.
-        val upright = maxHeight > maxWidth
+        val centred = LocalCentredDialogs.current
+        val upright = !centred && maxHeight > maxWidth
         val shape = if (upright) {
             androidx.compose.foundation.shape.RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         } else wyrmRounded(28.dp)
@@ -533,11 +543,12 @@ private fun DropPromptOverlay(
             Modifier
                 .fillMaxSize()
                 .background(Wyrm.Ink.copy(alpha = 0.34f * appear))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.clearFocus() },
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.clearFocus(); if (centred && !busy) appeared = false },
         )
         Column(
             Modifier
-                .align(Alignment.BottomCenter)
+                .align(if (centred) Alignment.Center else Alignment.BottomCenter)
+                .centredDialogKeys(onDismiss = { if (!busy) appeared = false }, onConfirm = { if (!busy && phase != CrashPhase.SENT) send() else if (!busy) appeared = false })
                 .then(
                     if (upright) Modifier.padding(top = insetTop + 12.dp)
                     else Modifier
@@ -545,7 +556,13 @@ private fun DropPromptOverlay(
                         .widthIn(max = 520.dp),
                 )
                 .fillMaxWidth()
-                .graphicsLayer { translationY = with(density) { 520.dp.toPx() } * (1f - appear) }
+                .graphicsLayer {
+                    if (centred) {
+                        alpha = appear.coerceIn(0f, 1f)
+                        scaleX = 0.94f + 0.06f * appear
+                        scaleY = 0.94f + 0.06f * appear
+                    } else translationY = with(density) { 520.dp.toPx() } * (1f - appear)
+                }
                 .shadow(30.dp, shape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
                 .clip(shape)
                 .background(Wyrm.Card)

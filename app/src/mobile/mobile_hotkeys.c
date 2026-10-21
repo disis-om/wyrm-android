@@ -6,6 +6,7 @@
 
 #include "../game/arena_theme.h"
 #include "../user.h"
+#include "../platform/rain_bridge.h"
 
 #ifdef WYRM_SDL_JNI
 #include <SDL3/SDL.h>
@@ -15,7 +16,7 @@ static const char* ACTION_NAMES[NUM_MOBILE_ACTIONS] = {
     "HUD",         "Show names", "Big food",   "Assist",     "Bot",
     "Hotkey menu", "Restart",    "Quit",       "Zoom in",    "Zoom out",
     "Boost",       "Turn left",  "Turn right", "Fullscreen", "Auto restart",
-    "Eyes back"};
+    "Eyes back",   "Rain"};
 
 bool mobile_hotkey_is_on_screen_button(int action) {
   return action == HOTKEY_SHOW_NAMES || action == HOTKEY_BIG_FOOD ||
@@ -26,7 +27,9 @@ bool mobile_hotkey_is_on_screen_button(int action) {
          /* Auto restart (OM, 2026-10-05) lives in the rope-mode slot. */
          action == MOBILE_HOTKEY_ROPE_MODE ||
          /* Eyes Back (OM, 2026-10-06). */
-         action == MOBILE_HOTKEY_EYES_BACK;
+         action == MOBILE_HOTKEY_EYES_BACK ||
+         /* Snakey Rain (OM, 2026-10-14): opens the Rain panel. */
+         action == MOBILE_HOTKEY_RAIN;
 }
 
 static float clampf_local(float value, float lo, float hi) {
@@ -49,7 +52,7 @@ static void action_geometry(tenv* env, int action, float* cx, float* cy,
   *cy = clampf_local(y, 0.0f, 1.0f) * env->wnd->size[1];
   float* key_scale = user_settings_key_scale(&env->usr->usrs, action);
   float scale = button_scale(env) *
-                clampf_local(key_scale ? *key_scale : 1.0f, 0.65f, 2.50f);
+                clampf_local(key_scale ? *key_scale : 1.0f, 0.65f, 5.00f);
   *width = 104.0f * scale;
   *height = 54.0f * scale;
 }
@@ -143,6 +146,34 @@ static ImU32 color(float r, float g, float b, float a) {
   return igColorConvertFloat4ToU32((ImVec4){r, g, b, a});
 }
 
+/* A key's colour (OM, 2026-10-14): the team roster's nine, 0 = theme.
+   Returns false for the theme; else the RGB in r, g, b (0..1). */
+static bool key_palette(int index, float* r, float* g, float* b);
+static bool key_colour(tenv* env, int action, float* r, float* g, float* b) {
+  if (action < 0 || action >= 20) return false;
+  return key_palette(env->usr->usrs.ext.key_colour[action], r, g, b);
+}
+/* A key's fill (OM, 2026-10-14), the same nine colours. */
+static bool key_fill(tenv* env, int action, float* r, float* g, float* b) {
+  if (action < 0 || action >= 20) return false;
+  if (env->usr->usrs.ext.key_fill[action] == 9) {
+    *r = *g = *b = 128.0f / 255.0f;
+    return true;
+  }
+  return key_palette(env->usr->usrs.ext.key_fill[action], r, g, b);
+}
+static bool key_palette(int index, float* r, float* g, float* b) {
+  static const uint32_t palette[] = {0x000000, 0xFFFFFF, 0x111111,
+                                     0xFFD54A, 0x4DD9FF, 0x5BE37D,
+                                     0xFF6FB5, 0xFF9A3C, 0xFF5A5A};
+  if (index <= 0 || index > 8) return false;
+  uint32_t c = palette[index];
+  *r = ((c >> 16) & 255) / 255.0f;
+  *g = ((c >> 8) & 255) / 255.0f;
+  *b = (c & 255) / 255.0f;
+  return true;
+}
+
 static bool action_active(tenv* env, int action) {
   if (action >= 0 && action < NUM_HOTKEYS)
     return env->usr->usrs.hotkeys[action].active;
@@ -194,31 +225,34 @@ void mobile_hotkeys_draw_gameplay(tenv* env) {
                          color(0.035f, 0.040f, 0.055f, alpha * (0.16f - i * 0.035f)),
                          corner + grow, 0, 2.5f);
     }
-    if (active || pressed)
-      ImDrawList_AddRect(draw, (ImVec2){min.x - 3.5f, min.y - 3.5f},
-                         (ImVec2){max.x + 3.5f, max.y + 3.5f},
-                         color(0.247f, 0.933f, 0.588f, alpha * 0.55f),
-                         corner + 3.5f, 0, 3.0f);
+    /* A key that is on only turns its border green (OM, 2026-10-14). */
     /* Paper paint inside the exact same rectangle used by hit_action(). Input,
        mode and placement are deliberately not part of this draw function. */
     ImDrawList_AddRectFilled(draw, (ImVec2){min.x, min.y + height * 0.07f},
                              (ImVec2){max.x, max.y + height * 0.07f},
                              color(0, 0, 0, alpha * 0.16f), corner, 0);
+    /* Two colours (OM, 2026-10-14): the fill, and the label + border. */
+    float kr = 0, kg = 0, kb = 0, fr = 0, fg = 0, fb = 0;
+    bool coloured = key_colour(env, action, &kr, &kg, &kb);
+    bool filled = key_fill(env, action, &fr, &fg, &fb);
     ImDrawList_AddRectFilled(
         draw, min, max,
-        active || pressed
-            ? arena_theme_colour(ARENA_THEME_INK, alpha * 0.96f)
-            : arena_theme_colour(ARENA_THEME_CARD, alpha * 0.94f),
+        filled ? color(fr, fg, fb, alpha * 0.94f)
+               : arena_theme_colour(ARENA_THEME_CARD, alpha * 0.94f),
         corner, 0);
+    bool on = active || pressed;
     ImDrawList_AddRect(draw, min, max,
-                       arena_theme_colour(ARENA_THEME_INK,
-                                          active || pressed ? 0.82f : 0.48f),
-                       corner, 0, 1.5f);
+                       on ? color(0.247f, 0.933f, 0.588f, 1.0f)
+                       : coloured ? color(kr, kg, kb, 0.9f)
+                       : color(1.0f, 1.0f, 1.0f, 0.9f),
+                       corner, 0, on ? 3.0f : 1.5f);
     const char* function = mobile_hotkey_action_name(action);
     /* Dark type on a lit key, light type on a dim one. */
     /* Opacity belongs to the surface only. Keeping type and outline at full
        theme contrast means a nearly transparent key is still identifiable. */
-    ImU32 primary = arena_theme_colour(ARENA_THEME_INK, 1.0f);
+    ImU32 primary = color(1.0f, 1.0f, 1.0f, 1.0f);
+    /* The label takes the key's colour (OM, 2026-10-14). */
+    if (coloured) primary = color(kr, kg, kb, 1.0f);
     ImFont* font = env->usr->imgui_data.body_font[FONT_SIZE_REGULAR];
     igPushFont(font, font->LegacySize);
     ImVec2 size;
@@ -252,6 +286,8 @@ void mobile_hotkeys_begin_editor(tenv* env, int focus_action) {
   state->eyes_back_visible_backup = env->usr->usrs.ext.eyes_back_visible;
   state->eyes_back_x_backup = env->usr->usrs.ext.eyes_back_x;
   state->eyes_back_y_backup = env->usr->usrs.ext.eyes_back_y;
+  state->rain_x_backup = env->usr->usrs.ext.rain_x;
+  state->rain_y_backup = env->usr->usrs.ext.rain_y;
   state->editor_focus = focus_action >= 0 && focus_action < NUM_MOBILE_ACTIONS
                             ? focus_action
                             : -1;
@@ -270,6 +306,8 @@ void mobile_hotkeys_finish_editor(tenv* env, bool save) {
     env->usr->usrs.ext.eyes_back_visible = state->eyes_back_visible_backup;
     env->usr->usrs.ext.eyes_back_x = state->eyes_back_x_backup;
     env->usr->usrs.ext.eyes_back_y = state->eyes_back_y_backup;
+    env->usr->usrs.ext.rain_x = state->rain_x_backup;
+    env->usr->usrs.ext.rain_y = state->rain_y_backup;
   }
   state->editor_active = false;
   state->editor_focus = -1;
@@ -288,6 +326,8 @@ void mobile_hotkeys_reset_layout(tenv* env) {
   env->usr->usrs.rope_mode_y = 0.22f;
   env->usr->usrs.ext.eyes_back_x = 0.50f;
   env->usr->usrs.ext.eyes_back_y = 0.33f;
+  env->usr->usrs.ext.rain_x = 0.50f;
+  env->usr->usrs.ext.rain_y = 0.12f;
 }
 
 void mobile_hotkeys_set_position(tenv* env, int action, float x, float y) {
@@ -412,6 +452,11 @@ void mobile_hotkey_get_layout(const user_settings* settings, int action,
     if (visible) *visible = settings->ext.eyes_back_visible;
     if (x) *x = settings->ext.eyes_back_x;
     if (y) *y = settings->ext.eyes_back_y;
+  } else if (action == MOBILE_HOTKEY_RAIN) {
+    /* Shown exactly while Snakey Rain is on. */
+    if (visible) *visible = wyrm_rain_enabled();
+    if (x) *x = settings->ext.rain_x;
+    if (y) *y = settings->ext.rain_y;
   }
 }
 
@@ -431,6 +476,9 @@ void mobile_hotkey_set_layout(user_settings* settings, int action, bool visible,
     settings->ext.eyes_back_visible = visible;
     settings->ext.eyes_back_x = x;
     settings->ext.eyes_back_y = y;
+  } else if (action == MOBILE_HOTKEY_RAIN) {
+    settings->ext.rain_x = x;
+    settings->ext.rain_y = y;
   }
 }
 

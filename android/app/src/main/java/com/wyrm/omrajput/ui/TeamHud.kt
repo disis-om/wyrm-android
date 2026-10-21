@@ -31,15 +31,32 @@ object TeamHudStore {
         // The leaderboard's WIDTH and HEIGHT (OM, 2026-10-13), appended likewise:
         // multiples of the board's own width and row height.
         "lb_width", "lb_height",
+        // The chat window's ONLINE tab (OM, 2026-10-14): name and
+        // "@username · server" colours, appended likewise.
+        "online_name", "online_data",
+        // GLOBAL's own name and message colours, and the folded chat button
+        // drawn like the keys: label + border, fill (9 = grey), size, opacity
+        // (OM, 2026-10-18), appended likewise.
+        "global_name", "global_text",
+        "chatbtn_label", "chatbtn_fill", "chatbtn_scale", "chatbtn_opacity",
     )
-    private val DEFAULTS = floatArrayOf(1f, 1f, 340f, 210f, 0f, 0f, 400f, 270f, 0f, 0f, 1f, 1f, 1f, 0f, 1f, 1f)
+    private val DEFAULTS = floatArrayOf(1f, 1f, 340f, 210f, 0f, 0f, 400f, 270f, 0f, 0f, 1f, 1f, 1f, 0f, 1f, 1f, 0f, 0f,
+        0f, 0f, 0f, 9f, 1f, 0.9f)
     private val RANGES = listOf(
         0.65f..1.60f, 0.05f..1f, 220f..900f, 120f..800f, 0f..8f, 0f..8f,
         240f..1000f, 150f..900f, 0f..8f, 0f..8f,
         0f..1f, 0f..1f, 0f..1f,
         0f..8f,
         0.7f..2.2f, 1f..2.2f,
+        0f..8f, 0f..8f,
+        0f..8f, 0f..8f,
+        0f..8f, 0f..9f, 0.6f..2.5f, 0.1f..1f,
     )
+
+    /** Colour indexes: whole numbers. */
+    private fun isColour(key: String) =
+        key.endsWith("_name") || key.endsWith("_data") || key.endsWith("_text") ||
+            key == "chatbtn_label" || key == "chatbtn_fill"
 
     /** The engine's palette; 0 keeps the theme's colour. */
     val COLOUR_NAMES = listOf("Theme", "White", "Black", "Yellow", "Cyan", "Green", "Pink", "Orange", "Red")
@@ -66,6 +83,9 @@ object TeamHudStore {
                 if (it.isFinite()) it.coerceIn(RANGES[index]) else DEFAULTS[index]
             }
         }
+        // GLOBAL used TEAM's colours until 2026-10-18: keep what was chosen.
+        if (!store.contains("global_name")) values["global_name"] = values["chat_name"] ?: 0f
+        if (!store.contains("global_text")) values["global_text"] = values["chat_text"] ?: 0f
         sink = publish
         publish(snapshot())
     }
@@ -83,7 +103,7 @@ object TeamHudStore {
         val key = id.removePrefix("teamhud.")
         val index = KEYS.indexOf(key)
         if (index < 0 || !next.isFinite()) return
-        val clamped = next.coerceIn(RANGES[index]).let { if (key.endsWith("_name") || key.endsWith("_data") || key.endsWith("_text")) kotlin.math.round(it) else it }
+        val clamped = next.coerceIn(RANGES[index]).let { if (isColour(key)) kotlin.math.round(it) else it }
         values[key] = clamped
         prefs?.edit()?.putFloat(key, clamped)?.apply()
         sink?.invoke(snapshot())

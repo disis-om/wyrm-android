@@ -312,6 +312,42 @@ internal fun SkinStudioScreen(
 /* ------------------------------------------------------------ the stage */
 
 @OptIn(ExperimentalFoundationApi::class)
+/**
+ * The worn Studio skin on the classic Skin page's preview (OM, 2026-10-13):
+ * the same beads and eyes the Studio made, swimming slowly, no card.
+ */
+@Composable
+internal fun StudioWornPreview(modifier: Modifier = Modifier) {
+    val textures by rememberSkinTextures()
+    @Suppress("UNUSED_VARIABLE") val paintRevision = SkinStudio.paintRevision
+    val skin = SkinStudio.worn?.let { SkinStudio.skin(it) } ?: return
+    val image: (String) -> ImageBitmap? = { id -> SkinStudio.bead(id)?.let { StudioArt.beadImage(it, textures) } }
+    var time by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (last != 0L) time += ((now - last) / 1e9f).coerceAtMost(0.05f)
+                last = now
+            }
+        }
+    }
+    Canvas(modifier) {
+        val bead = size.height * 0.2f
+        val step = bead * STUDIO_BEAD_STEP
+        val count = ((size.width + bead * 2) / step).toInt().coerceIn(8, 256)
+        val head = Offset(size.width * 0.84f, size.height * 0.5f)
+        val wave = bead * 0.55f
+        val k = 0.32f * STUDIO_BEAD_STEP / 0.36f
+        val place = { i: Int ->
+            Offset(head.x - i * step,
+                head.y + sin(time * 2.0f - i * k) * wave * (0.25f + 0.75f * (i / 30f).coerceAtMost(1f)))
+        }
+        val look = Offset(1.4f + 0.6f * cos(time * 0.9f), 1.8f * sin(time * 0.7f))
+        drawStudioSnake(skin, count, bead, place, image, look = look)
+    }
+}
+
 @Composable
 private fun StudioStage(
     skin: StudioSkin,

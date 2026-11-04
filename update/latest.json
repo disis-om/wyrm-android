@@ -3,17 +3,17 @@
   "source": "github",
   "productName": "Wyrm",
   "packageName": "com.wyrm.omrajput",
-  "versionCode": 862,
-  "versionName": "8.5.12",
+  "versionCode": 864,
+  "versionName": "8.5.14",
   "minimumVersionCode": 0,
   "mandatory": true,
-  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v8.5.12/Wyrm-v8.5.12.apk",
-  "apkSize": 82649624,
-  "sha256": "bb39916108603ab4de3f7c7b150701bd366e6cb84484769a0f46efd45dfa04b1",
-  "publishedAt": "2026-11-02T23:15:43Z",
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v8.5.14/Wyrm-v8.5.14.apk",
+  "apkSize": 121734720,
+  "sha256": "a9127b1f0905eca8d4eb2f4167055475fbd5f9822f2fe3da17ff2442fd104856",
+  "publishedAt": "2026-11-04T14:25:03Z",
   "headline": "A new version of Wyrm",
   "author": "OM Rajput",
   "releaseNotes": [
-    "minor bugs fixes"
+    "minor bug fixes"
   ]
 }

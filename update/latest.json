@@ -3,17 +3,15 @@
   "source": "github",
   "productName": "Wyrm",
   "packageName": "com.wyrm.omrajput",
-  "versionCode": 864,
-  "versionName": "8.5.14",
+  "versionCode": 870,
+  "versionName": "8.6.0",
   "minimumVersionCode": 0,
   "mandatory": true,
-  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v8.5.14/Wyrm-v8.5.14.apk",
-  "apkSize": 121734720,
-  "sha256": "a9127b1f0905eca8d4eb2f4167055475fbd5f9822f2fe3da17ff2442fd104856",
-  "publishedAt": "2026-11-04T14:25:03Z",
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v8.6.0/Wyrm-v8.6.0.apk",
+  "apkSize": 150673104,
+  "sha256": "f8763a565d09c30d72cd76690f2ed08bcd69cd08f9af498320f57d8f07eff088",
+  "publishedAt": "2026-11-08T18:00:35Z",
   "headline": "A new version of Wyrm",
   "author": "OM Rajput",
-  "releaseNotes": [
-    "minor bug fixes"
-  ]
+  "releaseNotes": ["Classic special skins look like the original game", "Music and sounds, in Settings \u00e2\u20ac\u00ba Music and sounds", "Your own photo as the arena floor", "Minimap icons for teammates and friends in your arena", "Global chat: formatting, link previews, @mentions, who is active", "Arena picker: community arenas, search, Add IP popup", "Paste a skin code; arena player ID with Copy", "Smoother frames, no lost beads or shadows in crowds", "Auto zoom like the original; bot avoids the killer ring", "Fixed: arena background photo crash, chat emoji, ping, team identity"]
 }

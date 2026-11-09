@@ -24,6 +24,16 @@ therefore distributed under the GNU GPL v3 (see LICENSE). The original Vlither
 code remains the copyright of its authors. OM Rajput's changes and additions
 are copyright OM Rajput and are shared under the same license.
 
+ENFORCEMENT
+
+OM Rajput's work is protected by copyright. Anyone may use it only on the
+terms of its license: keep this copyright notice, credit OM Rajput, and share
+the full source of anything built from it under the same license. Copying,
+reusing or passing off his work as your own without following those terms
+(for example taking the Eyes Back code, or any other part covered by this
+notice) is copyright infringement, and OM Rajput will take action against it,
+including takedown notices and legal steps.
+
 NOT COVERED BY THIS NOTICE
 
 - Third-party libraries keep their own copyright and license: SDL, GLFW,

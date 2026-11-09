@@ -36,7 +36,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -108,6 +108,8 @@ fun SkinScreen(
     onTabSocial: (Rect) -> Unit,
     onTabSettings: (Rect) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     LaunchedEffect(Unit) { onAppear() }
     DisposableEffect(livePreview) {
         if (livePreview) onPreview(true)
@@ -139,7 +141,7 @@ fun SkinScreen(
                     )
                 }
             }
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
@@ -155,7 +157,7 @@ fun SkinScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.5.sp,
                     letterSpacing = 0.92.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                 )
                 Text(
                     text = "Skin",
@@ -163,7 +165,7 @@ fun SkinScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 30.sp,
                     letterSpacing = (-0.5).sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.padding(top = 3.dp),
                 )
             }
@@ -218,7 +220,7 @@ fun SkinScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f)),
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f)),
         ) {
             WearButton(onClick = onWear)
             Spacer(Modifier.height(10.dp))
@@ -245,13 +247,15 @@ private fun PreviewCard(
     onHole: (Rect) -> Unit,
     onLayout: (centreY: Float, scale: Float) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(16.dp)
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .padding(18.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -261,7 +265,7 @@ private fun PreviewCard(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.5.sp,
                 letterSpacing = 0.8.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -270,7 +274,7 @@ private fun PreviewCard(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.5.sp,
                 letterSpacing = 0.8.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
         }
         Spacer(Modifier.height(16.dp))
@@ -293,13 +297,15 @@ private fun PreviewCard(
 
 @Composable
 private fun BasicCard(content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
     ) {
         content()
     }
@@ -307,6 +313,8 @@ private fun BasicCard(content: @Composable () -> Unit) {
 
 @Composable
 private fun SkinCategoryTabs(selected: Int, onSelect: (Int) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val labels = listOf("Default", "Custom", "Accessories", "Tags", "Arena")
     Row(
         modifier = Modifier
@@ -322,11 +330,11 @@ private fun SkinCategoryTabs(selected: Int, onSelect: (Int) -> Unit) {
                 fontFamily = Wyrm.Body,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
                 fontSize = 13.5.sp,
-                color = if (active) Wyrm.OnInk else Wyrm.Mute,
+                color = if (active) wyrmScopedPalette.onInk else wyrmScopedPalette.mute,
                 modifier = Modifier
                     .clip(wyrmRounded(18.dp))
-                    .background(if (active) Wyrm.Ink else Wyrm.Card)
-                    .border(1.dp, if (active) Wyrm.Ink else Wyrm.Rule, wyrmRounded(18.dp))
+                    .background(if (active) wyrmScopedPalette.ink else wyrmScopedPalette.card)
+                    .border(1.dp, if (active) wyrmScopedPalette.ink else wyrmScopedPalette.rule, wyrmRounded(18.dp))
                     .clickable { onSelect(index) }
                     .padding(horizontal = 15.dp, vertical = 9.dp),
             )
@@ -343,6 +351,8 @@ private fun SkinTagInline(
     onTagCodeChange: (String) -> Unit,
     onFetchTag: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val atlas by rememberTagAtlas()
     val chosen = settings.firstOrNull { it.id == "tags.index" }
     val selected = chosen?.number?.roundToInt() ?: -1
@@ -421,8 +431,8 @@ private fun SkinTagInline(
                     .fillMaxWidth()
                     .height(44.dp)
                     .clip(shape)
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, shape)
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, shape)
                     .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
@@ -430,11 +440,11 @@ private fun SkinTagInline(
                     value = tagCode,
                     onValueChange = onTagCodeChange,
                     singleLine = true,
-                    textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Ink),
-                    cursorBrush = SolidColor(Wyrm.Ink),
+                    textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.ink),
+                    cursorBrush = SolidColor(wyrmScopedPalette.ink),
                     modifier = Modifier.fillMaxWidth(),
                     decorationBox = { inner ->
-                        if (tagCode.isEmpty()) Text("id password", fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.TabIdle)
+                        if (tagCode.isEmpty()) Text("id password", fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.tabIdle)
                         inner()
                     },
                 )
@@ -445,7 +455,7 @@ private fun SkinTagInline(
                     .fillMaxWidth()
                     .height(42.dp)
                     .clip(wyrmRounded(11.dp))
-                    .background(Wyrm.Ink)
+                    .background(wyrmScopedPalette.ink)
                     .clickable { onFetchTag(tagCode) },
                 contentAlignment = Alignment.Center,
             ) {
@@ -454,7 +464,7 @@ private fun SkinTagInline(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    color = Wyrm.OnInk,
+                    color = wyrmScopedPalette.onInk,
                 )
             }
         }
@@ -468,13 +478,15 @@ private fun PresetList(
     atlas: ImageBitmap?,
     onPick: (Int) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val count = tables.presetCount
     if (count == 0) {
         Text(
             text = "Presets load with the engine.",
             fontFamily = Wyrm.Body,
             fontSize = 13.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
         )
         return
@@ -487,7 +499,7 @@ private fun PresetList(
                         .fillMaxWidth()
                         .padding(start = 48.dp)
                         .height(1.dp)
-                        .background(Wyrm.RowRule),
+                        .background(wyrmScopedPalette.rowRule),
                 )
             }
             OriginalPresetRow(
@@ -512,6 +524,8 @@ private fun OriginalPresetRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
@@ -527,7 +541,7 @@ private fun OriginalPresetRow(
             fontFamily = Wyrm.Body,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             fontSize = 11.5.sp,
-            color = if (selected) Wyrm.Ink else Wyrm.Quiet,
+            color = if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.quiet,
             modifier = Modifier.width(34.dp),
         )
         Box(
@@ -535,10 +549,10 @@ private fun OriginalPresetRow(
                 .weight(1f)
                 .height(34.dp)
                 .clip(wyrmRounded(17.dp))
-                .background(Wyrm.Well.copy(alpha = 0.62f))
+                .background(wyrmScopedPalette.well.copy(alpha = 0.62f))
                 .border(
                     if (selected) 2.dp else 1.dp,
-                    if (selected) Wyrm.Ink else Color(0x1637352F),
+                    if (selected) wyrmScopedPalette.ink else Color(0x1637352F),
                     wyrmRounded(17.dp),
                 )
                 .padding(if (selected) 3.dp else 2.dp)
@@ -567,7 +581,7 @@ private fun OriginalPresetRow(
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.width(24.dp).padding(start = 8.dp),
         )
     }
@@ -575,12 +589,14 @@ private fun OriginalPresetRow(
 
 @Composable
 private fun DrillRow(title: String, value: String, first: Boolean = false, onOpen: (Rect) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
     Column {
         if (!first) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
         }
         Row(
             modifier = Modifier
@@ -596,19 +612,19 @@ private fun DrillRow(title: String, value: String, first: Boolean = false, onOpe
                 text = title,
                 fontFamily = Wyrm.Body,
                 fontSize = 15.5.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 text = value,
                 fontFamily = Wyrm.Body,
                 fontSize = 14.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(6.dp))
-            Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = Wyrm.Chevron)
+            Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = wyrmScopedPalette.chevron)
         }
     }
 }
@@ -620,13 +636,15 @@ private fun AdvancedHeader(open: Boolean, onToggle: () -> Unit) {
 
 @Composable
 private fun AdvancedCard(content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
     ) {
         content()
     }
@@ -639,6 +657,8 @@ internal fun SliderRow(
     first: Boolean,
     onChange: (Setting, List<Float>) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val nums = TextStyle(fontFeatureSettings = "tnum")
     Column(modifier = Modifier.padding(14.dp)) {
         if (!first) {
@@ -646,7 +666,7 @@ internal fun SliderRow(
                 Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Wyrm.RowRule)
+                    .background(wyrmScopedPalette.rowRule)
                     .padding(bottom = 0.dp),
             )
         }
@@ -655,14 +675,14 @@ internal fun SliderRow(
                 text = setting.label.ifBlank { setting.id.substringAfter('.') }.replaceFirstChar { it.uppercase() },
                 fontFamily = Wyrm.Body,
                 fontSize = 15.5.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 text = "%.2f".format(setting.number),
                 fontFamily = Wyrm.Body,
                 fontSize = 14.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 style = nums,
             )
         }
@@ -671,7 +691,7 @@ internal fun SliderRow(
                 text = caption,
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
@@ -692,9 +712,11 @@ internal fun SwitchRow(
     first: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         if (!first) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
         }
         Row(
             modifier = Modifier
@@ -705,12 +727,12 @@ internal fun SwitchRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+                Text(text = title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
                 Text(
                     text = detail,
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 1.dp),
                 )
             }
@@ -721,6 +743,8 @@ internal fun SwitchRow(
 
 @Composable
 internal fun WearButton(onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -730,7 +754,7 @@ internal fun WearButton(onClick: () -> Unit) {
             .height(46.dp)
             .scale(pressScale(pressed))
             .clip(wyrmRounded(12.dp))
-            .background(Wyrm.Ink)
+            .background(wyrmScopedPalette.ink)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -739,7 +763,7 @@ internal fun WearButton(onClick: () -> Unit) {
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.5.sp,
-            color = Wyrm.OnInk,
+            color = wyrmScopedPalette.onInk,
         )
     }
 }

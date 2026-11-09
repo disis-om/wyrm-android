@@ -20,7 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,16 +70,18 @@ fun ThreadScreen(
     onVoiceInvite: () -> Unit,
     onJoinInvite: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val bottom = keyboardRoom(insetBottom)
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
         ) {
@@ -91,7 +93,7 @@ fun ThreadScreen(
                     text = "‹",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .clickable(onClick = onBack)
                         .padding(horizontal = 4.dp, vertical = 8.dp),
@@ -112,7 +114,7 @@ fun ThreadScreen(
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -121,7 +123,7 @@ fun ThreadScreen(
                             text = player.handle,
                             fontFamily = Wyrm.Body,
                             fontSize = 12.sp,
-                            color = Wyrm.Quiet,
+                            color = wyrmScopedPalette.quiet,
                         )
                     }
                 }
@@ -129,7 +131,7 @@ fun ThreadScreen(
                     text = "Profile",
                     fontFamily = Wyrm.Body,
                     fontSize = 15.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .clickable { onOpenPlayer(player.id) }
                         .padding(horizontal = 6.dp, vertical = 8.dp),
@@ -144,26 +146,26 @@ fun ThreadScreen(
                         text = "Arena invite",
                         fontFamily = Wyrm.Body,
                         fontSize = 13.sp,
-                        color = Wyrm.Link,
+                        color = wyrmScopedPalette.link,
                         modifier = Modifier.clickable(onClick = onInvite).padding(vertical = 4.dp),
                     )
                     Text(
                         text = "Voice invite",
                         fontFamily = Wyrm.Body,
                         fontSize = 13.sp,
-                        color = Wyrm.Link,
+                        color = wyrmScopedPalette.link,
                         modifier = Modifier.clickable(onClick = onVoiceInvite).padding(vertical = 4.dp),
                     )
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         if (error.isNotEmpty()) {
             Text(
                 text = error,
                 fontFamily = Wyrm.Body,
                 fontSize = 12.sp,
-                color = Wyrm.Badge,
+                color = wyrmScopedPalette.badge,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
@@ -182,7 +184,7 @@ fun ThreadScreen(
                         fontFamily = Wyrm.Body,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                     )
                 }
             } else {
@@ -217,6 +219,8 @@ fun ThreadScreen(
 
 @Composable
 private fun Bubble(message: ChatMessage, mine: Boolean, onJoinInvite: (String) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val invite = remember(message.body) { parseInvite(message.body) }
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -242,12 +246,12 @@ private fun Bubble(message: ChatMessage, mine: Boolean, onJoinInvite: (String) -
                             bottomEnd = if (mine) 5.dp else 14.dp,
                         ),
                     )
-                    .background(if (mine) Wyrm.Ink else Wyrm.Card)
+                    .background(if (mine) wyrmScopedPalette.ink else wyrmScopedPalette.card)
                     .then(
                         if (mine) Modifier
                         else Modifier.border(
                             1.dp,
-                            Wyrm.Rule,
+                            wyrmScopedPalette.rule,
                             RoundedCornerShape(
                                 topStart = 14.dp,
                                 topEnd = 14.dp,
@@ -263,13 +267,13 @@ private fun Bubble(message: ChatMessage, mine: Boolean, onJoinInvite: (String) -
                     fontFamily = Wyrm.Body,
                     fontSize = 14.5.sp,
                     lineHeight = 21.sp,
-                    color = if (mine) Wyrm.OnInk else Wyrm.Ink,
+                    color = if (mine) wyrmScopedPalette.onInk else wyrmScopedPalette.ink,
                 )
                 Text(
                     text = clockOf(message.createdAt),
                     fontFamily = Wyrm.Body,
                     fontSize = 11.sp,
-                    color = if (mine) Wyrm.OnInk.copy(alpha = 0.65f) else Wyrm.Quiet,
+                    color = if (mine) wyrmScopedPalette.onInk.copy(alpha = 0.65f) else wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
@@ -288,6 +292,8 @@ private fun Bubble(message: ChatMessage, mine: Boolean, onJoinInvite: (String) -
  */
 @Composable
 private fun InviteBubble(address: String, note: String, mine: Boolean, onJoin: (String) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val clipboard = LocalClipboardManager.current
     var copied by remember(address) { mutableStateOf(false) }
     LaunchedEffect(copied) {
@@ -300,8 +306,8 @@ private fun InviteBubble(address: String, note: String, mine: Boolean, onJoin: (
         modifier = Modifier
             .widthIn(max = 300.dp)
             .clip(wyrmRounded(14.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp))
             .padding(13.dp, 14.dp),
     ) {
         Text(
@@ -310,21 +316,21 @@ private fun InviteBubble(address: String, note: String, mine: Boolean, onJoin: (
             fontWeight = FontWeight.SemiBold,
             fontSize = 10.5.sp,
             letterSpacing = 0.92.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
         Text(
             text = note.ifBlank { "Arena invite" },
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.padding(top = 6.dp),
         )
         Text(
             text = address,
             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
             fontSize = 12.5.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.padding(top = 2.dp),
         )
         Row(
@@ -357,11 +363,13 @@ private fun ThreadComposer(
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val canSend = enabled && draft.isNotBlank() && !sending
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Wyrm.Paper.copy(alpha = 0.94f))
+            .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
             .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = insetBottom.coerceAtLeast(12.dp)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
@@ -371,8 +379,8 @@ private fun ThreadComposer(
                 .weight(1f)
                 .heightIn(min = 42.dp)
                 .clip(wyrmRounded(11.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(11.dp))
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(11.dp))
                 .padding(horizontal = 13.dp, vertical = 10.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -383,14 +391,14 @@ private fun ThreadComposer(
                 textStyle = androidx.compose.ui.text.TextStyle(
                     fontFamily = Wyrm.Body,
                     fontSize = 15.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                 ),
-                cursorBrush = androidx.compose.ui.graphics.SolidColor(Wyrm.Ink),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(wyrmScopedPalette.ink),
                 maxLines = 4,
                 modifier = Modifier.fillMaxWidth(),
                 decorationBox = { inner ->
                     if (draft.isEmpty()) {
-                        Text(text = placeholder, fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.TabIdle)
+                        Text(text = placeholder, fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.tabIdle)
                     }
                     inner()
                 },
@@ -400,11 +408,11 @@ private fun ThreadComposer(
             modifier = Modifier
                 .size(42.dp)
                 .clip(wyrmRounded(11.dp))
-                .background(if (canSend) Wyrm.Ink else Wyrm.Ink.copy(alpha = 0.35f))
+                .background(if (canSend) wyrmScopedPalette.ink else wyrmScopedPalette.ink)
                 .clickable(enabled = canSend, onClick = onSend),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text = "→", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, color = Wyrm.OnInk)
+            Text(text = "→", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, color = wyrmScopedPalette.onInk)
         }
     }
 }

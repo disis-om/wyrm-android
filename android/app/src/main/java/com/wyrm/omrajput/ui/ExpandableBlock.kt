@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +32,8 @@ fun ExpandableBlock(
     collapsedHeight: Dp = 132.dp,
     content: @Composable () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var expanded by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
 
@@ -49,7 +51,7 @@ fun ExpandableBlock(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(40.dp)
-                        .background(Wyrm.Card)
+                        .background(wyrmScopedPalette.card)
                         .clickable(
                             interactionSource = interaction,
                             indication = null,
@@ -61,7 +63,7 @@ fun ExpandableBlock(
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
-                        color = Wyrm.Link,
+                        color = wyrmScopedPalette.link,
                         modifier = Modifier.padding(top = 6.dp),
                     )
                 }

@@ -156,6 +156,12 @@ data class TrailComment(
     val createdAt: String,
     val mine: Boolean,
     val author: TrailAuthor,
+    /** Threads (2026-10-30): the top comment it sits under, or blank for a top comment. */
+    val parentId: String = "",
+    val replyCount: Int = 0,
+    /** Whom a reply answers ("@name" in front of it), blank otherwise. */
+    val replyToUsername: String = "",
+    val editedAt: String = "",
 )
 
 data class TrailPage(val trails: List<Trail>, val nextCursor: String?)
@@ -235,4 +241,8 @@ internal fun JSONObject.toTrailComment(base: String) = TrailComment(
     createdAt = optString("createdAt"),
     mine = optBoolean("mine"),
     author = getJSONObject("author").toTrailAuthor(base),
+    parentId = optString("parentId").takeIf { it.isNotBlank() && it != "null" }.orEmpty(),
+    replyCount = optInt("replyCount"),
+    replyToUsername = optJSONObject("replyTo")?.optString("username")?.takeIf { it.isNotBlank() && it != "null" }.orEmpty(),
+    editedAt = optString("editedAt").takeIf { it.isNotBlank() && it != "null" }.orEmpty(),
 )

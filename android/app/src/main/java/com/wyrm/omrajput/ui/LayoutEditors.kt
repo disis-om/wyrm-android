@@ -24,7 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.ui.res.painterResource
 import com.composables.icons.lucide.R as LucideR
 import androidx.compose.material3.Slider
@@ -195,7 +195,7 @@ fun OnScreenButtonLayoutEditor(
 fun ArenaHudLayoutEditor(
     positions: Map<ArenaHudTarget, Offset>,
     minimapSize: Float,
-    leaderboardFont: Int,
+    leaderboardFont: Float,
     statsFont: Int,
     safeInsets: SafeInsets,
     onMove: (ArenaHudTarget, Offset) -> Unit,
@@ -203,10 +203,12 @@ fun ArenaHudLayoutEditor(
     onSave: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var size by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current
     val mapDp = with(density) { minimapSize.coerceIn(128f, 512f).toDp() }
-    val leaderboardScale = 1f + leaderboardFont.coerceIn(0, 2) * 0.16f
+    val leaderboardScale = leaderboardFont.coerceIn(0.25f, 3f)
     val statsScale = 1f + statsFont.coerceIn(0, 2) * 0.14f
 
     Box(
@@ -223,10 +225,10 @@ fun ArenaHudLayoutEditor(
                 Box(
                     modifier = Modifier
                         .size(mapDp)
-                        .background(Wyrm.Card.copy(alpha = 0.18f), CircleShape)
-                        .border(3.dp, Wyrm.Ink.copy(alpha = 0.76f), CircleShape),
+                        .background(wyrmScopedPalette.card.copy(alpha = 0.18f), CircleShape)
+                        .border(3.dp, wyrmScopedPalette.ink, CircleShape),
                     contentAlignment = Alignment.Center,
-                ) { Text("MAP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = Wyrm.Ink) }
+                ) { Text("MAP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = wyrmScopedPalette.ink) }
             }
             Draggable(position(ArenaHudTarget.LEADERBOARD), area, { onMove(ArenaHudTarget.LEADERBOARD, it) }) {
                 HudPreviewPanel(
@@ -254,10 +256,10 @@ fun ArenaHudLayoutEditor(
                     modifier = Modifier
                         .width(with(density) { 124f.toDp() })
                         .height(with(density) { 56f.toDp() })
-                        .background(Wyrm.Card.copy(alpha = 0.94f), wyrmRounded(28.dp))
-                        .border(1.5.dp, Wyrm.Ink.copy(alpha = 0.45f), wyrmRounded(28.dp)),
+                        .background(wyrmScopedPalette.card.copy(alpha = 0.94f), wyrmRounded(28.dp))
+                        .border(1.5.dp, wyrmScopedPalette.ink, wyrmRounded(28.dp)),
                     contentAlignment = Alignment.Center,
-                ) { Text("CHAT", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = Wyrm.Ink) }
+                ) { Text("CHAT", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = wyrmScopedPalette.ink) }
             }
         }
         EditorBar(
@@ -273,13 +275,15 @@ fun ArenaHudLayoutEditor(
 
 @Composable
 private fun HudPreviewPanel(label: String, width: Dp, height: Dp, opacity: Float = 1f) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .width(width)
             .height(height)
             .graphicsLayer(alpha = opacity.coerceIn(0.05f, 1f))
-            .background(Wyrm.Card.copy(alpha = 0.92f), wyrmRounded(14.dp))
-            .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
+            .background(wyrmScopedPalette.card.copy(alpha = 0.92f), wyrmRounded(14.dp))
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp))
             .padding(12.dp),
     ) {
         Text(
@@ -287,7 +291,7 @@ private fun HudPreviewPanel(label: String, width: Dp, height: Dp, opacity: Float
             fontFamily = Wyrm.Body,
             fontSize = 12.sp,
             lineHeight = 18.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
         )
     }
 }
@@ -309,6 +313,8 @@ fun UnifiedArenaLayoutEditor(
     boostSize: Float,
     zoomLength: Float,
     zoomVertical: Boolean,
+    /** + and - swapped (OM, 2026-10-30). */
+    zoomFlip: Boolean = false,
     joystickOpacity: Float,
     boostOpacity: Float,
     zoomOpacity: Float,
@@ -319,13 +325,20 @@ fun UnifiedArenaLayoutEditor(
     keyColours: Map<Int, Int> = emptyMap(),
     /** On-screen key fills (OM, 2026-10-14), the same palette. */
     keyFills: Map<Int, Int> = emptyMap(),
+    /** On-screen key label opacity (OM, 2026-11-01), 0..1 by action. */
+    keyLabelOpacities: Map<Int, Float> = emptyMap(),
+    /** Near Original (OM, 2026-11-01): the joystick is the original's, moved and
+     *  sized under its own ids; x < 0 = still at the original's place. */
+    nearOriginalJoystick: Boolean = false,
+    joystickRight: Boolean = true,
     hudPositions: Map<ArenaHudTarget, Offset>,
     minimapSize: Float,
-    leaderboardFont: Int,
+    leaderboardFont: Float,
     statsFont: Int,
     statsScale: Float,
     statsOpacity: Float,
     chatScale: Float,
+    chatTextScale: Float = 1f,
     chatOpacity: Float,
     onLeaderboardTap: () -> Unit,
     onMoveControl: (LayoutTarget, Offset) -> Unit,
@@ -345,6 +358,8 @@ fun UnifiedArenaLayoutEditor(
      *  2 ONLINE, 3 the folded button; -1 back to the window). OM, 2026-10-18. */
     onChatTab: (Int) -> Unit = {},
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var canvas by remember { mutableStateOf(Offset.Zero) }
     var options by remember { mutableStateOf<LayoutOptions?>(null) }
     /* Editor chrome only. Not saved, not synced. Null until the player drags it. */
@@ -369,7 +384,7 @@ fun UnifiedArenaLayoutEditor(
         LayoutColours(label, TeamHudStore.value(key).toInt()) { onSettingChange("teamhud.$key", it.toFloat()) }
 
     val minimapDp = with(density) { minimapSize.coerceIn(128f, 512f).toDp() }
-    val leaderboardScale = 1f + leaderboardFont.coerceIn(0, 2) * 0.16f
+    val leaderboardScale = leaderboardFont.coerceIn(0.25f, 3f)
     val statsPreviewScale = (1f + statsFont.coerceIn(0, 2) * 0.14f) * statsScale
 
     Box(
@@ -381,13 +396,22 @@ fun UnifiedArenaLayoutEditor(
         if (canvas.x > 0f) {
             val area = SafeInsets().area(canvas)
             if (showJoystick) {
-                Draggable(joystick, area, { onMoveControl(LayoutTarget.JOYSTICK, it) }, onLongPress = {
-                    openOptions(
+                // Near Original's joystick stands at the original's place until moved:
+                // Main.as 150 / 130 units in from the corner on a phone (u = short side / 480).
+                val joystickAt = if (nearOriginalJoystick && (joystick.x < 0f || joystick.y < 0f)) {
+                    val u = minOf(canvas.x, canvas.y) / 480f
+                    Offset(if (joystickRight) 1f - 150f * u / canvas.x else 150f * u / canvas.x, 1f - 130f * u / canvas.y)
+                } else joystick
+                Draggable(joystickAt, area, { onMoveControl(LayoutTarget.JOYSTICK, it) }, onLongPress = {
+                    if (nearOriginalJoystick) openOptions(
+                        "joystick", "JOYSTICK",
+                        LayoutSlider("SIZE", joystickSize, 0.65f..1.45f) { onSettingChange("layout.near_joystick_size", it) },
+                    ) else openOptions(
                         "joystick", "JOYSTICK",
                         LayoutSlider("SIZE", joystickSize, 0.65f..1.45f) { onSettingChange("controls.joystick_size", it) },
                         LayoutSlider("OPACITY", joystickOpacity, 0.05f..1f) { onSettingChange("layout.joystick_opacity", it) },
                     )
-                }) { PaperJoystick(diameter = (112 * joystickSize).dp, opacity = joystickOpacity) }
+                }) { PaperJoystick(diameter = (112 * joystickSize).dp, opacity = if (nearOriginalJoystick) 0.62f else joystickOpacity) }
             }
             if (showBoost) {
                 Draggable(boost, area, { onMoveControl(LayoutTarget.BOOST, it) }, onLongPress = {
@@ -404,8 +428,11 @@ fun UnifiedArenaLayoutEditor(
                         "zoom", "ZOOM",
                         LayoutSlider("LENGTH", zoomLength, 0.65f..1.55f) { onSettingChange("controls.zoom_length", it) },
                         LayoutSlider("OPACITY", zoomOpacity, 0.05f..1f) { onSettingChange("layout.zoom_opacity", it) },
-                        LayoutChoice("ORIENTATION", listOf("Horizontal", "Vertical"), if (zoomVertical) 1 else 0) {
-                            onSettingChange("controls.zoom_orientation", it.toFloat())
+                        // Horizontal, Vertical, and each flipped: + and - swap ends (OM, 2026-10-30).
+                        LayoutChoice("ORIENTATION", listOf("Horizontal", "Vertical", "Flip horizontal", "Flip vertical"),
+                            (if (zoomVertical) 1 else 0) + (if (zoomFlip) 2 else 0)) {
+                            onSettingChange("controls.zoom_orientation", (it % 2).toFloat())
+                            onSettingChange("controls.zoom_flip", if (it >= 2) 1f else 0f)
                         },
                     )
                 }) {
@@ -422,19 +449,22 @@ fun UnifiedArenaLayoutEditor(
                 val keysOpacity = keyOpacities[hotkey.action] ?: 1f
                 val keyColour = keyColours[hotkey.action] ?: 0
                 val keyFill = keyFills[hotkey.action] ?: 9
+                val keyLabelOpacity = keyLabelOpacities[hotkey.action] ?: 1f
                 Draggable(Offset(hotkey.x, hotkey.y), area, { onMoveKey(hotkey.action, it) }, onLongPress = {
                     options = LayoutOptions(
                         "key-${hotkey.action}", hotkey.name.uppercase(Locale.US),
                         listOf(
                             LayoutSlider("SIZE", keyScale, 0.65f..5.00f) { onSettingChange("layout.key_${hotkey.action}_scale", it) },
                             LayoutSlider("OPACITY", keysOpacity, 0.05f..1f) { onSettingChange("layout.key_${hotkey.action}_opacity", it) },
+                            // LABEL OPACITY (OM, 2026-11-01): the label alone.
+                            LayoutSlider("LABEL OPACITY", keyLabelOpacity, 0f..1f) { onSettingChange("layout.key_${hotkey.action}_label_opacity", it) },
                         ),
                         colours = listOf(
                             LayoutColours("TEXT AND BORDER", keyColour) { onSettingChange("layout.key_${hotkey.action}_colour", it.toFloat()) },
                             LayoutColours("FILL", keyFill) { onSettingChange("layout.key_${hotkey.action}_fill", it.toFloat()) },
                         ),
                     )
-                }) { PaperKey(label = hotkey.name, opacity = keysOpacity, scale = keyScale, colour = keyColour, fill = keyFill) }
+                }) { PaperKey(label = hotkey.name, opacity = keysOpacity, scale = keyScale, colour = keyColour, fill = keyFill, labelOpacity = keyLabelOpacity) }
             }
             fun hudPosition(target: ArenaHudTarget) = hudPositions[target] ?: target.fallback
             if (hudEditable) {
@@ -445,28 +475,32 @@ fun UnifiedArenaLayoutEditor(
                 )
             }) {
                 Box(
-                    Modifier.size(minimapDp).background(Wyrm.Card.copy(alpha = 0.18f), CircleShape)
-                        .border(3.dp, Wyrm.Ink.copy(alpha = 0.76f), CircleShape),
+                    Modifier.size(minimapDp).background(wyrmScopedPalette.card.copy(alpha = 0.18f), CircleShape)
+                        .border(3.dp, wyrmScopedPalette.ink, CircleShape),
                     contentAlignment = Alignment.Center,
-                ) { Text("MAP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = Wyrm.Ink) }
+                ) { Text("MAP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, color = wyrmScopedPalette.ink) }
             }
-            Draggable(hudPosition(ArenaHudTarget.LEADERBOARD), area, { onMoveHud(ArenaHudTarget.LEADERBOARD, it) }, onTap = onLeaderboardTap, onLongPress = {
+            val boardUnit = minOf(canvas.x, canvas.y) / 480f
+            val boardText = 11f * boardUnit * leaderboardScale / 0.7331f
+            val boardWidth = 241f * boardUnit * TeamHudStore.value("lb_width")
+            val boardTail = maxOf(0f, 11f*boardUnit*leaderboardScale*84f/52f-9f*boardUnit*TeamHudStore.value("lb_height"))
+            val boardHeight = 3f*boardText+16f*boardUnit+140f*boardUnit*TeamHudStore.value("lb_height")+boardTail
+            Draggable(hudPosition(ArenaHudTarget.LEADERBOARD), area, { onMoveHud(ArenaHudTarget.LEADERBOARD, it) }, onLongPress = {
                 options = LayoutOptions(
                     "leaderboard", "LEADERBOARD",
                     listOf(
-                        LayoutSlider("TEXT SIZE", leaderboardFont.toFloat(), 0f..2f) {
-                            onSettingChange("general.lb_font", it.toInt().coerceIn(0, 2).toFloat())
+                        LayoutSlider("SIZE", leaderboardFont, 0.25f..3f) {
+                            onSettingChange("general.lb_font", it.coerceIn(0.25f, 3f))
                         },
-                        // WIDTH and HEIGHT (OM, 2026-10-13): long names show whole on a wider
-                        // board; from a tall enough row they fold onto a second line.
+                        // WIDTH controls columns; HEIGHT controls row spacing. Names stay on one line.
                         teamHudSlider("WIDTH", "lb_width"),
                         teamHudSlider("HEIGHT", "lb_height"),
                     ),
                 )
             }) {
                 HudPreviewPanel("LEADERBOARD\n1  Wyrm Player     9503\n2  Northwind       2819\n3  Orbit            418\n4  Meadow           389\n5  Drift            248",
-                    with(density) { (250f * leaderboardScale * TeamHudStore.value("lb_width")).toDp() },
-                    with(density) { (132f * leaderboardScale * (0.4f + 0.6f * TeamHudStore.value("lb_height"))).toDp() })
+                    with(density) { boardWidth.toDp() },
+                    with(density) { boardHeight.toDp() })
             }
             Draggable(hudPosition(ArenaHudTarget.STATS), area, { onMoveHud(ArenaHudTarget.STATS, it) }, onLongPress = {
                 options = LayoutOptions(
@@ -507,13 +541,14 @@ fun UnifiedArenaLayoutEditor(
                     Modifier
                         .width(with(density) { (TeamHudStore.value("team_width") * teamScale).toDp() })
                         .height(with(density) { (TeamHudStore.value("team_height") * teamScale).toDp() })
-                        .background(Wyrm.Card, wyrmRounded(14.dp)),
+                        .background(wyrmScopedPalette.card, wyrmRounded(14.dp)),
                 )
             }
             Draggable(hudPosition(ArenaHudTarget.CHAT), area, { onMoveHud(ArenaHudTarget.CHAT, it) }, onLongPress = {
                 options = LayoutOptions(
                     "chat", "CHAT",
                     listOf(
+                        LayoutSlider("TEXT SIZE", chatTextScale, 0.5f..2.5f) { onSettingChange("layout.chat_text_scale", it) },
                         LayoutSlider("SIZE", chatScale, 0.65f..1.60f) { onSettingChange("layout.chat_scale", it) },
                         LayoutSlider("OPACITY", chatOpacity, 0.05f..1f) { onSettingChange("layout.chat_opacity", it) },
                         teamHudSlider("BACK", "chat_panel"),
@@ -539,6 +574,7 @@ fun UnifiedArenaLayoutEditor(
                             sliders = listOf(
                                 teamHudSlider("SIZE", "chatbtn_scale"),
                                 teamHudSlider("OPACITY", "chatbtn_opacity"),
+                                teamHudSlider("LABEL OPACITY", "chatbtn_label_opacity"),
                             ),
                             colours = listOf(
                                 teamHudColour("TEXT AND BORDER", "chatbtn_label"),
@@ -553,7 +589,7 @@ fun UnifiedArenaLayoutEditor(
                     Modifier
                         .width(with(density) { (TeamHudStore.value("chat_width") * chatScale).toDp() })
                         .height(with(density) { (TeamHudStore.value("chat_height") * chatScale).toDp() })
-                        .background(Wyrm.Card, wyrmRounded(14.dp)),
+                        .background(wyrmScopedPalette.card, wyrmRounded(14.dp)),
                 )
             }
         }
@@ -604,20 +640,22 @@ private data class LayoutColours(
 
 @Composable
 private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Popup(alignment = Alignment.Center, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
         Column(
-            Modifier.width(300.dp).heightIn(max = 340.dp).background(Wyrm.Card, wyrmRounded(20.dp))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(20.dp))
+            Modifier.width(300.dp).heightIn(max = 340.dp).background(wyrmScopedPalette.card, wyrmRounded(20.dp))
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(20.dp))
                 .verticalScroll(rememberScrollState()).padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(options.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 1.4.sp, color = Wyrm.Ink)
+            Text(options.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 1.4.sp, color = wyrmScopedPalette.ink)
             if (options.sliders.isEmpty()) {
-                Text("POSITION ONLY", fontFamily = Wyrm.Body, fontSize = 11.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
+                Text("POSITION ONLY", fontFamily = Wyrm.Body, fontSize = 11.sp, letterSpacing = 1.sp, color = wyrmScopedPalette.quiet)
             }
             options.sliders.forEach { option ->
                 var value by remember(options.key, option.label) { mutableStateOf(option.value) }
-                Text(option.label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
+                Text(option.label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = wyrmScopedPalette.quiet)
                 LiquidSlider(
                     value = value,
                     onValueChange = { next -> value = next; option.onChange(next) },
@@ -626,7 +664,7 @@ private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
             }
             options.choice?.let { choice ->
                 var selected by remember(options.key, choice.label) { mutableStateOf(choice.selected) }
-                Text(choice.label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
+                Text(choice.label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = wyrmScopedPalette.quiet)
                 PaperSegmented(
                     options = choice.options,
                     selected = selected,
@@ -643,7 +681,7 @@ private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
                 val shown = options.tabs[tab]
                 shown.sliders.forEach { option ->
                     var value by remember(options.key, shown.label, option.label) { mutableStateOf(option.value) }
-                    Text(option.label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
+                    Text(option.label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = wyrmScopedPalette.quiet)
                     LiquidSlider(
                         value = value,
                         onValueChange = { next -> value = next; option.onChange(next) },
@@ -658,20 +696,20 @@ private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
                 val greyFill = row.label == "FILL"
                 val name = if (greyFill && selected == 9) "Grey" else if (whiteDefault && selected == 0) "White" else TeamHudStore.COLOUR_NAMES.getOrElse(selected) { "Theme" }
                 Text("${row.label} · ${name.uppercase()}",
-                    fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
+                    fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = wyrmScopedPalette.quiet)
                 Row(horizontalArrangement = Arrangement.spacedBy(if (greyFill) 3.dp else 5.dp)) {
                     (TeamHudStore.COLOUR_SWATCHES + if (greyFill) listOf(Color(0xFF808080)) else emptyList()).forEachIndexed { index, swatch ->
-                        val fill = if (whiteDefault && index == 0) Color.White else if (swatch == Color.Unspecified) Wyrm.Ink else swatch
+                        val fill = if (whiteDefault && index == 0) Color.White else if (swatch == Color.Unspecified) wyrmScopedPalette.ink else swatch
                         Box(
                             Modifier.size(if (greyFill) 22.dp else 24.dp)
-                                .border(if (index == selected) 2.dp else 1.dp, if (index == selected) Wyrm.Ink else Wyrm.Rule, CircleShape)
+                                .border(if (index == selected) 2.dp else 1.dp, if (index == selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule, CircleShape)
                                 .padding(3.dp).clip(CircleShape).background(fill)
                                 .clickable { selected = index; row.onSelect(index) },
                         )
                     }
                 }
             }
-            Text("DONE", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.2.sp, color = Wyrm.Ink, modifier = Modifier.align(Alignment.End).clickable(onClick = onDismiss).padding(8.dp))
+            Text("DONE", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.2.sp, color = wyrmScopedPalette.ink, modifier = Modifier.align(Alignment.End).clickable(onClick = onDismiss).padding(8.dp))
         }
     }
 }
@@ -679,18 +717,20 @@ private fun EditorOptionsPopup(options: LayoutOptions, onDismiss: () -> Unit) {
 /** A colour row inside a popup tab; the same swatches as the plain rows. */
 @Composable
 private fun LayoutColourRow(scope: String, row: LayoutColours) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var selected by remember(scope, row.label) { mutableStateOf(row.selected) }
     val whiteDefault = row.label == "TEXT AND BORDER"
     val greyFill = row.label == "FILL"
     val name = if (greyFill && selected == 9) "Grey" else if (whiteDefault && selected == 0) "White" else TeamHudStore.COLOUR_NAMES.getOrElse(selected) { "Theme" }
     Text("${row.label} · ${name.uppercase()}",
-        fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
+        fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = wyrmScopedPalette.quiet)
     Row(horizontalArrangement = Arrangement.spacedBy(if (greyFill) 3.dp else 5.dp)) {
         (TeamHudStore.COLOUR_SWATCHES + if (greyFill) listOf(Color(0xFF808080)) else emptyList()).forEachIndexed { index, swatch ->
-            val fill = if (whiteDefault && index == 0) Color.White else if (swatch == Color.Unspecified) Wyrm.Ink else swatch
+            val fill = if (whiteDefault && index == 0) Color.White else if (swatch == Color.Unspecified) wyrmScopedPalette.ink else swatch
             Box(
                 Modifier.size(if (greyFill) 22.dp else 24.dp)
-                    .border(if (index == selected) 2.dp else 1.dp, if (index == selected) Wyrm.Ink else Wyrm.Rule, CircleShape)
+                    .border(if (index == selected) 2.dp else 1.dp, if (index == selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule, CircleShape)
                     .padding(3.dp).clip(CircleShape).background(fill)
                     .clickable { selected = index; row.onSelect(index) },
             )
@@ -723,6 +763,8 @@ private fun EditorFooter(
     portrait: Boolean = false,
     onToggleOrientation: (() -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     // Upright the bar is too narrow for the hint and the actions on one line:
     // the hint goes above, in its own small pill. The grip moves the whole bar
     // (this session only) so a control can sit where the bar was.
@@ -746,15 +788,15 @@ private fun EditorFooter(
                 // Upright: the knob sits at the bar's left end, below this pill.
                 Column(
                     Modifier.padding(bottom = 6.dp).clip(wyrmRounded(14.dp))
-                        .background(Wyrm.Card.copy(alpha = 0.92f)).padding(horizontal = 12.dp, vertical = 5.dp),
+                        .background(wyrmScopedPalette.card.copy(alpha = 0.92f)).padding(horizontal = 12.dp, vertical = 5.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     EditorBarHint(LucideR.drawable.lucide_ic_arrow_down_left)
                 }
             }
             Row(
-                Modifier.clip(wyrmRounded(999.dp)).background(Wyrm.Card.copy(alpha = 0.96f))
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(999.dp)).padding(start = 6.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
+                Modifier.clip(wyrmRounded(999.dp)).background(wyrmScopedPalette.card.copy(alpha = 0.96f))
+                    .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(999.dp)).padding(start = 6.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -777,7 +819,7 @@ private fun EditorFooter(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         repeat(3) {
-                            Box(Modifier.width(16.dp).height(2.dp).clip(wyrmRounded(1.dp)).background(Wyrm.Quiet))
+                            Box(Modifier.width(16.dp).height(2.dp).clip(wyrmRounded(1.dp)).background(wyrmScopedPalette.quiet))
                         }
                     }
                 }
@@ -786,11 +828,11 @@ private fun EditorFooter(
                 }
                 // Turns the phone (and swaps to that orientation's layout).
                 onToggleOrientation?.let { toggle ->
-                    EditorFooterAction(if (portrait) "LANDSCAPE" else "PORTRAIT", Wyrm.Ink, toggle)
+                    EditorFooterAction(if (portrait) "LANDSCAPE" else "PORTRAIT", wyrmScopedPalette.ink, toggle)
                 }
-                EditorFooterAction("CANCEL", Wyrm.Quiet, onCancel)
-                EditorFooterAction("RESET", Wyrm.Quiet, onReset)
-                EditorFooterAction("SAVE", Wyrm.OnInk, onSave, filled = true)
+                EditorFooterAction("CANCEL", wyrmScopedPalette.quiet, onCancel)
+                EditorFooterAction("RESET", wyrmScopedPalette.quiet, onReset)
+                EditorFooterAction("SAVE", wyrmScopedPalette.onInk, onSave, filled = true)
             }
         }
     }
@@ -802,17 +844,21 @@ private fun EditorFooter(
  */
 @Composable
 private fun EditorBarHint(arrow: Int) {
-    Text("HOLD ANY OBJECT FOR MORE OPTIONS", fontFamily = Wyrm.Body, fontSize = 9.sp, letterSpacing = 0.6.sp, color = Wyrm.Quiet)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Text("HOLD ANY OBJECT FOR MORE OPTIONS", fontFamily = Wyrm.Body, fontSize = 9.sp, letterSpacing = 0.6.sp, color = wyrmScopedPalette.quiet)
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-        Icon(painterResource(arrow), contentDescription = null, tint = Wyrm.Ink, modifier = Modifier.size(11.dp))
+        Icon(painterResource(arrow), contentDescription = null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(11.dp))
         Spacer(Modifier.width(4.dp))
         Text("DRAG THIS KNOB TO MOVE THIS BAR", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold,
-            fontSize = 8.sp, letterSpacing = 0.6.sp, color = Wyrm.Ink.copy(alpha = 0.8f))
+            fontSize = 8.sp, letterSpacing = 0.6.sp, color = wyrmScopedPalette.ink)
     }
 }
 
 @Composable
 private fun EditorFooterAction(label: String, color: Color, onClick: () -> Unit, filled: Boolean = false) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         label,
         fontFamily = Wyrm.Body,
@@ -821,7 +867,7 @@ private fun EditorFooterAction(label: String, color: Color, onClick: () -> Unit,
         letterSpacing = 1.sp,
         color = color,
         modifier = Modifier.clip(wyrmRounded(999.dp)).then(
-            if (filled) Modifier.background(Wyrm.Ink) else Modifier
+            if (filled) Modifier.background(wyrmScopedPalette.ink) else Modifier
         ).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 8.dp),
     )
 }
@@ -840,13 +886,15 @@ fun ArenaBackgroundSizeEditor(
     minimap: Offset,
     leaderboard: Offset,
     minimapSize: Float,
-    leaderboardFont: Int,
+    leaderboardFont: Float,
     safeInsets: SafeInsets,
     onScale: (Float) -> Unit,
     onReset: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val density = LocalDensity.current
     Box(Modifier.fillMaxSize()) {
         // The engine draws the real minimap and leaderboard (bare editor); nothing on top.
@@ -857,14 +905,14 @@ fun ArenaBackgroundSizeEditor(
                 .padding(bottom = with(density) { safeInsets.bottom.toDp() } + 14.dp)
                 .width(460.dp)
                 .clip(wyrmRounded(24.dp))
-                .background(Wyrm.Card.copy(alpha = 0.96f))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(24.dp))
+                .background(wyrmScopedPalette.card.copy(alpha = 0.96f))
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(24.dp))
                 .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("ARENA BACKGROUND SIZE", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp,
-                    letterSpacing = 1.2.sp, color = Wyrm.Quiet, modifier = Modifier.weight(1f))
-                Text(bgScaleLabel(scale), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+                    letterSpacing = 1.2.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.weight(1f))
+                Text(bgScaleLabel(scale), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = wyrmScopedPalette.ink)
             }
             WyrmSlider(
                 value = bgSliderOf(scale),
@@ -875,11 +923,11 @@ fun ArenaBackgroundSizeEditor(
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("Smaller looks further away", fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet,
+                Text("Smaller looks further away", fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = wyrmScopedPalette.quiet,
                     modifier = Modifier.weight(1f))
-                EditorFooterAction("CANCEL", Wyrm.Quiet, onCancel)
-                EditorFooterAction("RESET", Wyrm.Quiet, onReset)
-                EditorFooterAction("SAVE", Wyrm.OnInk, onSave, filled = true)
+                EditorFooterAction("CANCEL", wyrmScopedPalette.quiet, onCancel)
+                EditorFooterAction("RESET", wyrmScopedPalette.quiet, onReset)
+                EditorFooterAction("SAVE", wyrmScopedPalette.onInk, onSave, filled = true)
             }
         }
     }
@@ -900,6 +948,8 @@ fun SnakeLookPreviewEditor(
     onDone: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val group = if (assist) "assist" else "normal"
     val render = settings.named("$group.render_mode")
     val spine = settings.named("$group.spine")
@@ -915,8 +965,8 @@ fun SnakeLookPreviewEditor(
                 .padding(bottom = with(density) { safeInsets.bottom.toDp() } + 14.dp)
                 .width(460.dp)
                 .clip(wyrmRounded(24.dp))
-                .background(Wyrm.Card.copy(alpha = 0.96f))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(24.dp))
+                .background(wyrmScopedPalette.card.copy(alpha = 0.96f))
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(24.dp))
                 .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp),
         ) {
             Text(
@@ -925,7 +975,7 @@ fun SnakeLookPreviewEditor(
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.sp,
                 letterSpacing = 1.2.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
             PaperSegmented(
                 options = listOf("Normal", "Assist"),
@@ -967,8 +1017,8 @@ fun SnakeLookPreviewEditor(
             )
             if (assist) {
                 SettingsBoolRow(
-                    title = "Hide own tag and accessories",
-                    detail = "While assist is on, your tag, accessory and Wyrm look are hidden.",
+                    title = "Hide all tags and accessories",
+                    detail = "While assist is on, all tags, accessories, hair and Wyrm look decorations are hidden.",
                     on = hide?.enabled == true,
                     first = false,
                     onToggle = { on -> hide?.let { onChange(it, listOf(if (on) 1f else 0f)) } },
@@ -979,8 +1029,8 @@ fun SnakeLookPreviewEditor(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                EditorFooterAction("CANCEL", Wyrm.Quiet, onCancel)
-                EditorFooterAction("DONE", Wyrm.OnInk, onDone, filled = true)
+                EditorFooterAction("CANCEL", wyrmScopedPalette.quiet, onCancel)
+                EditorFooterAction("DONE", wyrmScopedPalette.onInk, onDone, filled = true)
             }
         }
     }
@@ -1162,12 +1212,14 @@ private fun EditorBar(
     modifier: Modifier = Modifier,
     topInset: Dp,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         modifier = modifier
             .padding(top = topInset + 14.dp)
             .clip(wyrmRounded(999.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(999.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(999.dp))
             .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -1176,7 +1228,7 @@ private fun EditorBar(
             text = caption,
             fontFamily = Wyrm.Body,
             fontSize = 12.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false),
@@ -1187,7 +1239,7 @@ private fun EditorBar(
             fontWeight = FontWeight.Bold,
             fontSize = 10.sp,
             letterSpacing = 1.4.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier
                 .clip(wyrmRounded(999.dp))
                 .clickable(onClick = onCancel)
@@ -1199,7 +1251,7 @@ private fun EditorBar(
             fontWeight = FontWeight.Bold,
             fontSize = 10.sp,
             letterSpacing = 1.4.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier
                 .clip(wyrmRounded(999.dp))
                 .clickable(onClick = onReset)
@@ -1210,7 +1262,7 @@ private fun EditorBar(
                 .width(96.dp)
                 .height(40.dp)
                 .clip(wyrmRounded(999.dp))
-                .background(Wyrm.Ink)
+                .background(wyrmScopedPalette.ink)
                 .clickable(onClick = onSave),
             contentAlignment = Alignment.Center,
         ) {
@@ -1220,7 +1272,7 @@ private fun EditorBar(
                 fontWeight = FontWeight.Bold,
                 fontSize = 11.sp,
                 letterSpacing = 1.6.sp,
-                color = Wyrm.OnInk,
+                color = wyrmScopedPalette.onInk,
             )
         }
     }

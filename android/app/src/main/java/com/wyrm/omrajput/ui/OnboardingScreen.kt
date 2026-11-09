@@ -22,7 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,6 +85,8 @@ fun OnboardingScreen(
     insetBottom: Dp,
     onFinish: (OnboardingChoices) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var step by remember { mutableIntStateOf(0) }
     var displayName by remember(suggestedName) { mutableStateOf(suggestedName) }
     var username by remember {
@@ -106,7 +108,7 @@ fun OnboardingScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         OnboardingChrome(
             step = step,
@@ -151,7 +153,7 @@ fun OnboardingScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.TabBar)
+                .background(wyrmScopedPalette.tabBar)
                 .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = insetBottom + 12.dp),
         ) {
             val label = when {
@@ -186,6 +188,8 @@ fun OnboardingScreen(
 
 @Composable
 private fun OnboardingChrome(step: Int, insetTop: Dp, onBack: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -200,7 +204,7 @@ private fun OnboardingChrome(step: Int, insetTop: Dp, onBack: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             if (step > 0) {
-                Text(text = "‹", fontFamily = Wyrm.Body, fontSize = 22.sp, color = Wyrm.Ink)
+                Text(text = "‹", fontFamily = Wyrm.Body, fontSize = 22.sp, color = wyrmScopedPalette.ink)
             }
         }
         Row(
@@ -215,7 +219,7 @@ private fun OnboardingChrome(step: Int, insetTop: Dp, onBack: () -> Unit) {
                         .padding(horizontal = 3.dp)
                         .height(3.dp)
                         .clip(CircleShape)
-                        .background(if (index <= step) Wyrm.Ink else Color(0x2137352F)),
+                        .background(if (index <= step) wyrmScopedPalette.ink else Color(0x2137352F)),
                 )
             }
         }
@@ -225,6 +229,8 @@ private fun OnboardingChrome(step: Int, insetTop: Dp, onBack: () -> Unit) {
 
 @Composable
 private fun StepHead(eyebrow: String, title: String, body: String = "") {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 18.dp)) {
         Text(
             text = eyebrow.uppercase(),
@@ -232,7 +238,7 @@ private fun StepHead(eyebrow: String, title: String, body: String = "") {
             fontWeight = FontWeight.SemiBold,
             fontSize = 11.5.sp,
             letterSpacing = 1.1.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
         Text(
             text = title,
@@ -241,7 +247,7 @@ private fun StepHead(eyebrow: String, title: String, body: String = "") {
             fontSize = 27.sp,
             lineHeight = 32.sp,
             letterSpacing = (-0.5).sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.padding(top = 7.dp),
         )
         if (body.isNotEmpty()) {
@@ -250,7 +256,7 @@ private fun StepHead(eyebrow: String, title: String, body: String = "") {
                 fontFamily = Wyrm.Body,
                 fontSize = 14.5.sp,
                 lineHeight = 21.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
@@ -259,6 +265,8 @@ private fun StepHead(eyebrow: String, title: String, body: String = "") {
 
 @Composable
 private fun RulesStep() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     StepHead("Step one of six", "Three rules, then you are in.")
     DottedHero(
         modifier = Modifier
@@ -266,8 +274,8 @@ private fun RulesStep() {
             .fillMaxWidth()
             .height(160.dp)
             .clip(wyrmRounded(16.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(16.dp)),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(16.dp)),
     )
     val rules = listOf(
         "Eat the orbs" to "Every orb is length, and length is score.",
@@ -278,11 +286,11 @@ private fun RulesStep() {
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, top = 16.dp)
             .clip(CardShape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, CardShape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, CardShape),
     ) {
         rules.forEachIndexed { index, (title, body) ->
-            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.Top,
@@ -291,7 +299,7 @@ private fun RulesStep() {
                     modifier = Modifier
                         .size(22.dp)
                         .clip(wyrmRounded(7.dp))
-                        .background(Wyrm.Well),
+                        .background(wyrmScopedPalette.well),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -299,17 +307,17 @@ private fun RulesStep() {
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
-                        color = Wyrm.Mute,
+                        color = wyrmScopedPalette.mute,
                     )
                 }
                 Column(modifier = Modifier.padding(start = 12.dp)) {
-                    Text(text = title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Wyrm.Ink)
+                    Text(text = title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = wyrmScopedPalette.ink)
                     Text(
                         text = body,
                         fontFamily = Wyrm.Body,
                         fontSize = 12.5.sp,
                         lineHeight = 17.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
@@ -321,7 +329,7 @@ private fun RulesStep() {
         fontFamily = Wyrm.Body,
         fontSize = 13.sp,
         lineHeight = 20.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp),
     )
 }
@@ -335,14 +343,16 @@ private fun HandleStep(
     onUsername: (String) -> Unit,
     suggestedName: String,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     StepHead("Step two of six", "What should the arena call you?")
     Row(
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, top = 20.dp)
             .fillMaxWidth()
             .clip(CardShape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, CardShape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, CardShape)
             .padding(13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -359,13 +369,13 @@ private fun HandleStep(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.5.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
             )
             Text(
                 text = "You can change both later, twice a month.",
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
@@ -374,11 +384,11 @@ private fun HandleStep(
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, top = 14.dp)
             .clip(CardShape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, CardShape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, CardShape),
     ) {
         PaperInput(label = "Display name", value = displayName, onValueChange = onName)
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
         PaperInput(
             label = "Username",
             value = username,
@@ -391,12 +401,12 @@ private fun HandleStep(
                 modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(Wyrm.Badge))
+                Box(Modifier.size(6.dp).clip(CircleShape).background(wyrmScopedPalette.badge))
                 Text(
                     text = error,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
-                    color = Wyrm.Badge,
+                    color = wyrmScopedPalette.badge,
                     modifier = Modifier.padding(start = 7.dp),
                 )
             }
@@ -407,7 +417,7 @@ private fun HandleStep(
         fontFamily = Wyrm.Body,
         fontSize = 13.sp,
         lineHeight = 20.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp),
     )
 }
@@ -419,6 +429,8 @@ private fun SteeringStep(
     onJoystick: (Boolean) -> Unit,
     onRightHand: (Boolean) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     StepHead(
         "Step three of six",
         "How do you steer?",
@@ -444,7 +456,7 @@ private fun SteeringStep(
                         .padding(top = 6.dp)
                         .size(28.dp)
                         .clip(CircleShape)
-                        .background(Wyrm.Ink),
+                        .background(wyrmScopedPalette.ink),
                 )
             }
         }
@@ -467,7 +479,7 @@ private fun SteeringStep(
                     Modifier
                         .size(28.dp)
                         .clip(CircleShape)
-                        .background(Wyrm.Ink),
+                        .background(wyrmScopedPalette.ink),
                 )
             }
         }
@@ -477,22 +489,22 @@ private fun SteeringStep(
             modifier = Modifier
                 .padding(start = 16.dp, end = 16.dp, top = 18.dp)
                 .clip(CardShape)
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, CardShape)
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, CardShape)
                 .padding(13.dp),
         ) {
             Text(
                 text = "Which side is your thumb on?",
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
             Row(
                 modifier = Modifier
                     .padding(top = 10.dp)
                     .fillMaxWidth()
                     .clip(wyrmRounded(10.dp))
-                    .background(Wyrm.Hover)
+                    .background(wyrmScopedPalette.hover)
                     .padding(3.dp),
             ) {
                 Segment("Left", !rightHand, Modifier.weight(1f)) { onRightHand(false) }
@@ -505,13 +517,15 @@ private fun SteeringStep(
         fontFamily = Wyrm.Body,
         fontSize = 13.sp,
         lineHeight = 20.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
     )
 }
 
 @Composable
 private fun SkinStep(preset: Int, onPreset: (Int) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     StepHead(
         "Step four of six",
         "Pick a skin.",
@@ -523,8 +537,8 @@ private fun SkinStep(preset: Int, onPreset: (Int) -> Unit) {
             .fillMaxWidth()
             .height(140.dp)
             .clip(wyrmRounded(16.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(16.dp)),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(16.dp)),
     )
     val rows = SkinPicks.chunked(2)
     Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp)) {
@@ -546,6 +560,8 @@ private fun SkinStep(preset: Int, onPreset: (Int) -> Unit) {
 
 @Composable
 private fun ModesStep(assistOn: Boolean, onAssist: (Boolean) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     StepHead(
         "Step five of six",
         "What is switched on.",
@@ -555,8 +571,8 @@ private fun ModesStep(assistOn: Boolean, onAssist: (Boolean) -> Unit) {
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, top = 20.dp)
             .clip(CardShape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, CardShape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, CardShape),
     ) {
         Row(
             modifier = Modifier
@@ -565,19 +581,19 @@ private fun ModesStep(assistOn: Boolean, onAssist: (Boolean) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Assist mode", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp, color = Wyrm.Ink)
+                Text(text = "Assist mode", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
                 Text(
                     text = "Helper lines on an on-screen button. You can hide it later.",
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
                     lineHeight = 17.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
             PaperSwitch(on = assistOn, onToggle = onAssist)
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -585,25 +601,25 @@ private fun ModesStep(assistOn: Boolean, onAssist: (Boolean) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Team mode", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp, color = Wyrm.Ink)
+                Text(text = "Team mode", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
                 Text(
                     text = "Needs an NTL id and key, from Play › Team mode.",
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
                     lineHeight = 17.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            Text(text = "Off", fontFamily = Wyrm.Body, fontSize = 13.5.sp, color = Wyrm.Quiet)
+            Text(text = "Off", fontFamily = Wyrm.Body, fontSize = 13.5.sp, color = wyrmScopedPalette.quiet)
         }
     }
     Column(
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, top = 14.dp)
             .clip(CardShape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, CardShape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, CardShape),
     ) {
         AlwaysOnRow("Global chat", "Muted words carry over from Settings.", "On", first = true)
         AlwaysOnRow("Leaderboard", "Your best round, updated live.", "Live", first = false)
@@ -613,7 +629,7 @@ private fun ModesStep(assistOn: Boolean, onAssist: (Boolean) -> Unit) {
         fontFamily = Wyrm.Body,
         fontSize = 13.sp,
         lineHeight = 20.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
     )
 }
@@ -626,14 +642,16 @@ private fun ReadyStep(
     preset: Int,
     assistOn: Boolean,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     DottedHero(
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, top = 8.dp)
             .fillMaxWidth()
             .height(180.dp)
             .clip(wyrmRounded(18.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(18.dp)),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(18.dp)),
     )
     StepHead("Step six of six", "That is everything.")
     val skin = SkinPicks.firstOrNull { it.index == preset }?.name ?: "Preset ${preset + 1}"
@@ -653,11 +671,11 @@ private fun ReadyStep(
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, top = 16.dp)
             .clip(CardShape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, CardShape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, CardShape),
     ) {
         rows.forEachIndexed { index, (label, value) ->
-            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -665,8 +683,8 @@ private fun ReadyStep(
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(text = label, fontFamily = Wyrm.Body, fontSize = 13.5.sp, color = Wyrm.Quiet, modifier = Modifier.width(118.dp))
-                Text(text = value, fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink)
+                Text(text = label, fontFamily = Wyrm.Body, fontSize = 13.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.width(118.dp))
+                Text(text = value, fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink)
             }
         }
     }
@@ -675,7 +693,7 @@ private fun ReadyStep(
         fontFamily = Wyrm.Body,
         fontSize = 13.sp,
         lineHeight = 20.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp),
     )
 }
@@ -688,18 +706,20 @@ private fun PaperInput(
     prefix: String = "",
     mono: Boolean = false,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-        Text(text = label, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet)
+        Text(text = label, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet)
         Row(
             modifier = Modifier
                 .padding(top = 7.dp)
                 .fillMaxWidth()
                 .height(46.dp)
                 .clip(FieldShape)
-            .background(Wyrm.Card)
-            .border(1.dp, if (focused) Wyrm.Ink else Wyrm.Rule, FieldShape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, if (focused) wyrmScopedPalette.ink else wyrmScopedPalette.rule, FieldShape)
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -713,9 +733,9 @@ private fun PaperInput(
                 textStyle = TextStyle(
                     fontFamily = if (mono) FontFamily.Monospace else Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                 ),
-                cursorBrush = SolidColor(Wyrm.Ink),
+                cursorBrush = SolidColor(wyrmScopedPalette.ink),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 interactionSource = interaction,
                 modifier = Modifier.fillMaxWidth(),
@@ -733,6 +753,8 @@ private fun SteerCard(
     onClick: () -> Unit,
     preview: @Composable () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = CardShape
@@ -740,8 +762,8 @@ private fun SteerCard(
         modifier = modifier
             .scale(pressScale(pressed))
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, if (selected) Wyrm.Ink else Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule, shape)
             .then(
                 if (selected) Modifier.border(3.dp, Color(0x1A37352F), shape) else Modifier,
             )
@@ -751,13 +773,15 @@ private fun SteerCard(
         Box(modifier = Modifier.fillMaxWidth().height(96.dp), contentAlignment = Alignment.Center) {
             preview()
         }
-        Text(text = title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp, color = Wyrm.Ink, modifier = Modifier.padding(top = 8.dp))
-        Text(text = note, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, modifier = Modifier.padding(top = 2.dp))
+        Text(text = title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp, color = wyrmScopedPalette.ink, modifier = Modifier.padding(top = 8.dp))
+        Text(text = note, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
 @Composable
 private fun SkinCard(pick: SkinPick, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = wyrmRounded(13.dp)
@@ -765,8 +789,8 @@ private fun SkinCard(pick: SkinPick, selected: Boolean, modifier: Modifier, onCl
         modifier = modifier
             .scale(pressScale(pressed))
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, if (selected) Wyrm.Ink else Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule, shape)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(12.dp),
     ) {
@@ -775,18 +799,20 @@ private fun SkinCard(pick: SkinPick, selected: Boolean, modifier: Modifier, onCl
             Box(Modifier.padding(start = 4.dp, top = 1.dp).size(15.dp).clip(CircleShape).background(pick.b))
             Box(Modifier.padding(start = 4.dp, top = 2.dp).size(13.dp).clip(CircleShape).background(pick.a))
         }
-        Text(text = pick.name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = Wyrm.Ink, modifier = Modifier.padding(top = 9.dp))
-        Text(text = pick.note, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet, modifier = Modifier.padding(top = 1.dp))
+        Text(text = pick.name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = wyrmScopedPalette.ink, modifier = Modifier.padding(top = 9.dp))
+        Text(text = pick.note, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 1.dp))
     }
 }
 
 @Composable
 private fun Segment(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = modifier
             .height(40.dp)
             .clip(wyrmRounded(8.dp))
-            .background(if (selected) Wyrm.Card else Color.Transparent)
+            .background(if (selected) wyrmScopedPalette.card else Color.Transparent)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -795,15 +821,17 @@ private fun Segment(label: String, selected: Boolean, modifier: Modifier, onClic
             fontFamily = Wyrm.Body,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             fontSize = 14.5.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
         )
     }
 }
 
 @Composable
 private fun AlwaysOnRow(title: String, note: String, value: String, first: Boolean) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
-        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -811,16 +839,18 @@ private fun AlwaysOnRow(title: String, note: String, value: String, first: Boole
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink)
-                Text(text = note, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, modifier = Modifier.padding(top = 2.dp))
+                Text(text = title, fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink)
+                Text(text = note, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 2.dp))
             }
-            Text(text = value, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = Wyrm.Live)
+            Text(text = value, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = wyrmScopedPalette.live)
         }
     }
 }
 
 @Composable
 private fun OnboardingCta(label: String, enabled: Boolean, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -829,7 +859,7 @@ private fun OnboardingCta(label: String, enabled: Boolean, onClick: () -> Unit) 
             .height(52.dp)
             .scale(pressScale(pressed, enabled))
             .clip(CtaShape)
-            .background(if (enabled) Wyrm.Ink else Wyrm.Ink.copy(alpha = 0.35f))
+            .background(if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.ink)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -843,7 +873,7 @@ private fun OnboardingCta(label: String, enabled: Boolean, onClick: () -> Unit) 
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 16.5.sp,
-            color = Wyrm.OnInk,
+            color = wyrmScopedPalette.onInk,
         )
     }
 }

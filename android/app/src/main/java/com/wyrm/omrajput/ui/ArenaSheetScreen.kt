@@ -24,7 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +66,8 @@ fun ArenaSheetScreen(
     onSave: (String) -> Unit,
     onRemoveSaved: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var query by remember { mutableStateOf("") }
     var showAll by remember { mutableStateOf(false) }
     val refusedNow = remember(state.refused) {
@@ -96,7 +98,7 @@ fun ArenaSheetScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Box(
             modifier = Modifier
@@ -104,7 +106,7 @@ fun ArenaSheetScreen(
                 .padding(top = 9.dp)
                 .size(width = 38.dp, height = 4.dp)
                 .clip(CircleShape)
-                .background(Wyrm.Chevron),
+                .background(wyrmScopedPalette.chevron),
         )
         Box(
             modifier = Modifier
@@ -116,7 +118,7 @@ fun ArenaSheetScreen(
                 text = "Cancel",
                 fontFamily = Wyrm.Body,
                 fontSize = 16.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .clickable(onClick = onBack)
@@ -127,14 +129,14 @@ fun ArenaSheetScreen(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.align(Alignment.Center),
             )
             Text(
                 text = if (state.loading) "…" else "Refresh",
                 fontFamily = Wyrm.Body,
                 fontSize = 15.sp,
-                color = if (state.loading) Wyrm.TabIdle else Wyrm.Link,
+                color = if (state.loading) wyrmScopedPalette.tabIdle else wyrmScopedPalette.link,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .clickable(enabled = !state.loading, onClick = onRefresh)
@@ -145,7 +147,7 @@ fun ArenaSheetScreen(
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Wyrm.Rule),
+                .background(wyrmScopedPalette.rule),
         )
 
         LazyColumn(
@@ -159,7 +161,7 @@ fun ArenaSheetScreen(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.5.sp,
                     letterSpacing = 0.92.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
                 )
                 Spacer(Modifier.height(8.dp))
@@ -169,7 +171,7 @@ fun ArenaSheetScreen(
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
                     lineHeight = 18.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 9.dp),
                 )
             }
@@ -277,17 +279,19 @@ fun ArenaSheetScreen(
 
 @Composable
 private fun SearchField(value: String, onValueChange: (String) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val shape = FieldShape
-    val ring = if (focused || value.isNotBlank()) Wyrm.Link else Wyrm.Rule
+    val ring = if (focused || value.isNotBlank()) wyrmScopedPalette.link else wyrmScopedPalette.rule
     Box(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .height(52.dp)
             .clip(shape)
-            .background(Wyrm.Card)
+            .background(wyrmScopedPalette.card)
             .border(1.5.dp, ring, shape),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -299,9 +303,9 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
                 fontFamily = FontFamily.Monospace,
                 fontSize = 16.sp,
                 letterSpacing = 0.3.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
             ),
-            cursorBrush = SolidColor(Wyrm.Link),
+            cursorBrush = SolidColor(wyrmScopedPalette.link),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             interactionSource = interaction,
             modifier = Modifier
@@ -313,7 +317,7 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
                         text = "Server, cluster or ip:port",
                         fontFamily = Wyrm.Body,
                         fontSize = 16.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                     )
                 }
                 input()
@@ -327,6 +331,8 @@ private fun CustomArenaPrompt(
     endpoint: String,
     onUse: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column(
@@ -334,8 +340,8 @@ private fun CustomArenaPrompt(
             .padding(start = 16.dp, end = 16.dp, top = 18.dp)
             .fillMaxWidth()
             .clip(CardShape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, CardShape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, CardShape)
             .padding(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -343,7 +349,7 @@ private fun CustomArenaPrompt(
                 modifier = Modifier
                     .size(6.dp)
                     .clip(CircleShape)
-                    .background(Wyrm.Link),
+                    .background(wyrmScopedPalette.link),
             )
             Spacer(Modifier.width(7.dp))
             Text(
@@ -352,7 +358,7 @@ private fun CustomArenaPrompt(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.sp,
                 letterSpacing = 0.88.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
             )
         }
         Text(
@@ -360,14 +366,14 @@ private fun CustomArenaPrompt(
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.SemiBold,
             fontSize = 18.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.padding(top = 8.dp),
         )
         Text(
             text = "This address is not in the live directory. If it is a private or custom server, you can still select it.",
             fontFamily = Wyrm.Body,
             fontSize = 13.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.padding(top = 3.dp),
         )
         Box(
@@ -377,7 +383,7 @@ private fun CustomArenaPrompt(
                 .height(44.dp)
                 .scale(pressScale(pressed))
                 .clip(CtaShape)
-                .background(Wyrm.Ink)
+                .background(wyrmScopedPalette.ink)
                 .clickable(
                     interactionSource = interaction,
                     indication = null,
@@ -390,7 +396,7 @@ private fun CustomArenaPrompt(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
-                color = Wyrm.OnInk,
+                color = wyrmScopedPalette.onInk,
             )
         }
     }
@@ -398,12 +404,14 @@ private fun CustomArenaPrompt(
 
 @Composable
 private fun PaperGroup(content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(CardShape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, CardShape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, CardShape),
     ) {
         content()
     }
@@ -411,13 +419,15 @@ private fun PaperGroup(content: @Composable () -> Unit) {
 
 @Composable
 private fun SectionLabel(text: String, top: Dp) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = text,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.5.sp,
         letterSpacing = 0.92.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = top, bottom = 8.dp),
     )
 }
@@ -433,6 +443,8 @@ private fun ArenaListRow(
     teamHere: Int,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = RoundedCornerShape(
         topStart = if (first) 14.dp else 0.dp,
         topEnd = if (first) 14.dp else 0.dp,
@@ -444,8 +456,8 @@ private fun ArenaListRow(
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
     ) {
         NearbyRow(
             arena = arena,
@@ -467,6 +479,8 @@ private fun NearbyRow(
     teamHere: Int,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column {
@@ -488,7 +502,7 @@ private fun NearbyRow(
                     text = arena.paperTitle(),
                     fontFamily = Wyrm.Body,
                     fontSize = 15.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -496,7 +510,7 @@ private fun NearbyRow(
                     text = arena.endpoint,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
@@ -511,7 +525,7 @@ private fun NearbyRow(
                     },
                     fontFamily = Wyrm.Body,
                     fontSize = 14.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     style = nums,
                 )
                 Text(
@@ -523,7 +537,7 @@ private fun NearbyRow(
                     },
                     fontFamily = Wyrm.Body,
                     fontSize = 11.5.sp,
-                    color = if (current) Wyrm.Live else Wyrm.Quiet,
+                    color = if (current) wyrmScopedPalette.live else wyrmScopedPalette.quiet,
                     style = nums,
                 )
             }
@@ -531,7 +545,7 @@ private fun NearbyRow(
                 text = "›",
                 fontFamily = Wyrm.Body,
                 fontSize = 17.sp,
-                color = Wyrm.Chevron,
+                color = wyrmScopedPalette.chevron,
                 modifier = Modifier.padding(start = 8.dp),
             )
         }
@@ -540,6 +554,8 @@ private fun NearbyRow(
 
 @Composable
 private fun ShowAllButton(showingAll: Boolean, total: Int, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -549,8 +565,8 @@ private fun ShowAllButton(showingAll: Boolean, total: Int, onClick: () -> Unit) 
             .height(46.dp)
             .scale(pressScale(pressed))
             .clip(CtaShape)
-            .border(1.dp, Wyrm.Rule, CtaShape)
-            .background(Wyrm.Card)
+            .border(1.dp, wyrmScopedPalette.rule, CtaShape)
+            .background(wyrmScopedPalette.card)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -563,7 +579,7 @@ private fun ShowAllButton(showingAll: Boolean, total: Int, onClick: () -> Unit) 
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
-            color = Wyrm.Link,
+            color = wyrmScopedPalette.link,
         )
     }
 }
@@ -577,6 +593,8 @@ private fun RecentRow(
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column {
@@ -585,7 +603,7 @@ private fun RecentRow(
                 Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Wyrm.RowRule),
+                    .background(wyrmScopedPalette.rowRule),
             )
         }
         Row(
@@ -606,7 +624,7 @@ private fun RecentRow(
                     text = endpoint,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 14.5.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -618,7 +636,7 @@ private fun RecentRow(
                     },
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = if (current) Wyrm.Live else Wyrm.Quiet,
+                    color = if (current) wyrmScopedPalette.live else wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 1.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -628,7 +646,7 @@ private fun RecentRow(
                 text = "Remove",
                 fontFamily = Wyrm.Body,
                 fontSize = 13.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 modifier = Modifier
                     .clickable(onClick = onRemove)
                     .padding(start = 8.dp, top = 6.dp, bottom = 6.dp),
@@ -639,12 +657,14 @@ private fun RecentRow(
 
 @Composable
 private fun SheetNotice(message: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = message,
         fontFamily = Wyrm.Body,
         fontSize = 13.sp,
         lineHeight = 20.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
     )
 }

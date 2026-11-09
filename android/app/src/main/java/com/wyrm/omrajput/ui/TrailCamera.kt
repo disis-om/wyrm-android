@@ -64,7 +64,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -434,7 +434,9 @@ private fun TrailShutter(
     onHoldStart: () -> Unit,
     onHoldEnd: () -> Unit,
 ) {
-    val live = Wyrm.Live
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val live = wyrmScopedPalette.live
     // Read inside the gesture, which must not restart when recording begins under the finger.
     val now by androidx.compose.runtime.rememberUpdatedState(Triple(enabled, video, recording))
     val tap by androidx.compose.runtime.rememberUpdatedState(onTap)
@@ -486,6 +488,8 @@ private fun TrailShutter(
 /** PHOTO · VIDEO · TEXT · CANVAS under the camera; the chosen one sits in the middle. */
 @Composable
 internal fun StudioModeCarousel(modes: List<StudioMode>, mode: StudioMode, dark: Boolean, enabled: Boolean = true, onMode: (StudioMode) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val haptics = LocalHapticFeedback.current
     val slot = 86.dp
     val index = modes.indexOf(mode).coerceAtLeast(0)
@@ -501,7 +505,7 @@ internal fun StudioModeCarousel(modes: List<StudioMode>, mode: StudioMode, dark:
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    val ink = if (dark) Color.White else Wyrm.Ink
+                    val ink = if (dark) Color.White else wyrmScopedPalette.ink
                     Text(m.label.uppercase(), fontFamily = Wyrm.Body, fontWeight = if (on) FontWeight.ExtraBold else FontWeight.SemiBold,
                         fontSize = 13.sp, letterSpacing = 1.2.sp, color = ink.copy(alpha = if (on) 1f else 0.45f))
                 }
@@ -509,7 +513,7 @@ internal fun StudioModeCarousel(modes: List<StudioMode>, mode: StudioMode, dark:
         }
         // A small bead under the chosen mode.
         Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp).size(5.dp).clip(CircleShape)
-            .background(if (dark) Color.White else Wyrm.Ink))
+            .background(if (dark) Color.White else wyrmScopedPalette.ink))
     }
 }
 

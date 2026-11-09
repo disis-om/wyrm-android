@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -78,6 +78,8 @@ fun LeaderboardScreen(
     onBack: () -> Unit,
     onOpenPlayer: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var query by remember { mutableStateOf("") }
     val ranks = remember(players) { players.withIndex().associate { (index, p) -> p.id to index + 1 } }
     val me = players.firstOrNull { it.id == meId }
@@ -92,12 +94,12 @@ fun LeaderboardScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
         ) {
@@ -111,7 +113,7 @@ fun LeaderboardScreen(
                     text = "‹ $backLabel",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onBack)
@@ -122,21 +124,21 @@ fun LeaderboardScreen(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                 )
             }
             Segmented(sort = sort, onSortChange = onSortChange)
             SearchField(query = query, onQuery = { query = it })
             if (offline && updatedAt > 0L) {
                 Text("Offline · updated ${cachedAge(updatedAt)} ago", fontFamily = Wyrm.Body, fontSize = 11.sp,
-                    color = Wyrm.Quiet, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+                    color = wyrmScopedPalette.quiet, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
             }
         }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Wyrm.Rule),
+                .background(wyrmScopedPalette.rule),
         )
 
         PullToRefreshBox(
@@ -146,10 +148,10 @@ fun LeaderboardScreen(
         ) {
         when {
             error.isNotEmpty() && players.isEmpty() -> Notice(error, Wyrm.Blood)
-            loading && players.isEmpty() -> Notice("Loading the board…", Wyrm.Quiet)
-            players.isEmpty() -> Notice("Nobody has registered yet.", Wyrm.Quiet)
+            loading && players.isEmpty() -> Notice("Loading the board…", wyrmScopedPalette.quiet)
+            players.isEmpty() -> Notice("Nobody has registered yet.", wyrmScopedPalette.quiet)
             visible.isEmpty() && standing == null && term.isNotEmpty() ->
-                Notice("Nobody here matches “$query”.", Wyrm.Quiet)
+                Notice("Nobody here matches “$query”.", wyrmScopedPalette.quiet)
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = insetBottom + 24.dp),
@@ -203,12 +205,14 @@ private fun cachedAge(savedAt: Long): String {
 
 @Composable
 private fun Segmented(sort: LeaderboardSort, onSortChange: (LeaderboardSort) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 6.dp)
             .clip(wyrmRounded(10.dp))
-            .background(Wyrm.Track)
+            .background(wyrmScopedPalette.track)
             .padding(3.dp),
     ) {
         LeaderboardSort.entries.forEach { option ->
@@ -221,7 +225,7 @@ private fun Segmented(sort: LeaderboardSort, onSortChange: (LeaderboardSort) -> 
                     .height(32.dp)
                     .scale(pressScale(pressed))
                     .clip(wyrmRounded(8.dp))
-                    .background(if (active) Wyrm.Card else Color.Transparent)
+                    .background(if (active) wyrmScopedPalette.card else Color.Transparent)
                     .clickable(
                         interactionSource = interaction,
                         indication = null,
@@ -233,7 +237,7 @@ private fun Segmented(sort: LeaderboardSort, onSortChange: (LeaderboardSort) -> 
                     fontFamily = Wyrm.Body,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
                     fontSize = 13.5.sp,
-                    color = if (active) Wyrm.Ink else Wyrm.Mute,
+                    color = if (active) wyrmScopedPalette.ink else wyrmScopedPalette.mute,
                 )
             }
         }
@@ -242,6 +246,8 @@ private fun Segmented(sort: LeaderboardSort, onSortChange: (LeaderboardSort) -> 
 
 @Composable
 private fun SearchField(query: String, onQuery: (String) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(10.dp)
     Row(
         modifier = Modifier
@@ -249,9 +255,9 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
             .padding(top = 9.dp)
             .height(38.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .background(Wyrm.Live.copy(alpha = 0.12f))
-            .border(1.dp, Wyrm.Live.copy(alpha = 0.3f), shape)
+            .background(wyrmScopedPalette.card)
+            .background(wyrmScopedPalette.live.copy(alpha = 0.12f))
+            .border(1.dp, wyrmScopedPalette.live.copy(alpha = 0.3f), shape)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -259,7 +265,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
             painter = painterResource(R.drawable.ic_search),
             contentDescription = null,
             modifier = Modifier.size(14.dp),
-            colorFilter = ColorFilter.tint(Wyrm.TabIdle),
+            colorFilter = ColorFilter.tint(wyrmScopedPalette.tabIdle),
         )
         Spacer(Modifier.width(8.dp))
         BasicTextField(
@@ -269,9 +275,9 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
             textStyle = TextStyle(
                 fontFamily = Wyrm.Body,
                 fontSize = 14.5.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
             ),
-            cursorBrush = SolidColor(Wyrm.Ink),
+            cursorBrush = SolidColor(wyrmScopedPalette.ink),
             modifier = Modifier.fillMaxWidth(),
             decorationBox = { inner ->
                 if (query.isEmpty()) {
@@ -279,7 +285,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
                         text = "Search a name or @username",
                         fontFamily = Wyrm.Body,
                         fontSize = 14.5.sp,
-                        color = Wyrm.TabIdle,
+                        color = wyrmScopedPalette.tabIdle,
                     )
                 }
                 inner()
@@ -290,13 +296,15 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
 
 @Composable
 private fun SectionLabel(text: String, top: Dp = 16.dp) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = text.uppercase(),
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.5.sp,
         letterSpacing = 0.92.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = top, bottom = 8.dp),
     )
 }
@@ -308,6 +316,8 @@ private fun StandingCard(
     sort: LeaderboardSort,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -319,8 +329,8 @@ private fun StandingCard(
             .padding(horizontal = 16.dp)
             .scale(pressScale(pressed))
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 13.dp),
     )
@@ -328,13 +338,15 @@ private fun StandingCard(
 
 @Composable
 private fun BoardCard(content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
     ) {
         content()
     }
@@ -350,6 +362,8 @@ private fun BoardRow(
     mine: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column {
@@ -358,7 +372,7 @@ private fun BoardRow(
                 Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Wyrm.RowRule),
+                    .background(wyrmScopedPalette.rowRule),
             )
         }
         BoardPerson(
@@ -368,7 +382,7 @@ private fun BoardRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 60.dp)
-                .background(if (mine) Wyrm.Live.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
+                .background(if (mine) wyrmScopedPalette.live.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
                 .scale(pressScale(pressed))
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 9.dp),
@@ -383,6 +397,8 @@ private fun BoardPerson(
     sort: LeaderboardSort,
     modifier: Modifier,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val headline = if (sort == LeaderboardSort.KILLS) player.kills else player.highestScore
     val footnote = if (sort == LeaderboardSort.KILLS) {
         "${grouped(player.highestScore)} best"
@@ -402,18 +418,8 @@ private fun BoardPerson(
     ) {
         // Ranks past 99 overflowed a 22 dp column (OM, 2026-10-14): room for
         // three digits, smaller type from four on, never wrapped.
-        val digits = rank.toString().length
-        Text(
-            text = rank.toString(),
-            fontFamily = Wyrm.Body,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = if (digits >= 5) 9.5.sp else if (digits == 4) 11.sp else 13.sp,
-            color = Wyrm.Quiet,
-            style = nums,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.width(34.dp),
-        )
+        // Fits one line at any length or phone text size (OM, 2026-10-31).
+        RankNumber(rank, Modifier.width(38.dp), FontWeight.SemiBold)
         Spacer(Modifier.width(11.dp))
         WyrmAvatar(
             url = player.avatarUrl,
@@ -428,7 +434,7 @@ private fun BoardPerson(
                 text = name,
                 fontFamily = Wyrm.Body,
                 fontSize = 14.5.sp,
-                color = if (player.isDeleted) Wyrm.Quiet else Wyrm.Ink,
+                color = if (player.isDeleted) wyrmScopedPalette.quiet else wyrmScopedPalette.ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -436,7 +442,7 @@ private fun BoardPerson(
                 text = handle,
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -447,14 +453,14 @@ private fun BoardPerson(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 style = nums,
             )
             Text(
                 text = footnote,
                 fontFamily = Wyrm.Body,
                 fontSize = 11.5.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 style = nums,
             )
         }

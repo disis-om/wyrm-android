@@ -23,7 +23,7 @@ mm_renderer* mm_renderer_create(tcontext* ctx, VkPipelineLayout layout,
       tcontext_create_shader(ctx, "app/res/shaders/bin/mmf.spv");
 
   vkCreateGraphicsPipelines(
-      ctx->device, NULL, 1,
+      ctx->device, VK_NULL_HANDLE, 1,
       &(VkGraphicsPipelineCreateInfo){
           .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
           .pNext = NULL,
@@ -168,6 +168,7 @@ void mm_renderer_prerender(mm_renderer* r, tcontext* ctx) {
   tcontext_frame* fr = ctx->frames + ctx->current_frame;
 
   memcpy(r->minimap_buffer[ctx->current_frame].data, r->minimap, MAX_MINIMAP_SIZE * MAX_MINIMAP_SIZE);
+  tdbuffer_flush(ctx, r->minimap_buffer, ctx->current_frame, MAX_MINIMAP_SIZE * MAX_MINIMAP_SIZE);
 
   vkCmdPipelineBarrier(
       fr->cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,

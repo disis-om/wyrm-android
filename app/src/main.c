@@ -12,6 +12,16 @@
 #include "mobile/mobile_controls.h"
 #include "mobile/mobile_hotkeys.h"
 #include "user.h"
+#ifdef __ANDROID__
+#include "rendering/frame_metrics.h"
+#include "rendering/adpf_hint.h"
+/* thermite/src/graphics/tcontext.c (Android): this frame's wait inside
+   tcontext_begin and the moment its present was called. */
+extern uint64_t tcontext_begin_wait_ns;
+extern uint64_t tcontext_present_start_ns;
+#endif
+extern float wyrm_sheet_veil; /* rendering/renderer.c */
+extern bool wyrm_high_visibility_text;
 
 void tinput(tenv* env) {
   tuser_data* usr = env->usr;
@@ -220,6 +230,11 @@ static void wyrm_pace(bool drew) {
     return;
   }
   int cap = atomic_load(&wyrm_policy_cap);
+#ifdef WYRM_DESKTOP
+  /* A direct match presents to a visible window: FIFO waits for the
+     monitor itself, so a software cap would only be a second clock. */
+  if (wyrm_desktop_direct()) cap = 0;
+#endif
   if (cap <= 0) {
     next = 0;
     return;
@@ -248,6 +263,25 @@ void wyrm_set_background(bool on) {
 }
 
 bool wyrm_background(void) { return atomic_load(&wyrm_background_on) != 0; }
+
+/* Late input latching (OM, 2026-10-23): the last frame drew a match. */
+static bool wyrm_drew_match;
+
+/* Engine thread (tentry). True when this frame should take its image before
+ * the touches are read: a match on screen, drawn last frame too. Not on Wyrm
+ * Desktop, whose hidden window is read back rather than shown. */
+bool wyrm_late_latch(tenv* env) {
+#ifdef WYRM_DESKTOP
+  /* A direct match (2026-11-05) presents to a visible window: FIFO waits for
+     the monitor in the acquire, so the mouse is read after that wait, as on
+     the phones. The readback path (editors) never waits there. */
+  return wyrm_drew_match && wyrm_desktop_direct() &&
+         env->usr->gdata.curr_screen == PLAYING;
+#else
+  return wyrm_drew_match && !wyrm_background() &&
+         env->usr->gdata.curr_screen == PLAYING;
+#endif
+}
 
 /* Engine thread. One background pass; false when the app is in front. */
 bool wyrm_background_tick(tenv* env) {
@@ -293,6 +327,10 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeSetBackgroundPlay(JNIEnv* jenv,
 #endif
 
 void trender(tenv* env) {
+#ifdef __ANDROID__
+  const Uint64 perf_start = SDL_GetPerformanceCounter();
+  const Uint64 perf_start_ns = SDL_GetTicksNS();
+#endif
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
   game_data* gdata = &usr->gdata;
@@ -303,6 +341,9 @@ void trender(tenv* env) {
   android_update_apply_pending_settings(env);
   android_home_poll(env);
   android_settings_poll(env);
+  /* Apply before measuring or drawing any text in this frame. */
+  wyrm_high_visibility_text = android_home_near_original() ||
+                              usr->usrs.ext.native_text_style == 1;
   android_team_poll(env);
   android_skin_poll(env);
   sync_screen(env);
@@ -321,6 +362,10 @@ void trender(tenv* env) {
               ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
   igPopStyleVar(1);
   ui_theme_transition_begin(env);
+  /* The death fade (below) also darkens the sheet text, drawn after
+     ImGui (OM, 2026-11-01). */
+  wyrm_sheet_veil = usr->gdata.curr_screen == PLAYING && android_home_death_pending()
+                        ? android_home_death_opacity() : 1.0f;
   switch (usr->gdata.curr_screen) {
     case TITLE_SCREEN:
       // Home/Social are fully opaque Compose. Paper Skin punches a hole in
@@ -336,6 +381,9 @@ void trender(tenv* env) {
       break;
     case PLAYING:
       game_loop(env);
+#ifdef WYRM_DESKTOP
+      wyrm_desktop_draw_hint(); /* only in a direct match */
+#endif
       break;
   }
   ui_theme_transition_end(env);
@@ -351,8 +399,14 @@ void trender(tenv* env) {
   // render end
 
   igRender();
-  bool draw = !wyrm_background() && wyrm_engine_visible(env);
-  if (draw && tcontext_begin(ctx)) {
+#ifdef __ANDROID__
+  const Uint64 perf_prepared = SDL_GetPerformanceCounter();
+#endif
+  /* An image taken early (late latching) is always drawn and presented. */
+  bool draw = (!wyrm_background() && wyrm_engine_visible(env)) || ctx->acquired;
+  bool drew = draw && tcontext_begin(ctx);
+  wyrm_drew_match = drew && usr->gdata.curr_screen == PLAYING;
+  if (drew) {
     // On the Compose-owned screens this clear *is* the background the player
     // sees: the interface above it is transparent so the skin preview and the
     // accessory sprites can show through, so it has to be Wyrm's black rather
@@ -381,6 +435,23 @@ void trender(tenv* env) {
     renderer_render_cursor(usr->r, ctx);
     tcontext_end(ctx);
   }
+#ifdef __ANDROID__
+  wyrm_frame_observe(!wyrm_background() && gdata->curr_screen == PLAYING,
+      drew && ctx->last_present_succeeded, perf_start, perf_prepared,
+      SDL_GetPerformanceCounter());
+  if (drew && !wyrm_background() && gdata->curr_screen == PLAYING &&
+      ctx->last_present_succeeded) {
+    /* Wall time of this frame's work (ADPF reports wall time, 2026-11-07):
+       from trender's start to the present call, less the fence/acquire
+       wait inside tcontext_begin. The late-latch acquire came before
+       trender and Swappy's vsync sleep after the present call, so neither
+       is in it. */
+    const int64_t work_ns = (int64_t)tcontext_present_start_ns -
+                            (int64_t)perf_start_ns -
+                            (int64_t)tcontext_begin_wait_ns;
+    wyrm_adpf_report(work_ns);
+  }
+#endif
   renderer_clear_instances(usr->r);
 #if defined(__ANDROID__) || defined(WYRM_DESKTOP)
   wyrm_pace(draw);

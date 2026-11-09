@@ -30,7 +30,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -349,6 +349,8 @@ private class TrailPiecesLayout {
  */
 @Composable
 internal fun TrailTimelineBar(session: TrailVideoSession) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val edit = session.edit
@@ -361,7 +363,7 @@ internal fun TrailTimelineBar(session: TrailVideoSession) {
                 session.togglePlay()
             }
             Text("${trailClock(session.playhead)} / ${trailClock(edit.totalMs)}", fontFamily = Wyrm.Body,
-                fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Wyrm.Ink)
+                fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = wyrmScopedPalette.ink)
             Spacer(Modifier.weight(1f))
             TrailIconButton(if (edit.muted) LucideR.drawable.lucide_ic_volume_x else LucideR.drawable.lucide_ic_volume_2) {
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
@@ -373,7 +375,7 @@ internal fun TrailTimelineBar(session: TrailVideoSession) {
         if (at >= 0 && at < edit.segments.size - 1) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("Transition", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Wyrm.Mute)
+                Text("Transition", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = wyrmScopedPalette.mute)
                 TrailTransition.entries.forEach { kind ->
                     TrailPill(kind.label, edit.segments[at].after == kind) {
                         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
@@ -401,7 +403,7 @@ internal fun TrailTimelineBar(session: TrailVideoSession) {
                 }
                 Spacer(Modifier.weight(1f))
                 Text("${"%.1f".format(edit.totalMs / 1000f)} s of ${TRAIL_VIDEO_MAX_MS / 1000} s", fontFamily = Wyrm.Body,
-                    fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = if (edit.totalMs >= TRAIL_VIDEO_MAX_MS) Wyrm.Badge else Wyrm.Quiet)
+                    fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = if (edit.totalMs >= TRAIL_VIDEO_MAX_MS) wyrmScopedPalette.badge else wyrmScopedPalette.quiet)
             }
         }
     }
@@ -410,6 +412,8 @@ internal fun TrailTimelineBar(session: TrailVideoSession) {
 /** The pieces side by side, each as wide as it is long; a diamond at each cut. */
 @Composable
 private fun TrailPieces(session: TrailVideoSession, frames: List<Bitmap>) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     val edit = session.edit
@@ -562,8 +566,8 @@ private fun TrailPieces(session: TrailVideoSession, frames: List<Bitmap>) {
             Box(
                 Modifier.offset { IntOffset((cutX - with(density) { 12.dp.toPx() }).roundToInt(), with(density) { 17.dp.toPx() }.roundToInt()) }
                     .size(24.dp).rotate(45f).clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
-                    .background(if (on || kind != TrailTransition.NONE) Wyrm.Ink else Wyrm.Card)
-                    .border(1.5.dp, Wyrm.Ink, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                    .background(if (on || kind != TrailTransition.NONE) wyrmScopedPalette.ink else wyrmScopedPalette.card)
+                    .border(1.5.dp, wyrmScopedPalette.ink, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                         edit.transitionAt = if (on) -1 else i
@@ -571,7 +575,7 @@ private fun TrailPieces(session: TrailVideoSession, frames: List<Bitmap>) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text(if (kind == TrailTransition.NONE) "+" else kind.label.take(1), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp, color = if (on || kind != TrailTransition.NONE) Wyrm.OnInk else Wyrm.Ink,
+                    fontSize = 11.sp, color = if (on || kind != TrailTransition.NONE) wyrmScopedPalette.onInk else wyrmScopedPalette.ink,
                     modifier = Modifier.rotate(-45f))
             }
         }
@@ -585,6 +589,8 @@ private fun TrailPieces(session: TrailVideoSession, frames: List<Bitmap>) {
  */
 @Composable
 internal fun TrailCoverBar(session: TrailVideoSession, onDone: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val context = LocalContext.current
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
@@ -606,9 +612,9 @@ internal fun TrailCoverBar(session: TrailVideoSession, onDone: () -> Unit) {
     LaunchedEffect(Unit) { session.pause(); session.seekEdited(edit.coverMs, play = false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Cover", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Wyrm.Ink)
+            Text("Cover", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = wyrmScopedPalette.ink)
             Spacer(Modifier.width(8.dp))
-            Text("Drag to pick the picture people see first", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
+            Text("Drag to pick the picture people see first", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet,
                 modifier = Modifier.weight(1f))
             TrailPill("Done", true, onClick = onDone)
         }
@@ -618,7 +624,7 @@ internal fun TrailCoverBar(session: TrailVideoSession, onDone: () -> Unit) {
             val total = edit.totalMs.coerceAtLeast(1L)
             fun xOf(ms: Long) = (ms.toFloat() / total) * (widthPx - windowW)
             Row(Modifier.fillMaxWidth().height(48.dp).align(Alignment.Center).clip(wyrmRounded(8.dp))) {
-                if (frames.isEmpty()) Box(Modifier.fillMaxSize().background(Wyrm.Well))
+                if (frames.isEmpty()) Box(Modifier.fillMaxSize().background(wyrmScopedPalette.well))
                 frames.forEach { bitmap ->
                     Image(remember(bitmap) { bitmap.asImageBitmap() }, null, contentScale = ContentScale.Crop,
                         modifier = Modifier.weight(1f).fillMaxHeight())
@@ -628,7 +634,7 @@ internal fun TrailCoverBar(session: TrailVideoSession, onDone: () -> Unit) {
             val x = xOf(edit.coverMs)
             Box(
                 Modifier.offset { IntOffset(x.roundToInt(), 0) }.size(48.dp, 70.dp).clip(wyrmRounded(9.dp))
-                    .border(3.dp, Color.White, wyrmRounded(9.dp)).background(Wyrm.Well),
+                    .border(3.dp, Color.White, wyrmRounded(9.dp)).background(wyrmScopedPalette.well),
             ) {
                 // The nearest strip frame at once, the exact one a moment later.
                 val shown = cover ?: frames.getOrNull(((edit.coverMs.toFloat() / total) * frames.size).toInt().coerceIn(0, (frames.size - 1).coerceAtLeast(0)))
@@ -661,6 +667,8 @@ internal fun TrailCoverBar(session: TrailVideoSession, onDone: () -> Unit) {
 /** The crop shapes for a video, and Done. */
 @Composable
 internal fun TrailCropBar(session: TrailVideoSession, onDone: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val haptics = LocalHapticFeedback.current
     val edit = session.edit
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -676,31 +684,35 @@ internal fun TrailCropBar(session: TrailVideoSession, onDone: () -> Unit) {
             if (!edit.crop.untouched) TrailPill("Reset", false) { edit.crop = TrailCrop() }
             TrailPill("Done", true, onClick = onDone)
         }
-        Text("Drag and pinch the video to frame it", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet, textAlign = TextAlign.Center)
+        Text("Drag and pinch the video to frame it", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet, textAlign = TextAlign.Center)
     }
 }
 
 @Composable
 internal fun TrailPill(label: String, selected: Boolean, icon: Int? = null, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
-        Modifier.clip(CircleShape).background(if (selected) Wyrm.Ink else Wyrm.Well)
+        Modifier.clip(CircleShape).background(if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.well)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(horizontal = 13.dp).height(32.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        icon?.let { Icon(painterResource(it), null, tint = if (selected) Wyrm.OnInk else Wyrm.Ink, modifier = Modifier.size(15.dp)) }
-        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = if (selected) Wyrm.OnInk else Wyrm.Ink)
+        icon?.let { Icon(painterResource(it), null, tint = if (selected) wyrmScopedPalette.onInk else wyrmScopedPalette.ink, modifier = Modifier.size(15.dp)) }
+        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = if (selected) wyrmScopedPalette.onInk else wyrmScopedPalette.ink)
     }
 }
 
 @Composable
 private fun TrailIconButton(icon: Int, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
-        Modifier.size(36.dp).clip(CircleShape).background(Wyrm.Well)
+        Modifier.size(36.dp).clip(CircleShape).background(wyrmScopedPalette.well)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(painterResource(icon), null, tint = Wyrm.Ink, modifier = Modifier.size(17.dp)) }
+    ) { Icon(painterResource(icon), null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(17.dp)) }
 }
 
 /** "0:04.2": the timeline's clock. */

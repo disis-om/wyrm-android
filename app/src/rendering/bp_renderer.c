@@ -1,5 +1,6 @@
 #include "bp_renderer.h"
 #include <string.h>
+#include "instance_storage.h"
 
 bp_renderer* bp_renderer_create(tcontext* ctx, int max_instances,
                                 VkPipelineLayout layout, VkRenderPass pass) {
@@ -11,7 +12,7 @@ bp_renderer* bp_renderer_create(tcontext* ctx, int max_instances,
       tcontext_create_shader(ctx, "app/res/shaders/bin/bpf.spv");
 
   vkCreateGraphicsPipelines(
-      ctx->device, NULL, 1,
+      ctx->device, VK_NULL_HANDLE, 1,
       &(VkGraphicsPipelineCreateInfo){
           .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
           .pNext = NULL,
@@ -49,7 +50,7 @@ bp_renderer* bp_renderer_create(tcontext* ctx, int max_instances,
                            .stride = sizeof(bp_instance),
                            .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE},
                       },
-                  .vertexAttributeDescriptionCount = 4,
+                  .vertexAttributeDescriptionCount = 5,
                   .pVertexAttributeDescriptions =
                       (VkVertexInputAttributeDescription[]){
                           {.location = 0,
@@ -67,7 +68,11 @@ bp_renderer* bp_renderer_create(tcontext* ctx, int max_instances,
                           {.location = 3,
                            .binding = 1,
                            .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                           .offset = offsetof(bp_instance, color)}}},
+                           .offset = offsetof(bp_instance, color)},
+                          {.location = 4,
+                           .binding = 1,
+                           .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                           .offset = offsetof(bp_instance, clip)}}},
           .pInputAssemblyState =
               &(VkPipelineInputAssemblyStateCreateInfo){
                   .sType =
@@ -164,8 +169,10 @@ bp_renderer* bp_renderer_create(tcontext* ctx, int max_instances,
   vkDestroyShaderModule(ctx->device, fragment_shader, NULL);
 	vkDestroyShaderModule(ctx->device, vertex_shader, NULL);
 
-	r->instance_buffer = tdbuffer_create(ctx, NULL, max_instances * sizeof(bp_instance), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-  r->instances = malloc(max_instances * sizeof(bp_instance));
+	r->instance_buffer = tdbuffer_create_stream(ctx,
+      (VkDeviceSize)max_instances * sizeof(bp_instance), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  r->instances = NULL;
+  r->capacity = 0;
   r->max_instances = max_instances;
   r->num_instances = 0;
 
@@ -176,12 +183,18 @@ void bp_renderer_push(bp_renderer* r, const bp_instance* instance) {
   if (r->num_instances >= r->max_instances) {
     return;
   }
+  bp_instance* grown = instance_storage_reserve(r->instances, &r->capacity,
+      r->max_instances, r->num_instances + 1, sizeof(bp_instance));
+  if (!grown) return;
+  r->instances = grown;
   r->instances[r->num_instances++] = *instance;
 }
 
 void bp_renderer_render(bp_renderer* r, tcontext* ctx) {
   tcontext_frame* fr = ctx->frames + ctx->current_frame;
-  memcpy(r->instance_buffer[ctx->current_frame].data, r->instances, r->num_instances * sizeof(bp_instance));
+  if (r->num_instances <= 0 || !tdbuffer_upload(ctx, r->instance_buffer,
+      ctx->current_frame, r->instances,
+      (VkDeviceSize)r->num_instances * sizeof(bp_instance))) return;
   vkCmdBindPipeline(fr->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipeline);
   vkCmdBindVertexBuffers(fr->cmd, 1, 1, &r->instance_buffer[ctx->current_frame].handle, (VkDeviceSize[]){0});
   vkCmdDraw(fr->cmd, 4, r->num_instances, 0, 0);

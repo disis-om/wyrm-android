@@ -41,7 +41,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -171,11 +171,14 @@ fun ControlsScreen(
     portraitPlay: Boolean = false,
     onPortraitPlay: (Boolean) -> Unit = {},
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val steeringSetting = settings.named("controls.joystick_mode")
     val steering = steeringSetting?.index ?: 0
     // Upright play steers with the arrow only (OM, 2026-10-02; engine
     // mobile_controls_steering_mode); the sideways choice below is kept.
-    val arrowSteering = portraitPlay || steering == 2
+    val arrowSteering = (portraitPlay && steering != 3) || steering == 2
+    val classicSteering = steering == 3
     // Home › Near Original (OM, 2026-10-02): slither's own joystick, boost and
     // arrow; only the arrow's size stays the player's. Nothing stored changes.
     val nearOriginal = NearOriginalStore.on
@@ -221,7 +224,7 @@ fun ControlsScreen(
     ) {
         Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
             ControlsPreview(
-                showJoystick = !arrowSteering,
+                showJoystick = !arrowSteering && !classicSteering,
                 showArrow = arrowSteering,
                 showBoost = boostButton,
                 showZoom = zoomOn?.enabled ?: true,
@@ -258,15 +261,17 @@ fun ControlsScreen(
 
         SettingsSectionLabel("Basic · steering")
         SettingsCard {
-            if (!portraitPlay) Box(Modifier.settingAnchor("controls.joystick_mode")) { SettingsEnumBlock(
+            Box(Modifier.settingAnchor("controls.joystick_mode")) { SettingsEnumBlock(
                 title = "Steering style",
                 detail = "",
-                options = listOf("Joystick", "Arrow"),
-                selected = if (arrowSteering) 1 else 0,
+                options = listOf("Joystick", "Arrow", "Classic"),
+                selected = if (classicSteering) 2 else if (arrowSteering) 1 else 0,
                 first = true,
                 onSelect = { pick ->
                     steeringSetting?.let { setting ->
-                        if (pick == 1) {
+                        if (pick == 2) {
+                            onChange(setting, listOf(3f))
+                        } else if (pick == 1) {
                             onChange(setting, listOf(2f))
                         } else {
                             val joystick = if (steering in 0..1) steering else 0
@@ -275,7 +280,7 @@ fun ControlsScreen(
                     }
                 },
             ) }
-            if (!arrowSteering && steeringSetting != null && !nearOriginal) {
+            if (!arrowSteering && !classicSteering && steeringSetting != null && !nearOriginal) {
                 val behaviour = steeringSetting.options.take(2)
                 if (behaviour.size >= 2) {
                     SettingsValueRow(
@@ -296,7 +301,7 @@ fun ControlsScreen(
                 }
             }
             // Joystick knob (OM, 2026-10-13): follows the snake, or back to the centre.
-            if (!arrowSteering && !nearOriginal && !portraitPlay) {
+            if (!arrowSteering && !classicSteering && !nearOriginal && !portraitPlay) {
                 Box(Modifier.settingAnchor("app.joystick-knob")) { SettingsEnumBlock(
                     title = "Joystick knob",
                     detail = if (PlayFeelStore.knobCentre)
@@ -320,26 +325,27 @@ fun ControlsScreen(
                     onSelect = { onChange(setting, listOf(it.toFloat())) },
                 ) }
             }
+            // Boost (OM, 2026-10-31): no button under the finger any more; the
+            // engine's boost_mode is now "show the fixed button" (1) or not (0).
             boostMode?.let { setting ->
-                Box(Modifier.settingAnchor(setting.id).nearOriginalLocked(nearOriginal)) { SettingsEnumBlock(
-                    title = "Boost",
-                    detail = setting.hint,
-                    options = setting.options,
-                    selected = setting.index.coerceIn(0, (setting.options.size - 1).coerceAtLeast(0)),
+                Box(Modifier.settingAnchor(setting.id).nearOriginalLocked(nearOriginal)) { SettingsBoolRow(
+                    title = "Show boost button",
+                    detail = "On: hold the boost button to boost. Off: Arrow and Classic use a second finger; joystick uses the opposite half of the screen.",
+                    on = setting.index == 1,
                     first = portraitPlay,
-                    onSelect = { onChange(setting, listOf(it.toFloat())) },
+                    onToggle = { onChange(setting, listOf(if (it) 1f else 0f)) },
                 ) }
             }
         }
 
-        if (portraitPlay) SettingsCaption("Upright you always steer with the arrow: the joystick is for sideways play, and your sideways choice is kept. No left or right hand: your first finger steers, a second finger boosts.")
+        if (portraitPlay && !classicSteering) SettingsCaption("Upright you steer with the arrow: the joystick is for sideways play, and your sideways choice is kept. No left or right hand: your first finger steers, a second finger boosts.")
 
         if (nearOriginal) SettingsCaption("Near Original is on: slither's own joystick, boost button and arrow, at their original places. Only the arrow's size is yours. Turn it off on Home to bring your own back.")
 
         SettingsSectionLabel("Basic · size")
         Box(Modifier.nearOriginalLocked(nearOriginal)) { SettingsCard {
             var first = true
-            if (!arrowSteering) {
+            if (!arrowSteering && !classicSteering) {
                 joystickSize?.let {
                     SettingTypedRow(it, first = first, onChange = onChange)
                     first = false
@@ -373,7 +379,7 @@ fun ControlsScreen(
                     onToggle = { PlayFeelStore.applyCustomArrow(it) },
                 )
                 arrowRows.filter { it.id != "arrow.style" && it.id != "arrow.color" }
-                    .filter { !nearOriginal || it.id == "arrow.size" }
+                    .filter { !nearOriginal || it.id == "arrow.size" || it.id == "arrow.double_tap_boost" }
                     .forEach { setting ->
                         val movement = setting.id == "arrow.separation" || setting.id == "arrow.sensitivity"
                         AnimatedVisibility(
@@ -398,7 +404,12 @@ fun ControlsScreen(
                 }
                 if (ArrowSkinStore.skin < 0 && !nearOriginal) {
                     arrowRows.firstOrNull { it.id == "arrow.color" }?.let { setting ->
-                        SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                        // A colour the player picks is theirs from now on; until then the
+                        // arrow takes the snake's colour, as slither's does (OM, 2026-11-01).
+                        SettingTypedRow(setting = setting, first = false, onChange = { row, values ->
+                            onChange(row, values)
+                            settings.named("arrow.colour_own")?.let { own -> onChange(own, listOf(1f)) }
+                        })
                     }
                 }
             }
@@ -426,7 +437,7 @@ fun ControlsScreen(
                         // The bar itself, so Slider and Spring can be felt here (OM, 2026-10-05).
                         ZoomBarActionPreview(vertical = zoomVertical, springStyle = PlayFeelStore.zoomSpring)
                         Spacer(Modifier.height(12.dp))
-                        Text("Zoom bar style", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+                        Text("Zoom bar style", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
                         Spacer(Modifier.height(8.dp))
                         PaperSegmented(
                             options = listOf("Slider", "Spring"),
@@ -437,7 +448,7 @@ fun ControlsScreen(
                         Text(
                             if (PlayFeelStore.zoomSpring) "Push the knob toward + to zoom in, toward - to zoom out; let go and it springs back to the middle."
                             else "Slide to the zoom you want; it stays there.",
-                            fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet,
+                            fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet,
                         )
                     }
                 }
@@ -456,6 +467,8 @@ fun ControlsScreen(
 /** Slider stays where you leave it. Spring returns to the middle, as in a match. */
 @Composable
 private fun ZoomBarActionPreview(vertical: Boolean, springStyle: Boolean) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val length = if (vertical) 156.dp else 220.dp
     val thickness = 26.dp
     var held by remember { mutableFloatStateOf(0.45f) }
@@ -472,13 +485,13 @@ private fun ZoomBarActionPreview(vertical: Boolean, springStyle: Boolean) {
     }
     val shown = if (springStyle) (0.5f + pull * 0.5f).coerceIn(0f, 1f) else held
     Column {
-        Text("Preview", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet)
+        Text("Preview", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet)
         Spacer(Modifier.height(8.dp))
         Column(
             Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Well, wyrmRounded(12.dp))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(12.dp))
+                .background(wyrmScopedPalette.well, wyrmRounded(12.dp))
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(12.dp))
                 .padding(vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -518,8 +531,8 @@ private fun ZoomBarActionPreview(vertical: Boolean, springStyle: Boolean) {
                     Modifier
                         .then(if (vertical) Modifier.width(thickness).height(length) else Modifier.width(length).height(thickness))
                         .clip(wyrmRounded(999.dp))
-                        .background(Wyrm.Card)
-                        .border(1.dp, Wyrm.Ink, wyrmRounded(999.dp)),
+                        .background(wyrmScopedPalette.card)
+                        .border(1.dp, wyrmScopedPalette.ink, wyrmRounded(999.dp)),
                 ) {
                     val along = if (vertical) 1f - shown else shown
                     val travel = (if (vertical) size.height else size.width) - size.let {
@@ -532,9 +545,9 @@ private fun ZoomBarActionPreview(vertical: Boolean, springStyle: Boolean) {
                         val from = min(mid, knobAt)
                         val span = abs(knobAt - mid).coerceAtLeast(1f)
                         if (vertical) {
-                            drawRect(Wyrm.Track, topLeft = Offset(0f, from), size = androidx.compose.ui.geometry.Size(cross, span))
+                            drawRect(wyrmScopedPalette.track, topLeft = Offset(0f, from), size = androidx.compose.ui.geometry.Size(cross, span))
                         } else {
-                            drawRect(Wyrm.Track, topLeft = Offset(from, 0f), size = androidx.compose.ui.geometry.Size(span, cross))
+                            drawRect(wyrmScopedPalette.track, topLeft = Offset(from, 0f), size = androidx.compose.ui.geometry.Size(span, cross))
                         }
                         val mark = cross * 0.22f
                         val inset = cross * 1.1f
@@ -542,29 +555,29 @@ private fun ZoomBarActionPreview(vertical: Boolean, springStyle: Boolean) {
                             val x = size.width / 2f
                             val plus = inset
                             val minus = size.height - inset
-                            drawLine(Wyrm.Ink, Offset(x - mark, plus), Offset(x + mark, plus), 2.5f)
-                            drawLine(Wyrm.Ink, Offset(x, plus - mark), Offset(x, plus + mark), 2.5f)
-                            drawLine(Wyrm.Ink, Offset(x - mark, minus), Offset(x + mark, minus), 2.5f)
+                            drawLine(wyrmScopedPalette.ink, Offset(x - mark, plus), Offset(x + mark, plus), 2.5f)
+                            drawLine(wyrmScopedPalette.ink, Offset(x, plus - mark), Offset(x, plus + mark), 2.5f)
+                            drawLine(wyrmScopedPalette.ink, Offset(x - mark, minus), Offset(x + mark, minus), 2.5f)
                         } else {
                             val y = size.height / 2f
                             val minus = inset
                             val plus = size.width - inset
-                            drawLine(Wyrm.Ink, Offset(minus - mark, y), Offset(minus + mark, y), 2.5f)
-                            drawLine(Wyrm.Ink, Offset(plus - mark, y), Offset(plus + mark, y), 2.5f)
-                            drawLine(Wyrm.Ink, Offset(plus, y - mark), Offset(plus, y + mark), 2.5f)
+                            drawLine(wyrmScopedPalette.ink, Offset(minus - mark, y), Offset(minus + mark, y), 2.5f)
+                            drawLine(wyrmScopedPalette.ink, Offset(plus - mark, y), Offset(plus + mark, y), 2.5f)
+                            drawLine(wyrmScopedPalette.ink, Offset(plus, y - mark), Offset(plus, y + mark), 2.5f)
                         }
                     } else if (vertical) {
                         drawRect(
-                            Wyrm.Track,
+                            wyrmScopedPalette.track,
                             topLeft = Offset(0f, knobAt),
                             size = androidx.compose.ui.geometry.Size(cross, size.height - knobAt),
                         )
                     } else {
-                        drawRect(Wyrm.Track, size = androidx.compose.ui.geometry.Size(knobAt, cross))
+                        drawRect(wyrmScopedPalette.track, size = androidx.compose.ui.geometry.Size(knobAt, cross))
                     }
                     val knobR = 9.dp.toPx()
                     val center = if (vertical) Offset(size.width / 2f, knobAt) else Offset(knobAt, size.height / 2f)
-                    drawCircle(Wyrm.Ink, knobR, center)
+                    drawCircle(wyrmScopedPalette.ink, knobR, center)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -572,7 +585,7 @@ private fun ZoomBarActionPreview(vertical: Boolean, springStyle: Boolean) {
                 "Move the zoom bar to see its action.",
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 12.dp),
             )
@@ -938,6 +951,8 @@ private fun ControlsPreview(
     /** Playing upright: the preview is the shape of the phone held upright. */
     portrait: Boolean = false,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -952,8 +967,8 @@ private fun ControlsPreview(
                 },
             )
             .clip(wyrmRounded(10.dp))
-            .background(Wyrm.Well)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(10.dp)),
+            .background(wyrmScopedPalette.well)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(10.dp)),
     ) {
         Text(
             text = "PREVIEW",
@@ -961,7 +976,7 @@ private fun ControlsPreview(
             fontWeight = FontWeight.Bold,
             fontSize = 9.sp,
             letterSpacing = 1.4.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.padding(12.dp),
         )
         if (showJoystick) {
@@ -1035,6 +1050,8 @@ private fun ControlsPreview(
  */
 @Composable
 internal fun androidx.compose.foundation.layout.BoxScope.AdjustPreviewCard(settings: List<Setting>, top: Dp) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shown = AdjustPreview.shown
     val alpha by animateFloatAsState(
         targetValue = if (shown) 1f else 0f,
@@ -1052,8 +1069,8 @@ internal fun androidx.compose.foundation.layout.BoxScope.AdjustPreviewCard(setti
             .scale(0.96f + 0.04f * alpha)
             .shadow(18.dp, wyrmRounded(18.dp), ambientColor = Color.Black.copy(alpha = 0.3f), spotColor = Color.Black.copy(alpha = 0.3f))
             .clip(wyrmRounded(18.dp))
-            .background(Wyrm.Well)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(18.dp))
+            .background(wyrmScopedPalette.well)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(18.dp))
             .padding(horizontal = 18.dp, vertical = 12.dp)
             .widthIn(min = 150.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1069,7 +1086,7 @@ internal fun androidx.compose.foundation.layout.BoxScope.AdjustPreviewCard(setti
             fontWeight = FontWeight.Bold,
             fontSize = 9.sp,
             letterSpacing = 1.4.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
         Spacer(Modifier.height(8.dp))
         Box(Modifier.defaultMinSize(minHeight = 70.dp), contentAlignment = Alignment.Center) {

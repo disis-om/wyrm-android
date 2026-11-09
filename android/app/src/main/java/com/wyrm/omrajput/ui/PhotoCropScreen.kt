@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -74,12 +74,14 @@ fun PhotoCropScreen(
     onCancel: () -> Unit,
     onConfirm: (Bitmap) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var scale by remember(photo) { mutableFloatStateOf(1f) }
     var offset by remember(photo) { mutableStateOf(Offset.Zero) }
     var area by remember(photo) { mutableStateOf(Size.Zero) }
     val image = remember(photo) { photo.asImageBitmap() }
-    val dim = Wyrm.Paper.copy(alpha = 0.72f)
-    val edge = Wyrm.Ink
+    val dim = wyrmScopedPalette.paper.copy(alpha = 0.72f)
+    val edge = wyrmScopedPalette.ink
 
     // The window: a square in the middle of the stage with a margin around it.
     val window = if (area.width > 0f) min(area.width, area.height) * 0.86f else 0f
@@ -94,28 +96,28 @@ fun PhotoCropScreen(
         return Offset(candidate.x.coerceIn(-slackX, slackX), candidate.y.coerceIn(-slackY, slackY))
     }
 
-    Column(Modifier.fillMaxSize().background(Wyrm.Paper)) {
+    Column(Modifier.fillMaxSize().background(wyrmScopedPalette.paper)) {
         Box(
             modifier = Modifier.fillMaxWidth().padding(top = insetTop).height(52.dp).padding(horizontal = 14.dp),
         ) {
             Text(
-                text = "Cancel", fontFamily = Wyrm.Body, fontSize = 16.sp, color = Wyrm.Link,
+                text = "Cancel", fontFamily = Wyrm.Body, fontSize = 16.sp, color = wyrmScopedPalette.link,
                 modifier = Modifier.align(Alignment.CenterStart).clickable(enabled = !busy, onClick = onCancel)
                     .padding(horizontal = 6.dp, vertical = 8.dp),
             )
             Text(
                 text = "Crop photo", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
-                color = Wyrm.Ink, modifier = Modifier.align(Alignment.Center),
+                color = wyrmScopedPalette.ink, modifier = Modifier.align(Alignment.Center),
             )
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         Column(Modifier.weight(1f).padding(bottom = insetBottom)) {
             androidx.compose.foundation.Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .clipToBounds()
-                    .background(Wyrm.Track)
+                    .background(wyrmScopedPalette.track)
                     .onSizeChanged { area = Size(it.width.toFloat(), it.height.toFloat()) }
                     .pointerInput(photo) {
                         detectTransformGestures { _, pan, zoom, _ ->
@@ -158,7 +160,7 @@ fun PhotoCropScreen(
                 text = if (error.isNotEmpty()) error else "Drag the photo to any side and pinch to zoom. " +
                     "What is inside the frame is what everyone sees.",
                 fontFamily = Wyrm.Body, fontSize = 12.sp, lineHeight = 18.sp,
-                color = if (error.isNotEmpty()) Wyrm.Badge else Wyrm.Quiet,
+                color = if (error.isNotEmpty()) wyrmScopedPalette.badge else wyrmScopedPalette.quiet,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
             Spacer(Modifier.height(14.dp))

@@ -382,6 +382,55 @@ static bool every(game_data* gdata) {
   return !me->dead;
 }
 
+/* ------------------------------------------------------------ killer ring */
+
+/* Some arenas (the ones that draw text, borders and a ring from their own
+   server) kill a snake that touches a ring in the middle: its radius is
+   48-50% of the arena's active size (OM, 2026-11-08). The player's bot keeps
+   to its own side of that band: no food on or past it, and a heading that
+   would reach it turns along it instead. The AI arena's bots are left alone
+   (that arena has no ring). */
+#define RING_IN 0.48
+#define RING_OUT 0.50
+static int ring_guard;
+
+static double ring_size(game_data* g) {
+  return g->data.real_flux_grd > 0 ? g->data.real_flux_grd : g->data.grd;
+}
+
+static bool ring_blocks(game_data* g, double x, double y, double margin) {
+  if (!ring_guard) return false;
+  double s = ring_size(g);
+  if (s <= 1.0) return false;
+  double c = g->data.grd;
+  double d = sqrt(dist2(x, y, c, c));
+  double hd = sqrt(dist2(B.hx, B.hy, c, c));
+  if (d >= RING_IN * s - margin && d <= RING_OUT * s + margin) return true;
+  double mid = 0.5 * (RING_IN + RING_OUT) * s;
+  return (d < mid) != (hd < mid); /* the other side of the ring */
+}
+
+static void ring_steer(game_data* g) {
+  if (!ring_guard) return;
+  double c = g->data.grd;
+  double margin = 2.0 * B.radius + 20.0;
+  double look = 140.0 + 8.0 * B.radius;
+  double gx = B.goal.x - B.hx, gy = B.goal.y - B.hy;
+  double gl = sqrt(gx * gx + gy * gy);
+  if (gl < 1.0) { gx = B.ca; gy = B.sa; gl = 1.0; }
+  if (!ring_blocks(g, B.hx + gx / gl * look, B.hy + gy / gl * look, margin) &&
+      !ring_blocks(g, B.hx + B.ca * look, B.hy + B.sa * look, margin))
+    return;
+  double hd = sqrt(dist2(B.hx, B.hy, c, c));
+  if (hd < 1.0) return;
+  double ux = (B.hx - c) / hd, uy = (B.hy - c) / hd;
+  double away = hd < 0.5 * (RING_IN + RING_OUT) * ring_size(g) ? -1.0 : 1.0;
+  double tx = -uy, ty = ux;
+  if (tx * B.ca + ty * B.sa < 0) { tx = -tx; ty = -ty; }
+  head_for(atan2(ty + away * uy * 0.8, tx + away * ux * 0.8));
+  B.boost = false;
+}
+
 /* ------------------------------------------------------------ danger: Ye, Ue */
 
 /* tf.je: the nearest thing per sector (NTL compares the new raw distance
@@ -583,6 +632,7 @@ static void pick_food(game_data* gdata) {
     if (fo->eaten) continue;
     circ fc = rcirc(fo->xx, fo->yy, 2.0);
     if (circles_touch(fc, B.side_l, NULL) || circles_touch(fc, B.side_r, NULL)) continue;
+    if (ring_blocks(gdata, fo->xx, fo->yy, 2.0 * B.radius)) continue;
     note_food(fo->xx, fo->yy, fo->sz);
   }
   int best = -1;
@@ -590,8 +640,10 @@ static void pick_food(game_data* gdata) {
     if (B.wf_set[i] && (best < 0 || B.wf[i].score > B.wf[best].score)) best = i;
   if (best >= 0 && B.wf[best].sz > 0)
     B.goal = (v2){B.wf[best].x, B.wf[best].y};
-  else
+  else if (!ring_blocks(gdata, B.centre, B.centre, 2.0 * B.radius))
     B.goal = (v2){B.centre, B.centre};
+  else /* the middle is past the ring: go on, the guard turns along it */
+    B.goal = (v2){B.hx + B.ca * 500.0, B.hy + B.sa * 500.0};
 }
 
 /* ------------------------------------------------------------ tocircle: fe */
@@ -888,6 +940,7 @@ static void think(game_data* gdata, int follow_circle) {
     else if (B.state == BOT_TOCIRCLE)
       to_circle(gdata);
   }
+  ring_steer(gdata);
 }
 
 void sbot_init(tenv* env) {
@@ -909,6 +962,7 @@ void sbot_go(tenv* env) {
   sbot* bot = &gdata->bot;
   if (tdarray_length(gdata->data.snakes) == 0) return;
   B.de = usrs->bot_radius_mult;
+  ring_guard = 1;
   think(gdata, usrs->bot_follow_circle_score);
   bot->output.accel = B.boost;
   /* dA.Y: the aim, from the head, in screen units. */
@@ -964,6 +1018,7 @@ bool sbot_decide_for_snake(tenv* env, int snake_id, sbot_decision* decision) {
   mind_to(context->mind);
   B.id = snake_id;
   B.de = env->usr->usrs.bot_radius_mult;
+  ring_guard = 0;
   think(gdata, env->usr->usrs.bot_follow_circle_score);
   decision->heading = (float)atan2(B.goal.y - controlled->yy, B.goal.x - controlled->xx);
   decision->accel = B.boost;

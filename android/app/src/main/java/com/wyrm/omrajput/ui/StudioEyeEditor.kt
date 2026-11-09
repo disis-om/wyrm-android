@@ -21,7 +21,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,6 +67,8 @@ internal fun StudioEyeEditor(
     insetBottom: Dp,
     onDone: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var eyes by remember(skin.id) { mutableStateOf(skin.eyes) }
     var selected by remember(skin.id) { mutableStateOf(if (skin.eyes.isNotEmpty()) 0 else -1) }
     var paired by remember { mutableStateOf(true) }
@@ -121,7 +123,7 @@ internal fun StudioEyeEditor(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper)
+            .background(wyrmScopedPalette.paper)
             .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false) } },
     ) {
         Column(Modifier.fillMaxSize().padding(top = insetTop)) {
@@ -129,8 +131,8 @@ internal fun StudioEyeEditor(
                 StudioRoundButton(LucideR.drawable.lucide_ic_x, size = 38.dp) { onDone() }
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     Text("EYES · ${eyes.size} / ${SkinStudio.MAX_EYES}", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold,
-                        fontSize = 9.5.sp, letterSpacing = 1.2.sp, color = Wyrm.Quiet)
-                    Text(skin.name, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Wyrm.Ink, maxLines = 1)
+                        fontSize = 9.5.sp, letterSpacing = 1.2.sp, color = wyrmScopedPalette.quiet)
+                    Text(skin.name, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = wyrmScopedPalette.ink, maxLines = 1)
                 }
                 StudioCapsule("Done", icon = LucideR.drawable.lucide_ic_check) {
                     SkinStudio.setEyes(skin.id, eyes)
@@ -144,8 +146,8 @@ internal fun StudioEyeEditor(
                     .fillMaxWidth()
                     .height(290.dp)
                     .clip(wyrmRounded(26.dp))
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(26.dp)),
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(26.dp)),
             ) {
                 Canvas(
                     Modifier
@@ -205,7 +207,7 @@ internal fun StudioEyeEditor(
                             }
                         },
                 ) {
-                    drawRect(Brush.radialGradient(listOf(Wyrm.Ink.copy(alpha = 0.05f), Color.Transparent),
+                    drawRect(Brush.radialGradient(listOf(wyrmScopedPalette.ink, Color.Transparent),
                         center = Offset(size.width * 0.58f, size.height * 0.5f), radius = size.width * 0.6f))
                     val bead = size.height * 0.62f
                     val unit = bead / 29f
@@ -216,7 +218,7 @@ internal fun StudioEyeEditor(
                     // The chosen eye, ringed.
                     eyes.getOrNull(selected)?.let { e ->
                         val c = Offset(head.x + e.fwd * unit, head.y + e.side * unit)
-                        drawCircle(Wyrm.Link, radius = maxOf(e.white, e.pupil) * unit + 6f, center = c, style = Stroke(3f))
+                        drawCircle(wyrmScopedPalette.link, radius = maxOf(e.white, e.pupil) * unit + 6f, center = c, style = Stroke(3f))
                     }
                 }
                 Row(Modifier.align(Alignment.BottomStart).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -229,7 +231,7 @@ internal fun StudioEyeEditor(
                     StudioCapsule("Pair", icon = LucideR.drawable.lucide_ic_flip_horizontal_2, filled = paired) { paired = !paired }
                 }
                 Text("Drag an eye to move it. Touch and hold an eye to delete, copy or mirror it.", fontFamily = Wyrm.Body,
-                    fontSize = 10.5.sp, lineHeight = 14.sp, color = Wyrm.Quiet,
+                    fontSize = 10.5.sp, lineHeight = 14.sp, color = wyrmScopedPalette.quiet,
                     modifier = Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 12.dp, end = 120.dp))
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -237,7 +239,7 @@ internal fun StudioEyeEditor(
                 if (eye == null) {
                     Spacer(Modifier.height(18.dp))
                     Text(if (eyes.isEmpty()) "No eyes. Add one, or keep the snake blind." else "Tap an eye to style it.",
-                        fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+                        fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet)
                 } else {
                     Spacer(Modifier.height(16.dp))
                     SectionTitle("Pupil")
@@ -298,13 +300,17 @@ internal fun StudioEyeEditor(
 
 @Composable
 private fun SectionTitle(text: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(text.uppercase(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, letterSpacing = 1.1.sp,
-        color = Wyrm.Quiet, modifier = Modifier.padding(bottom = 8.dp))
+        color = wyrmScopedPalette.quiet, modifier = Modifier.padding(bottom = 8.dp))
 }
 
 /** The pupil shapes, drawn in this eye's colours. */
 @Composable
 private fun PupilShapes(eye: StudioEye, onPick: (Int) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         itemsIndexed(StudioArt.PUPIL_SHAPES) { index, name ->
             val chosen = eye.pupilShape == index
@@ -314,7 +320,7 @@ private fun PupilShapes(eye: StudioEye, onPick: (Int) -> Unit) {
                         .size(52.dp)
                         .clip(CircleShape)
                         .background(Color(eye.whiteColor))
-                        .border(if (chosen) 2.5.dp else 1.dp, if (chosen) Wyrm.Ink else Wyrm.Rule, CircleShape)
+                        .border(if (chosen) 2.5.dp else 1.dp, if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.rule, CircleShape)
                         .clickableNoRipple { onPick(index) }
                         .padding(9.dp),
                 ) {
@@ -322,7 +328,7 @@ private fun PupilShapes(eye: StudioEye, onPick: (Int) -> Unit) {
                     Canvas(Modifier.fillMaxSize()) { drawImageInto(picture, 0f, 0f, size.width, size.height) }
                 }
                 Text(name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 9.5.sp,
-                    color = if (chosen) Wyrm.Ink else Wyrm.Quiet, modifier = Modifier.padding(top = 3.dp))
+                    color = if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 3.dp))
             }
         }
     }

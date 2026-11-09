@@ -37,7 +37,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -150,7 +150,20 @@ fun HomeScreen(
     onTabSocial: (Rect) -> Unit,
     onTabSkin: (Rect) -> Unit,
     onTabSettings: (Rect) -> Unit,
+    /** Events (OM, 2026-10-30): the live or next event, else the last one. */
+    event: com.wyrm.omrajput.data.WyrmEvent? = null,
+    lastEvent: com.wyrm.omrajput.data.WyrmEvent? = null,
+    eventReminded: Boolean = false,
+    onOpenEvent: () -> Unit = {},
+    onJoinEvent: () -> Unit = {},
+    onRemindEvent: () -> Unit = {},
+    onOpenEvents: () -> Unit = {},
+    /** "1 live · 2 coming · 77 done" for Play's own Events button. */
+    eventsSummary: String = "",
+    eventsLive: Boolean = false,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     LaunchedEffect(Unit) { onAppear() }
     val clipboard = LocalClipboardManager.current
     val focusManager = LocalFocusManager.current
@@ -167,7 +180,7 @@ fun HomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper)
+            .background(wyrmScopedPalette.paper)
             .pointerInput(editingNickname, nicknameEditorBounds) {
                 if (!editingNickname) return@pointerInput
                 awaitEachGesture {
@@ -201,7 +214,16 @@ fun HomeScreen(
                 unreadAlerts = unreadNotifications,
                 onOpenAlerts = onTabNotifications,
             )
-            IosPaperCard {
+            if (event != null) {
+                HomeEventCard(event, eventReminded, onOpenEvent, onJoinEvent, onRemindEvent)
+                Spacer(Modifier.height(14.dp))
+            } else if (lastEvent != null) {
+                HomeLastEventRow(lastEvent, onOpenEvents)
+                Spacer(Modifier.height(12.dp))
+            }
+            WyrmHeroTheme(1) {
+ val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+IosPaperCard {
                 IosArenaCard(
                     title = arenaTitle,
                     live = arenaLive,
@@ -212,13 +234,14 @@ fun HomeScreen(
                     onPickServer = onPickServer,
                     titleAccessory = { ArenaCountryBadge(arenaCountry, Modifier.padding(start = 8.dp)) },
                 )
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IosMetric("BEST SCORE", grouped(bestScore))
-                    Box(Modifier.width(1.dp).height(51.dp).background(Wyrm.Rule))
+                    Box(Modifier.width(1.dp).height(51.dp).background(wyrmScopedPalette.rule))
                     IosMetric("TOTAL KILLS", grouped(kills))
                 }
             }
+}
             IosSectionLabel("Loadout")
             IosPaperCard {
                 IosLoadoutRow("Food", foodLabel, first = true, leading = { IosFoodWell() }) { onOpenFood(Rect.Zero) }
@@ -231,9 +254,12 @@ fun HomeScreen(
             }
             // Shed (OM, 2026-10-15): between Loadout and Rooms & team.
             IosSectionLabel("Shed")
-            IosPaperCard {
+            WyrmHeroTheme(2) {
+ val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+IosPaperCard {
                 ShedHomeCard { onOpenShed(Rect.Zero) }
             }
+}
             IosSectionLabel("Rooms & team")
             IosPaperCard {
                 if (com.wyrm.omrajput.data.VOICE_ENABLED) IosListRow(
@@ -241,7 +267,7 @@ fun HomeScreen(
                     detail = voiceRoomName.ifBlank { "Own and community rooms" },
                     value = "$voiceRoomsLive live",
                     glyph = IosGlyph.MIC,
-                    tint = Wyrm.Live,
+                    tint = wyrmScopedPalette.live,
                 ) { onOpenVoice(Rect.Zero) }
                 Box(Modifier.tourAnchor("home.team")) {
                     IosListRow(
@@ -249,9 +275,22 @@ fun HomeScreen(
                         detail = "Original engine team layer",
                         value = "Open",
                         glyph = IosGlyph.PERSON_3,
-                        tint = Wyrm.Live,
+                        tint = wyrmScopedPalette.live,
                     ) { onOpenTeam(Rect.Zero) }
                 }
+            }
+            // Events (OM, 2026-10-30): a button of its own under Team, so every
+            // event (live, coming, done) is one tap away; the small "All events"
+            // line under the card was easy to miss.
+            IosSectionLabel("Events")
+            IosPaperCard {
+                IosListRow(
+                    title = "Events",
+                    detail = eventsSummary.ifBlank { "Live, coming and past tournaments" },
+                    value = if (eventsLive) "Live now" else "All",
+                    glyph = IosGlyph.TROPHY,
+                    tint = Color(0xFFD9601F),
+                ) { onOpenEvents() }
             }
             Spacer(Modifier.height(LocalRootTabClearance.current))
         }
@@ -287,6 +326,8 @@ private fun Header(
     unreadAlerts: Int,
     onOpenAlerts: (Rect) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -331,7 +372,7 @@ private fun Header(
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.5.sp,
                 letterSpacing = 1.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
             if (editing) {
                 BasicTextField(
@@ -345,7 +386,7 @@ private fun Header(
                         fontWeight = FontWeight.Bold,
                         fontSize = 29.sp,
                         letterSpacing = (-0.5).sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                     ),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { onFinishRename() }),
@@ -380,7 +421,7 @@ private fun Header(
                     fontWeight = FontWeight.Bold,
                     fontSize = 29.sp,
                     letterSpacing = (-0.5).sp,
-                    color = if (nickname.isBlank()) Wyrm.Faint else Wyrm.Ink,
+                    color = if (nickname.isBlank()) Wyrm.Faint else wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -389,7 +430,7 @@ private fun Header(
                 text = "Tap to rename in-game name",
                 fontFamily = Wyrm.Body,
                 fontSize = 9.5.sp,
-                color = Wyrm.Quiet.copy(alpha = 0.55f),
+                color = wyrmScopedPalette.quiet,
             )
         }
         // Top right (OM, 2026-10-04): Alerts as a button, then your avatar.
@@ -421,6 +462,8 @@ private fun Header(
 /** Home's Alerts button: a bell on a card squircle (the avatar's own shape), with the unread count. */
 @Composable
 private fun AlertsBellButton(unread: Int, onClick: (Rect) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -437,12 +480,12 @@ private fun AlertsBellButton(unread: Int, onClick: (Rect) -> Unit) {
                 // The avatar beside it is a 36 dp squircle with 10.8 dp corners;
                 // the bell matches it (OM, 2026-10-04: one shape, not a circle).
                 .clip(wyrmRounded(10.8.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(10.8.dp))
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(10.8.dp))
                 .clickable(interactionSource = interaction, indication = null) { onClick(bounds) },
             contentAlignment = Alignment.Center,
         ) {
-            IosIcon(glyph = IosGlyph.BELL, tint = Wyrm.Ink, size = 20.dp)
+            IosIcon(glyph = IosGlyph.BELL, tint = wyrmScopedPalette.ink, size = 20.dp)
         }
         if (unread > 0) {
             Box(
@@ -452,7 +495,7 @@ private fun AlertsBellButton(unread: Int, onClick: (Rect) -> Unit) {
                     .height(16.dp)
                     .widthIn(min = 16.dp)
                     .clip(WyrmCapsule)
-                    .background(Wyrm.Badge)
+                    .background(wyrmScopedPalette.badge)
                     .padding(horizontal = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -460,7 +503,7 @@ private fun AlertsBellButton(unread: Int, onClick: (Rect) -> Unit) {
                     text = if (unread > 99) "99+" else unread.toString(),
                     fontWeight = FontWeight.Bold,
                     fontSize = 9.sp,
-                    color = Wyrm.contentOn(Wyrm.Badge),
+                    color = Wyrm.contentOn(wyrmScopedPalette.badge),
                     maxLines = 1,
                 )
             }
@@ -480,13 +523,15 @@ private fun ArenaCard(
     onEnter: () -> Unit,
     onPickServer: (Rect) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val card = wyrmRounded(16.dp)
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(card)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, card),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, card),
     ) {
         Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -494,7 +539,7 @@ private fun ArenaCard(
                     modifier = Modifier
                         .size(6.dp)
                         .clip(wyrmRounded(99.dp))
-                        .background(if (online) Wyrm.Live else Wyrm.Quiet),
+                        .background(if (online) wyrmScopedPalette.live else wyrmScopedPalette.quiet),
                 )
                 Spacer(Modifier.width(7.dp))
                 Text(
@@ -503,7 +548,7 @@ private fun ArenaCard(
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.5.sp,
                     letterSpacing = 0.8.sp,
-                    color = if (online) Wyrm.Live else Wyrm.Quiet,
+                    color = if (online) wyrmScopedPalette.live else wyrmScopedPalette.quiet,
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -514,7 +559,7 @@ private fun ArenaCard(
                     fontWeight = FontWeight.Bold,
                     fontSize = 21.sp,
                     letterSpacing = (-0.3).sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -524,7 +569,7 @@ private fun ArenaCard(
                         text = "$ping ms",
                         fontFamily = Wyrm.Body,
                         fontSize = 13.sp,
-                        color = Wyrm.Mute,
+                        color = wyrmScopedPalette.mute,
                         modifier = Modifier.padding(start = 8.dp),
                     )
                 }
@@ -539,7 +584,7 @@ private fun ArenaCard(
                 },
                 fontFamily = Wyrm.Body,
                 fontSize = 13.5.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 modifier = Modifier.padding(top = 4.dp),
             )
             Box(
@@ -548,14 +593,14 @@ private fun ArenaCard(
                     .padding(top = 12.dp)
                     .height(4.dp)
                     .clip(wyrmRounded(99.dp))
-                    .background(Wyrm.Track),
+                    .background(wyrmScopedPalette.track),
             ) {
                 val load = (players / 500f).coerceIn(0f, 1f)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(if (load == 0f) 0.02f else load)
                         .height(4.dp)
-                        .background(Wyrm.Ink),
+                        .background(wyrmScopedPalette.ink),
                 )
             }
             Spacer(Modifier.height(16.dp))
@@ -578,7 +623,7 @@ private fun ArenaCard(
                 Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Wyrm.Rule),
+                    .background(wyrmScopedPalette.rule),
             )
         }
         Row(Modifier.fillMaxWidth()) {
@@ -587,7 +632,7 @@ private fun ArenaCard(
                 Modifier
                     .width(1.dp)
                     .height(52.dp)
-                    .background(Wyrm.Rule),
+                    .background(wyrmScopedPalette.rule),
             )
             StatCell("Total kills", grouped(kills), Modifier.weight(1f))
         }
@@ -596,6 +641,8 @@ private fun ArenaCard(
 
 @Composable
 private fun StatCell(label: String, value: String, modifier: Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(modifier = modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
         Text(
             text = label.uppercase(),
@@ -603,14 +650,14 @@ private fun StatCell(label: String, value: String, modifier: Modifier) {
             fontWeight = FontWeight.Bold,
             fontSize = 11.sp,
             letterSpacing = 0.77.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
         Text(
             text = value,
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.Bold,
             fontSize = 17.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.padding(top = 2.dp),
         )
     }
@@ -618,6 +665,8 @@ private fun StatCell(label: String, value: String, modifier: Modifier) {
 
 @Composable
 private fun EnterButton(enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -625,7 +674,7 @@ private fun EnterButton(enabled: Boolean, modifier: Modifier, onClick: () -> Uni
             .height(46.dp)
             .scale(pressScale(pressed, enabled))
             .clip(wyrmRounded(11.dp))
-            .background(if (enabled) Wyrm.Ink else Wyrm.Ink.copy(alpha = 0.35f))
+            .background(if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.ink)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -639,13 +688,15 @@ private fun EnterButton(enabled: Boolean, modifier: Modifier, onClick: () -> Uni
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.Bold,
             fontSize = 15.5.sp,
-            color = Wyrm.OnInk,
+            color = wyrmScopedPalette.onInk,
         )
     }
 }
 
 @Composable
 private fun GlobeButton(onClick: (Rect) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -656,7 +707,7 @@ private fun GlobeButton(onClick: (Rect) -> Unit) {
             .scale(pressScale(pressed))
             .onGloballyPositioned { bounds = it.boundsInRoot() }
             .clip(shape)
-            .border(1.dp, Wyrm.Rule, shape)
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .clickable(interactionSource = interaction, indication = null) { onClick(bounds) },
         contentAlignment = Alignment.Center,
     ) {
@@ -664,33 +715,37 @@ private fun GlobeButton(onClick: (Rect) -> Unit) {
             painter = painterResource(R.drawable.ic_play_globe),
             contentDescription = "Pick a server",
             modifier = Modifier.size(18.dp),
-            colorFilter = ColorFilter.tint(Wyrm.Mute),
+            colorFilter = ColorFilter.tint(wyrmScopedPalette.mute),
         )
     }
 }
 
 @Composable
 private fun SectionLabel(text: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = text,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.Bold,
         fontSize = 11.5.sp,
         letterSpacing = 0.92.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 8.dp),
     )
 }
 
 @Composable
 private fun GroupedCard(content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
     ) {
         content()
     }
@@ -704,6 +759,8 @@ private fun LoadoutRow(
     leading: (@Composable () -> Unit)? = null,
     onOpen: (Rect) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -713,7 +770,7 @@ private fun LoadoutRow(
                 Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Wyrm.RowRule),
+                    .background(wyrmScopedPalette.rowRule),
             )
         }
         Row(
@@ -734,7 +791,7 @@ private fun LoadoutRow(
             text = title,
             fontFamily = Wyrm.Body,
             fontSize = 15.5.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -744,7 +801,7 @@ private fun LoadoutRow(
                 text = value,
                 fontFamily = Wyrm.Body,
                 fontSize = 14.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -757,6 +814,8 @@ private fun LoadoutRow(
 
 @Composable
 private fun RoomRow(code: String, onCopy: () -> Unit, onOpen: (Rect) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -775,13 +834,13 @@ private fun RoomRow(code: String, onCopy: () -> Unit, onOpen: (Rect) -> Unit) {
                 text = "Your public room",
                 fontFamily = Wyrm.Body,
                 fontSize = 15.5.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
             )
             Text(
                 text = code.ifBlank { "None yet" },
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.5.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
@@ -791,7 +850,7 @@ private fun RoomRow(code: String, onCopy: () -> Unit, onOpen: (Rect) -> Unit) {
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 modifier = Modifier.clickable(onClick = onCopy),
             )
         }
@@ -805,6 +864,8 @@ private fun TeamRow(
     configured: Boolean,
     onOpen: (Rect) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -814,7 +875,7 @@ private fun TeamRow(
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Wyrm.RowRule),
+                .background(wyrmScopedPalette.rowRule),
         )
     Row(
         modifier = Modifier
@@ -830,7 +891,7 @@ private fun TeamRow(
             modifier = Modifier
                 .size(26.dp)
                 .clip(wyrmRounded(8.dp))
-                .background(Wyrm.Live.copy(alpha = 0.16f)),
+                .background(wyrmScopedPalette.live.copy(alpha = 0.16f)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -838,7 +899,7 @@ private fun TeamRow(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.5.sp,
-                color = Wyrm.Live,
+                color = wyrmScopedPalette.live,
             )
         }
         Spacer(Modifier.width(12.dp))
@@ -846,7 +907,7 @@ private fun TeamRow(
             text = "Team mode",
             fontFamily = Wyrm.Body,
             fontSize = 15.5.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.weight(1f),
         )
         if (configured) {
@@ -855,14 +916,14 @@ private fun TeamRow(
                     modifier = Modifier
                         .size(6.dp)
                         .clip(wyrmRounded(99.dp))
-                        .background(Wyrm.Live),
+                        .background(wyrmScopedPalette.live),
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = "$online online",
                     fontFamily = Wyrm.Body,
                     fontSize = 14.sp,
-                    color = Wyrm.Live,
+                    color = wyrmScopedPalette.live,
                 )
             }
         } else {
@@ -870,7 +931,7 @@ private fun TeamRow(
                 text = "Connect a team",
                 fontFamily = Wyrm.Body,
                 fontSize = 14.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
         }
         Spacer(Modifier.width(6.dp))
@@ -881,44 +942,50 @@ private fun TeamRow(
 
 @Composable
 private fun FoodWell(style: Int) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Canvas(
         modifier = Modifier
             .size(26.dp)
             .clip(wyrmRounded(8.dp))
-            .background(Wyrm.Well),
+            .background(wyrmScopedPalette.well),
     ) {
         val radius = if (style == 0) size.minDimension * 0.13f else size.minDimension * 0.115f
-        drawCircle(Wyrm.Live, radius, Offset(size.width * 0.32f, size.height * 0.38f))
-        drawCircle(Wyrm.Link, radius * 0.82f, Offset(size.width * 0.68f, size.height * 0.34f))
+        drawCircle(wyrmScopedPalette.live, radius, Offset(size.width * 0.32f, size.height * 0.38f))
+        drawCircle(wyrmScopedPalette.link, radius * 0.82f, Offset(size.width * 0.68f, size.height * 0.34f))
         drawCircle(Color(0xFFD38B5D), radius * 1.08f, Offset(size.width * 0.55f, size.height * 0.69f))
     }
 }
 
 @Composable
 private fun WellIcon(icon: Int) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .size(26.dp)
             .clip(wyrmRounded(8.dp))
-            .background(Wyrm.Well),
+            .background(wyrmScopedPalette.well),
         contentAlignment = Alignment.Center,
     ) {
         Image(
             painter = painterResource(icon),
             contentDescription = null,
             modifier = Modifier.size(14.dp),
-            colorFilter = ColorFilter.tint(Wyrm.Mute),
+            colorFilter = ColorFilter.tint(wyrmScopedPalette.mute),
         )
     }
 }
 
 @Composable
 private fun Chevron() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = "›",
         fontFamily = Wyrm.Body,
         fontSize = 17.sp,
-        color = Wyrm.Chevron,
+        color = wyrmScopedPalette.chevron,
     )
 }
 
@@ -967,10 +1034,12 @@ fun FloatingRootTabs(
 
 @Composable
 private fun FloatingTabLabel(tab: RootTab, chosen: Boolean, badge: Int) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val colour by animateColorAsState(
         // The chosen tab in the theme's ink under a see-through pill; the rest
         // faded (OM, 2026-09-28), in every theme.
-        targetValue = if (chosen) Wyrm.Ink else Wyrm.TabIdle,
+        targetValue = if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.tabIdle,
         animationSpec = tween(160),
         label = "tab colour",
     )
@@ -997,7 +1066,7 @@ private fun FloatingTabLabel(tab: RootTab, chosen: Boolean, badge: Int) {
                         .height(14.dp)
                         .widthIn(min = 16.dp)
                         .clip(WyrmCapsule)
-                        .background(Wyrm.Badge)
+                        .background(wyrmScopedPalette.badge)
                         .padding(horizontal = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1005,7 +1074,7 @@ private fun FloatingTabLabel(tab: RootTab, chosen: Boolean, badge: Int) {
                         text = minOf(badge, 99).toString(),
                         fontWeight = FontWeight.Bold,
                         fontSize = 8.sp,
-                        color = Wyrm.contentOn(Wyrm.Badge),
+                        color = Wyrm.contentOn(wyrmScopedPalette.badge),
                         maxLines = 1,
                     )
                 }
@@ -1034,10 +1103,12 @@ fun RootTabs(
     onSkin: (Rect) -> Unit,
     onSettings: (Rect) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Wyrm.TabBar)
+            .background(wyrmScopedPalette.tabBar)
             .padding(top = 9.dp, bottom = insetBottom.coerceAtLeast(8.dp) + 8.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -1060,11 +1131,13 @@ private fun RowScope.TabItem(
     badge: Int = 0,
     onClick: (Rect) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val color by animateColorAsState(
-        targetValue = if (selected) Wyrm.Ink else Wyrm.TabIdle,
+        targetValue = if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.tabIdle,
         animationSpec = tween(200),
         label = "$label colour",
     )
@@ -1112,7 +1185,7 @@ private fun RowScope.TabItem(
                             else Modifier.height(17.dp).widthIn(min = 17.dp)
                         )
                         .clip(wyrmRounded(9.dp))
-                        .background(Wyrm.Live)
+                        .background(wyrmScopedPalette.live)
                         .then(if (badge > 1) Modifier.padding(horizontal = 4.dp) else Modifier),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1122,7 +1195,7 @@ private fun RowScope.TabItem(
                             fontFamily = Wyrm.Body,
                             fontWeight = FontWeight.Bold,
                             fontSize = 9.sp,
-                            color = Wyrm.contentOn(Wyrm.Live),
+                            color = Wyrm.contentOn(wyrmScopedPalette.live),
                             maxLines = 1,
                         )
                     }
@@ -1143,13 +1216,15 @@ private fun RowScope.TabItem(
                 .width(markerWidth)
                 .height(2.dp)
                 .clip(wyrmRounded(1.dp))
-                .background(if (selected) Wyrm.Ink else Color.Transparent),
+                .background(if (selected) wyrmScopedPalette.ink else Color.Transparent),
         )
     }
 }
 
 @Composable
 fun BootingMark(modifier: Modifier = Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val transition = rememberInfiniteTransition(label = "boot")
     val fill by transition.animateFloat(
         initialValue = 0.08f,
@@ -1164,7 +1239,7 @@ fun BootingMark(modifier: Modifier = Modifier) {
         modifier = modifier,
         size = 96.dp,
         fill = fill,
-        ink = Wyrm.Ink,
+        ink = wyrmScopedPalette.ink,
         unfilled = Wyrm.Line,
     )
 }
@@ -1172,6 +1247,8 @@ fun BootingMark(modifier: Modifier = Modifier) {
 /** First frame: paper field, ink W with a diagonal shine on the letter only. */
 @Composable
 fun PaperLaunchScreen() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val transition = rememberInfiniteTransition(label = "launch")
     val shimmer by transition.animateFloat(
         initialValue = 0f,
@@ -1185,7 +1262,7 @@ fun PaperLaunchScreen() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
         contentAlignment = Alignment.Center,
     ) {
         WyrmMarkShimmer(size = 96.dp, shimmer = shimmer)

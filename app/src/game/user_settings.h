@@ -45,7 +45,8 @@ typedef enum mobile_handedness {
 typedef enum mobile_joystick_mode {
   MOBILE_JOYSTICK_DYNAMIC = 0,
   MOBILE_JOYSTICK_FIXED = 1,
-  MOBILE_STEERING_ARROW = 2
+  MOBILE_STEERING_ARROW = 2,
+  MOBILE_STEERING_CLASSIC = 3
 } mobile_joystick_mode;
 
 typedef enum mobile_boost_mode {
@@ -190,6 +191,38 @@ typedef struct user_settings_ext {
   /* Arrow sensitivity 0..1 (OM, 2026-10-18): 0 = the original 1x. Append
      only. */
   float arrow_sens;
+  /* Food texture (OM, 2026-10-25), normal and assist: 0 Wyrm, 1 Slither
+     app, 2 Crisp, 3 Square, 4 Glossy, 5 Small. Append only. */
+  int32_t food_tex[2];
+  /* Skin texture (OM, 2026-10-25, NTL's five): 0 Default, 1 Rounded plain,
+     2 Squared plain, 3 NTL textured, 4 Striped plain. */
+  int32_t skin_tex;
+  /* The skin texture on my snake only (true) or on every snake. */
+  bool skin_tex_mine;
+  /* Zoom bar flipped (OM, 2026-10-30): + and - swap ends. Append only. */
+  bool zoom_flip;
+  /* On-screen key label opacity 0..1 (OM, 2026-11-01), by action; 1 is
+     full. Starts 4-aligned after zoom_flip's padding. Append only. */
+  float key_label_opacity[20];
+  /* Food size back to the original once (OM, 2026-11-01). */
+  bool food_original_v1;
+  float lb_size; /* Continuous board text size, 0.25..3, default .75. */
+  bool lb_original_v1;
+  /* Near Original's joystick (OM, 2026-11-01): its place, 0..1 of the
+     screen (-1 = the original's), and its size (1 = the original's). */
+  float near_joy_x;
+  float near_joy_y;
+  float near_joy_size;
+  /* The arrow in the player's own colour (true) or the snake's, as
+     slither's (false, OM 2026-11-01). Set when a colour is picked. */
+  bool arrow_colour_own;
+  float name_scale;
+  bool name_scale_v1;
+  float chat_text_scale;
+  bool arrow_double_tap_boost;
+  bool arrow_double_tap_boost_v1;
+  /* Append after legacy tail padding; 0 Normal, 1 High visibility texts. */
+  int32_t native_text_style;
 } user_settings_ext;
 
 typedef struct user_settings {
@@ -201,7 +234,12 @@ typedef struct user_settings {
   bool custom_skin;
   uint8_t default_skin;
   int score;
-  double play_time;
+  /* Preserve the shipped ARM64 file/account offsets on 32-bit x86 too. */
+#if defined(__cplusplus)
+  alignas(8) double play_time;
+#else
+  _Alignas(8) double play_time;
+#endif
   int kills;
   font_size ui_font_size;
   font_size lb_font_size;

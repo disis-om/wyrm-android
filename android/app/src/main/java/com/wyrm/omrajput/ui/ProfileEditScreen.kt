@@ -18,7 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +62,8 @@ fun ProfileEditScreen(
     onRemovePhoto: () -> Unit,
     onSave: (displayName: String, username: String, bio: String, avatarKey: String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var displayName by remember(profile.id) { mutableStateOf(profile.displayName) }
     var username by remember(profile.id) { mutableStateOf(profile.username) }
     var bio by remember(profile.id) { mutableStateOf(profile.bio) }
@@ -80,12 +82,12 @@ fun ProfileEditScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
         ) {
@@ -94,7 +96,7 @@ fun ProfileEditScreen(
                     text = "Cancel",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onBack)
@@ -105,7 +107,7 @@ fun ProfileEditScreen(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center),
                 )
                 Text(
@@ -113,7 +115,7 @@ fun ProfileEditScreen(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.5.sp,
-                    color = if (canSave) Wyrm.Link else Wyrm.TabIdle,
+                    color = if (canSave) wyrmScopedPalette.link else wyrmScopedPalette.tabIdle,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .clickable(enabled = canSave) {
@@ -123,7 +125,7 @@ fun ProfileEditScreen(
                 )
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -171,7 +173,7 @@ fun ProfileEditScreen(
                                     .background(avatarBrushFor(key))
                                     .border(
                                         width = if (key == avatarKey) 2.dp else 1.dp,
-                                        color = if (key == avatarKey) Wyrm.Ink else Wyrm.Rule,
+                                        color = if (key == avatarKey) wyrmScopedPalette.ink else wyrmScopedPalette.rule,
                                         shape = wyrmRounded(10.dp),
                                     )
                                     .clickable { avatarKey = key },
@@ -216,7 +218,7 @@ fun ProfileEditScreen(
                     text = error,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
-                    color = Wyrm.Badge,
+                    color = wyrmScopedPalette.badge,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
                 )
             }
@@ -244,12 +246,14 @@ private fun EditField(
     placeholder: String = "",
     singleLine: Boolean = true,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         if (!first) SettingsHairline()
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(text = caption, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, modifier = Modifier.weight(1f))
-                Text(text = limit, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet)
+                Text(text = caption, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.weight(1f))
+                Text(text = limit, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
             }
             Box(
                 modifier = Modifier
@@ -257,24 +261,24 @@ private fun EditField(
                     .fillMaxWidth()
                     .heightIn(min = if (singleLine) 42.dp else 74.dp)
                     .clip(wyrmRounded(10.dp))
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(10.dp))
+                    .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(10.dp))
                     .padding(horizontal = 12.dp, vertical = if (singleLine) 0.dp else 11.dp),
                 contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (prefix.isNotBlank()) {
-                        Text(text = prefix, fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Quiet)
+                        Text(text = prefix, fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.quiet)
                     }
                     BasicTextField(
                         value = value,
                         onValueChange = onValueChange,
                         singleLine = singleLine,
-                        textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink),
-                        cursorBrush = SolidColor(Wyrm.Ink),
+                        textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink),
+                        cursorBrush = SolidColor(wyrmScopedPalette.ink),
                         modifier = Modifier.fillMaxWidth().then(if (singleLine) Modifier.height(42.dp) else Modifier),
                         decorationBox = { inner ->
                             if (value.isEmpty() && placeholder.isNotBlank()) {
-                                Text(text = placeholder, fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.TabIdle)
+                                Text(text = placeholder, fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.tabIdle)
                             }
                             inner()
                         },
@@ -286,7 +290,7 @@ private fun EditField(
                     text = hint,
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
@@ -296,6 +300,8 @@ private fun EditField(
 
 @Composable
 private fun PaperDangerButtonSmall(label: String, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -304,6 +310,6 @@ private fun PaperDangerButtonSmall(label: String, onClick: () -> Unit) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = label, fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Badge)
+        Text(text = label, fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.badge)
     }
 }

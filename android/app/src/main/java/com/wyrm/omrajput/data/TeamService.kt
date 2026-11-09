@@ -34,6 +34,8 @@ data class TeamMember(
     val ping: Int? = null,
     /** NTL's snake identity, distinct from the displayed name. */
     val snakeId: Int = 0,
+    /** The NTL minimap icon they chose (`di`), 1000 = NTL's dot. */
+    val icon: Int = 1000,
 ) {
     /** In a match at all — the service says `_GAME_MENU_` when they are not. */
     val playing: Boolean get() = arena.isNotEmpty() && arena != MENU_ARENA
@@ -112,8 +114,8 @@ data class TeamPresence(
  * behind them; that is a property of the service, not something the app can
  * quietly fix by asking harder.
  */
-class TeamService(context: Context, private val clientIdentity: String = NICK_PREFIX,
-                  private val escapeMessages: Boolean = false) {
+class TeamService(context: Context, private val clientIdentity: String = java.util.UUID.randomUUID().toString().replace("-", "").take(8),
+                  private val escapeMessages: Boolean = true) {
     init { require(clientIdentity.length == 8 && clientIdentity.all { it.isLetterOrDigit() }) }
     private val appContext = context.applicationContext
     private val preferences =
@@ -333,6 +335,8 @@ class TeamService(context: Context, private val clientIdentity: String = NICK_PR
         append("&tg=").append(presence.tag)
         append("&rank=").append(presence.rank.coerceAtLeast(0))
         append("&ver=").append(encode(VERSION))
+        // Your minimap icon in NTL's numbering (OM, 2026-11-07); 1000 = its dot.
+        append("&di=").append(MinimapIcons.ntl)
         /*
          * `msg` is always sent, empty when there is nothing to say —
          * and this one parameter is the whole reason Team Mode never
@@ -357,12 +361,13 @@ class TeamService(context: Context, private val clientIdentity: String = NICK_PR
      * One round trip: report [presence], send [message] if there is one, and
      * take back the team.
      */
-    suspend fun poll(presence: TeamPresence, message: String?): TeamState =
+    suspend fun poll(presence: TeamPresence, message: String?, awaitingMessage: String? = message,
+                     owner: TeamProfile? = null): TeamState =
         withContext(Dispatchers.IO) {
             if (NTL_SERVICES_DISABLED) {
                 return@withContext TeamState(configured = configured, status = NTL_PAUSED)
             }
-            val credentials = readCredentials()
+            val credentials = owner ?: readCredentials()
                 ?: return@withContext TeamState(status = "Add a team first.")
 
             val query = pollRequest(credentials, presence, message)
@@ -402,7 +407,7 @@ class TeamService(context: Context, private val clientIdentity: String = NICK_PR
                     status = "The team service rejected these credentials.",
                 )
             }
-            parse(trimmed, clientIdentity + presence.nickname, message)
+            parse(trimmed, clientIdentity + presence.nickname, awaitingMessage)
         }
 
     private fun parse(body: String): TeamState = parse(body, null, null)
@@ -419,7 +424,7 @@ class TeamService(context: Context, private val clientIdentity: String = NICK_PR
             val row = array.optJSONObject(index) ?: continue
             val rawNick = row.optString("nick")
             val text = decode(row.optString("msg"))
-            if (rawNick == ownNick && !outgoing.isNullOrEmpty() &&
+            if (ownNick != null && rawNick.length > 8 && rawNick.take(8) == ownNick.take(8) && !outgoing.isNullOrEmpty() &&
                 text.split('\n').any { it.trim() == outgoing.trim() }) acknowledged = true
 
             // An entry called 00000000 is not a person — it is the service
@@ -468,6 +473,7 @@ class TeamService(context: Context, private val clientIdentity: String = NICK_PR
                 fps = STATUS_FPS.find(status)?.groupValues?.get(1)?.toIntOrNull(),
                 ping = STATUS_PING.find(status)?.groupValues?.get(1)?.toIntOrNull(),
                 snakeId = row.optInt("sid"),
+                icon = row.optString("di").toIntOrNull() ?: MinimapIcons.NTL_DEFAULT,
             )
 
             // Older clients reused one prefix for everybody. Keep their full
@@ -658,9 +664,12 @@ class TeamService(context: Context, private val clientIdentity: String = NICK_PR
          * `ver` as a number and answers only a window around NTL's current release:
          * tested live, 9.67-9.70 get the roster; 9.61, 9.99, 10.1, 6.4, 6.4.5 and
          * 0.18.31 get an empty or opaque answer (shown as "credentials rejected").
-         * Raise this when NTL moves on.
+         * Raise this when NTL moves on. 2026-10-23: NTL is 9.76 (it sends its
+         * manifest version, `myscrversion`); 9.68 was refused and a player
+         * could not rejoin a team that NTL itself joined fine.
          */
-        private const val VERSION = "9.68"
+        // Public NTL package version verified 2026-11-04 (ntlmod-pub.zip).
+        private const val VERSION = "9.78"
         private const val SYSTEM_NICK = "00000000"
         private const val PREFS = "wyrm_team_mode"
         private const val PREF_CREDENTIALS = "credentials"

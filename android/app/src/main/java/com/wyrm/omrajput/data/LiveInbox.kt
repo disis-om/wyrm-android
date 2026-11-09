@@ -27,6 +27,10 @@ internal class LiveInbox(
     /** Presence's `platform` (Wyrm Desktop passes "windows"). */
     private val platform: String = "android",
     private val onMessageDeleted: (type: String, id: String) -> Unit = { _, _ -> },
+    /** A global or direct message was edited (2026-10-30): "chat.edited" / "direct.edited". */
+    private val onMessageEdited: (type: String) -> Unit = { },
+    /** Chat, the next level (2026-10-30): "chat.message", "direct.message", "chat.reaction", "chat.pins", "typing". */
+    private val onChatEvent: (JSONObject) -> Unit = { },
 ) {
     private val session = context.applicationContext.getSharedPreferences("wyrm_session", Context.MODE_PRIVATE)
     private val url = baseUrl.trimEnd('/').replaceFirst("https://", "wss://")
@@ -53,6 +57,31 @@ internal class LiveInbox(
         if (json == presence) return
         presence = json
         socket?.send(json)
+    }
+
+    /**
+     * Friends on the minimap (OM, 2026-11-07, backend friend-locations.mjs):
+     * the server says when a mutual follow plays in the same arena
+     * ([locationWanted]); then the app sends its place about once a second.
+     * Friends' places arrive on [onFriendLocation]: id, x, y, icon.
+     */
+    @Volatile var locationWanted = false
+        private set
+    @Volatile var onFriendLocation: ((String, Int, Int, Int) -> Unit)? = null
+    fun sendLocation(x: Int, y: Int, icon: Int) {
+        if (!locationWanted) return
+        socket?.send(JSONObject().put("type", "loc").put("x", x).put("y", y).put("icon", icon).toString())
+    }
+
+    /** "I am typing" (2026-10-30): global chat, or a direct thread to [to]. The server throttles it too. */
+    private var typingAt = 0L
+    fun sendTyping(direct: Boolean, to: String = "") {
+        val now = System.currentTimeMillis()
+        if (now - typingAt < 2_500) return
+        typingAt = now
+        val json = JSONObject().put("type", "typing").put("room", if (direct) "direct" else "global")
+        if (direct) json.put("to", to)
+        socket?.send(json.toString())
     }
 
     fun start() {
@@ -91,8 +120,18 @@ internal class LiveInbox(
                 "chat.deleted", "direct.deleted" -> scope.launch {
                     if (running && socket === webSocket) onMessageDeleted(event.optString("type"), event.optString("id"))
                 }
+                "chat.edited", "direct.edited" -> scope.launch {
+                    if (running && socket === webSocket) onMessageEdited(event.optString("type"))
+                }
+                "chat.message", "direct.message", "chat.reaction", "chat.pins", "typing" -> scope.launch {
+                    if (running && socket === webSocket) onChatEvent(event)
+                }
+                "loc.want" -> locationWanted = event.optBoolean("on", false)
+                "friend.loc" -> onFriendLocation?.invoke(event.optString("id"),
+                    event.optInt("x"), event.optInt("y"), event.optInt("icon"))
                 // A reconnect may have missed something: one catch-up refresh.
                 "live.ready" -> {
+                    locationWanted = false
                     presence?.let { webSocket.send(it) }
                     scope.launch { onInbox("", "") }
                 }

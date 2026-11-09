@@ -6,7 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +38,8 @@ fun FriendActivityLine(
     fontSize: TextUnit = 11.5.sp,
     onJoin: ((String) -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     activity ?: return
     // "12m" keeps counting between fetches.
     val now by produceState(System.currentTimeMillis()) {
@@ -54,21 +56,21 @@ fun FriendActivityLine(
                 Text(
                     "Playing in ${FriendPresence.arenaName(arena)}",
                     fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = fontSize,
-                    color = Wyrm.Live, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = wyrmScopedPalette.live, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 ArenaCountryBadge(ArenaDirectory.countryOf(arena))
                 activity.sinceNow(now)?.let {
-                    Text(shortSpan(it), fontFamily = Wyrm.Body, fontSize = fontSize, color = Wyrm.Quiet, maxLines = 1)
+                    Text(shortSpan(it), fontFamily = Wyrm.Body, fontSize = fontSize, color = wyrmScopedPalette.quiet, maxLines = 1)
                 }
                 if (onJoin != null) {
                     Text(
                         "Join",
                         fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = fontSize,
-                        color = Wyrm.OnInk,
+                        color = wyrmScopedPalette.onInk,
                         modifier = Modifier
                             .clip(wyrmRounded(Wyrm.Pill))
-                            .background(Wyrm.Ink)
+                            .background(wyrmScopedPalette.ink)
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onJoin(arena) }
                             .padding(horizontal = 10.dp, vertical = 3.dp),
                     )
@@ -77,11 +79,11 @@ fun FriendActivityLine(
         }
         activity.online -> Text(
             "Active now", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = fontSize,
-            color = Wyrm.Live, maxLines = 1, modifier = modifier,
+            color = wyrmScopedPalette.live, maxLines = 1, modifier = modifier,
         )
         activity.lastArena != null && activity.lastPlayedAtMs != null -> Text(
             "Played in ${FriendPresence.arenaName(activity.lastArena)} · ${shortSpan(now - activity.lastPlayedAtMs)} ago",
-            fontFamily = Wyrm.Body, fontSize = fontSize, color = Wyrm.Quiet, maxLines = 1,
+            fontFamily = Wyrm.Body, fontSize = fontSize, color = wyrmScopedPalette.quiet, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = modifier,
         )
     }

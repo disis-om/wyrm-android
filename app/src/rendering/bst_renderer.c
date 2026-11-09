@@ -1,6 +1,7 @@
 #include "bst_renderer.h"
 
 #include <string.h>
+#include "instance_storage.h"
 
 bst_renderer* bst_renderer_create(tcontext* ctx, int max_instances,
                                   VkPipelineLayout layout, VkRenderPass pass) {
@@ -12,7 +13,7 @@ bst_renderer* bst_renderer_create(tcontext* ctx, int max_instances,
       tcontext_create_shader(ctx, "app/res/shaders/bin/bstf.spv");
 
   vkCreateGraphicsPipelines(
-      ctx->device, NULL, 1,
+      ctx->device, VK_NULL_HANDLE, 1,
       &(VkGraphicsPipelineCreateInfo){
           .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
           .pNext = NULL,
@@ -160,10 +161,10 @@ bst_renderer* bst_renderer_create(tcontext* ctx, int max_instances,
   vkDestroyShaderModule(ctx->device, fragment_shader, NULL);
   vkDestroyShaderModule(ctx->device, vertex_shader, NULL);
 
-  r->instance_buffer =
-      tdbuffer_create(ctx, NULL, max_instances * sizeof(bst_instance),
-                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-  r->instances = malloc(max_instances * sizeof(bst_instance));
+  r->instance_buffer = tdbuffer_create_stream(ctx,
+      (VkDeviceSize)max_instances * sizeof(bst_instance), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  r->instances = NULL;
+  r->capacity = 0;
   r->max_instances = max_instances;
   r->num_instances = 0;
 
@@ -174,13 +175,18 @@ void bst_renderer_push(bst_renderer* r, const bst_instance* instance) {
   if (r->num_instances >= r->max_instances) {
     return;
   }
+  bst_instance* grown = instance_storage_reserve(r->instances, &r->capacity,
+      r->max_instances, r->num_instances + 1, sizeof(bst_instance));
+  if (!grown) return;
+  r->instances = grown;
   r->instances[r->num_instances++] = *instance;
 }
 
 void bst_renderer_render(bst_renderer* r, tcontext* ctx) {
   tcontext_frame* fr = ctx->frames + ctx->current_frame;
-  memcpy(r->instance_buffer[ctx->current_frame].data, r->instances,
-         r->num_instances * sizeof(bst_instance));
+  if (r->num_instances <= 0 || !tdbuffer_upload(ctx, r->instance_buffer,
+      ctx->current_frame, r->instances,
+      (VkDeviceSize)r->num_instances * sizeof(bst_instance))) return;
   vkCmdBindPipeline(fr->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipeline);
   vkCmdBindVertexBuffers(fr->cmd, 1, 1,
                          &r->instance_buffer[ctx->current_frame].handle,

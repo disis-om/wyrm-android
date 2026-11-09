@@ -18,7 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +49,8 @@ fun GuestSignUpScreen(
     onLogIn: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var displayName by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -63,7 +65,7 @@ fun GuestSignUpScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         PaperBackHeader(title = "New account", insetTop = insetTop, onBack = onBack)
         Column(
@@ -77,7 +79,7 @@ fun GuestSignUpScreen(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 26.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 22.dp),
             )
             Text(
@@ -85,15 +87,15 @@ fun GuestSignUpScreen(
                 fontFamily = Wyrm.Body,
                 fontSize = 14.5.sp,
                 lineHeight = 21.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 7.dp),
             )
             Column(
                 modifier = Modifier
                     .padding(start = 16.dp, end = 16.dp, top = 20.dp)
                     .clip(CardShape)
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, CardShape),
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, CardShape),
             ) {
                 GuestField("Display name", displayName) { displayName = it.take(40) }
                 Hair()
@@ -120,7 +122,7 @@ fun GuestSignUpScreen(
                 text = "Already have an account? Sign in",
                 fontFamily = Wyrm.Body,
                 fontSize = 14.5.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .clickable(onClick = onLogIn)
@@ -140,6 +142,8 @@ fun GuestLogInScreen(
     onGoogle: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
@@ -148,7 +152,7 @@ fun GuestLogInScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         PaperBackHeader(title = "Sign in", insetTop = insetTop, onBack = onBack)
         Column(
@@ -162,7 +166,7 @@ fun GuestLogInScreen(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 26.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 22.dp),
             )
             Text(
@@ -170,15 +174,15 @@ fun GuestLogInScreen(
                 fontFamily = Wyrm.Body,
                 fontSize = 14.5.sp,
                 lineHeight = 21.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 7.dp),
             )
             Column(
                 modifier = Modifier
                     .padding(start = 16.dp, end = 16.dp, top = 20.dp)
                     .clip(CardShape)
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, CardShape),
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, CardShape),
             ) {
                 GuestField("Username", username, prefix = "@") {
                     username = it.filter { ch -> ch.isLetterOrDigit() || ch == '_' }.take(20)
@@ -205,15 +209,15 @@ fun GuestLogInScreen(
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 22.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.weight(1f).height(1.dp).background(Wyrm.Rule))
+                Box(Modifier.weight(1f).height(1.dp).background(wyrmScopedPalette.rule))
                 Text(
                     text = "or",
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
-                Box(Modifier.weight(1f).height(1.dp).background(Wyrm.Rule))
+                Box(Modifier.weight(1f).height(1.dp).background(wyrmScopedPalette.rule))
             }
             Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp)) {
                 GoogleOutlineButton(
@@ -227,7 +231,7 @@ fun GuestLogInScreen(
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
                 lineHeight = 18.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp),
             )
         }
@@ -236,6 +240,8 @@ fun GuestLogInScreen(
 
 @Composable
 private fun PaperBackHeader(title: String, insetTop: Dp, onBack: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -247,7 +253,7 @@ private fun PaperBackHeader(title: String, insetTop: Dp, onBack: () -> Unit) {
             text = "‹ Back",
             fontFamily = Wyrm.Body,
             fontSize = 16.sp,
-            color = Wyrm.Link,
+            color = wyrmScopedPalette.link,
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .clickable(onClick = onBack)
@@ -258,11 +264,11 @@ private fun PaperBackHeader(title: String, insetTop: Dp, onBack: () -> Unit) {
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 16.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.align(Alignment.Center),
         )
     }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
 }
 
 @Composable
@@ -275,18 +281,20 @@ private fun GuestField(
     onTrailing: (() -> Unit)? = null,
     onValueChange: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val shape = wyrmRounded(10.dp)
     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = label, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, modifier = Modifier.weight(1f))
+            Text(text = label, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.weight(1f))
             if (trailing != null && onTrailing != null) {
                 Text(
                     text = trailing,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier.clickable(onClick = onTrailing).padding(4.dp),
                 )
             }
@@ -297,8 +305,8 @@ private fun GuestField(
                 .fillMaxWidth()
                 .height(46.dp)
                 .clip(shape)
-                .background(Wyrm.Card)
-                .border(1.dp, if (focused) Wyrm.Ink else Wyrm.Rule, shape)
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, if (focused) wyrmScopedPalette.ink else wyrmScopedPalette.rule, shape)
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -309,8 +317,8 @@ private fun GuestField(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
-                textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 16.sp, color = Wyrm.Ink),
-                cursorBrush = SolidColor(Wyrm.Ink),
+                textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 16.sp, color = wyrmScopedPalette.ink),
+                cursorBrush = SolidColor(wyrmScopedPalette.ink),
                 visualTransformation = if (masked) PasswordVisualTransformation() else VisualTransformation.None,
                 interactionSource = interaction,
                 modifier = Modifier.fillMaxWidth(),
@@ -321,11 +329,15 @@ private fun GuestField(
 
 @Composable
 private fun Hair() {
-    Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
 }
 
 @Composable
 private fun ErrorDot(text: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -335,8 +347,8 @@ private fun ErrorDot(text: String) {
                 .padding(end = 7.dp)
                 .size(6.dp)
                 .clip(CircleShape)
-                .background(Wyrm.Badge),
+                .background(wyrmScopedPalette.badge),
         )
-        Text(text = text, fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Badge)
+        Text(text = text, fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.badge)
     }
 }

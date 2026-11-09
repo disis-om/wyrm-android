@@ -1,9 +1,19 @@
 #include <string.h>
+#include <math.h>
 
 #include "../game/backgrounds.h"
 #include "../game/studio.h"
+#include "../game/wyrm_extras.h"
 #include <external/stb/stb_image.h>
 #include "../user.h"
+
+/* game/sheet_text.h and game/minimap_art.h (OM, 2026-11-01). */
+VkDescriptorSet wyrm_sheet_set = VK_NULL_HANDLE;
+spr_renderer *wyrm_text_normal = NULL, *wyrm_text_add = NULL;
+float wyrm_sheet_veil = 1.0f;
+bool wyrm_high_visibility_text = true;
+bool wyrm_sheet_warned = false;
+VkDescriptorSet wyrm_minimap_set = VK_NULL_HANDLE;
 #ifdef WYRM_SDL_JNI
 #include "../platform/android_startup.h"
 #include "../platform/android_arrows.h"
@@ -152,6 +162,25 @@ renderer* renderer_create(tenv* env) {
                              .maxLod = 0.0f},
       NULL, &r->atlas_sampler);
 
+  /* The original's glyphs and food as Starling samples them (OM,
+     2026-11-01): TextureSmoothing.BILINEAR on a mipmapped texture is
+     linear filtering with the nearest mip level, clamped at the edges
+     (RenderUtil.setSamplerStateAt). */
+  vkCreateSampler(
+      ctx->device,
+      &(VkSamplerCreateInfo){.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                             .pNext = NULL,
+                             .flags = 0,
+                             .magFilter = VK_FILTER_LINEAR,
+                             .minFilter = VK_FILTER_LINEAR,
+                             .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                             .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             .minLod = 0.0f,
+                             .maxLod = VK_LOD_CLAMP_NONE},
+      NULL, &r->sheet_sampler);
+
   /* Beads at the size they are drawn (OM, 2026-10-18). The game atlas was
      sampled at LOD 0 only, so every bead of a zoomed-out crowd read the full
      3136 x 4032 atlas: on the Moto (Adreno 619) the arena pass went from
@@ -198,7 +227,7 @@ renderer* renderer_create(tenv* env) {
      settings action, not a per-frame one, so paying a load for it is cheaper
      than keeping twenty of these in video memory. */
   r->background = background_clamp(env->usr->usrs.arena_background);
-  const background_def* bg = &BACKGROUNDS[r->background];
+  const background_def* bg = &(*background_at(r->background));
   r->bg_tex = create_mipmap_texture(
       ctx, bg->path ? bg->path : "app/res/textures/background_4k.png");
 #ifdef WYRM_SDL_JNI
@@ -229,6 +258,8 @@ renderer* renderer_create(tenv* env) {
       r->linear_sampler, r->home_icons_tex->view,
       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
+  r->original_art_tex = create_mipmap_texture(ctx, "app/res/textures/original_art.png");
+  wyrm_extras_create(r, ctx);
   r->tags_tex = create_mipmap_texture(ctx, "app/res/textures/wyrm_tags.png");
   r->tags_descriptor = igImplVulkan_AddTexture(
       r->linear_sampler, r->tags_tex->view,
@@ -266,8 +297,17 @@ renderer* renderer_create(tenv* env) {
                       &(VkAttachmentReference){
                           .attachment = 0,
                           .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-          .dependencyCount = 0,
-          .pDependencies = NULL},
+          /* The next ImGui pass samples this color image. Layout transition
+             alone is not the color-write -> fragment-read memory dependency. */
+          .dependencyCount = 1,
+          .pDependencies = &(VkSubpassDependency){
+              .srcSubpass = 0, .dstSubpass = VK_SUBPASS_EXTERNAL,
+              .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+              .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+              .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+              .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+              /* ImGui can sample a different pixel/viewport location. */
+              .dependencyFlags = 0}},
       NULL, &r->render_pass);
 
   r->images = malloc(sizeof(renderer_image_data) * ctx->fif);
@@ -282,7 +322,7 @@ renderer* renderer_create(tenv* env) {
           .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
           .pNext = NULL,
           .flags = 0,
-          .bindingCount = 5,
+          .bindingCount = 7,
           .pBindings =
               (VkDescriptorSetLayoutBinding[]){
                   {.binding = 0,
@@ -299,6 +339,15 @@ renderer* renderer_create(tenv* env) {
                    .descriptorCount = 1,
                    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
                   {.binding = 3,
+                   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                   .descriptorCount = 1,
+                   .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+                  {.binding = 5,
+                   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                   .descriptorCount = 1,
+                   .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+                  /* AIR skin art (OM, 2026-11-08; game/wyrm_extras.c). */
+                  {.binding = 6,
                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                    .descriptorCount = 1,
                    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
@@ -344,8 +393,8 @@ renderer* renderer_create(tenv* env) {
   r->global.viewport[0] = r->size[0];
   r->global.viewport[1] = r->size[1];
   // Preserve the original arena tiling scale after the mobile PNG is halved.
-  r->global.bg_size[0] = BACKGROUNDS[r->background].tile_w;
-  r->global.bg_size[1] = BACKGROUNDS[r->background].tile_h;
+  r->global.bg_size[0] = (*background_at(r->background)).tile_w;
+  r->global.bg_size[1] = (*background_at(r->background)).tile_h;
   r->global.bg_color[0] = 1;
   r->global.bg_color[1] = 1;
   r->global.bg_scale = 1;
@@ -374,8 +423,13 @@ renderer* renderer_create(tenv* env) {
 
   for (int i = 0; i < ctx->fif; i++)
     vkUpdateDescriptorSets(
-        ctx->device, 5,
+        ctx->device, 7,
         (VkWriteDescriptorSet[]){
+            {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+             .dstSet = r->global_set[i], .dstBinding = 5,
+             .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+             .pImageInfo = &(VkDescriptorImageInfo){r->sheet_sampler,r->original_art_tex->view,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
             {
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 .pNext = NULL,
@@ -441,6 +495,20 @@ renderer* renderer_create(tenv* env) {
                     &(VkDescriptorImageInfo){
                         r->bead_sampler, r->tex_atlas->view,
                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            },
+            {
+                /* AIR skin art in the bead pass (wyrm_extras.png). */
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = NULL,
+                .dstSet = r->global_set[i],
+                .dstBinding = 6,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo =
+                    &(VkDescriptorImageInfo){
+                        r->linear_sampler, wyrm_extras_view(r),
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             }},
         0, NULL);
 
@@ -452,6 +520,24 @@ renderer* renderer_create(tenv* env) {
   r->bdr = bd_renderer_create(ctx, r->pipeline_layout, r->render_pass);
   r->astr = bp_renderer_create(ctx, 2, r->pipeline_layout, r->render_pass);
   r->cr = spr_renderer_create(ctx, 1, r->pipeline_layout, env->ctx->renderpass);
+  r->original_food_shadow = spr_renderer_create_original(ctx,MAX_FOOD_INSTANCES,r->pipeline_layout,r->render_pass,false);
+  r->original_food_add = spr_renderer_create_original(ctx,MAX_FOOD_INSTANCES,r->pipeline_layout,r->render_pass,true);
+  r->original_names = spr_renderer_create_original(ctx,32768,r->pipeline_layout,r->render_pass,false);
+  r->original_hud = spr_renderer_create_original(ctx,2048,r->pipeline_layout,r->render_pass,false);
+  r->original_hud_add = spr_renderer_create_original(ctx,2048,r->pipeline_layout,r->render_pass,true);
+  r->minimap_art_tex = create_mipmap_texture(ctx, "app/res/textures/minimap_floors.png");
+  r->sheet_set = igImplVulkan_AddTexture(r->linear_sampler, r->original_art_tex->view,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  r->minimap_set = igImplVulkan_AddTexture(r->linear_sampler, r->minimap_art_tex->view,
+                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  r->overlay_text = spr_renderer_create_original(ctx,32768,r->pipeline_layout,r->render_pass,false);
+  r->overlay_text_add = spr_renderer_create_original(ctx,32768,r->pipeline_layout,r->render_pass,true);
+  wyrm_text_normal = r->overlay_text;
+  wyrm_text_add = r->overlay_text_add;
+  wyrm_sheet_set = r->sheet_set;
+  SDL_Log("Wyrm sheet: atlas=%p descriptor=%p overlay batches ready",
+          (void*)r->original_art_tex, (void*)(uintptr_t)r->sheet_set);
+  wyrm_minimap_set = r->minimap_set;
 
 #ifdef WYRM_SDL_JNI
   android_startup_stage(9, "Graphics pipelines assembled",
@@ -470,8 +556,11 @@ void renderer_render(renderer* r, tcontext* ctx, vec4 clear_color) {
   if (r->studio_swap) renderer_studio_swap_step(r, ctx);
   memcpy(r->global_buffer[ctx->current_frame].data, &r->global,
          sizeof(r->global));
+  tdbuffer_flush(ctx, r->global_buffer, ctx->current_frame, sizeof(r->global));
 
-  mm_renderer_prerender(r->mmr, ctx);
+  /* Current HUDs draw their map from mm_data_follow. Preserve the legacy
+     renderer for any visible consumer, without uploading an invisible map. */
+  if (r->global.minimap_opacity > 0.0f) mm_renderer_prerender(r->mmr, ctx);
 
   vkCmdBeginRenderPass(
       fr->cmd,
@@ -495,14 +584,28 @@ void renderer_render(renderer* r, tcontext* ctx, vec4 clear_color) {
   vkCmdBindDescriptorSets(fr->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           r->pipeline_layout, 0, 1,
                           &r->global_set[ctx->current_frame], 0, NULL);
-  bg_renderer_render(r->bgr, ctx);
+  if (r->global.bg_opacity > 0.0f) bg_renderer_render(r->bgr, ctx);
   fd_renderer_render(r->fdr, ctx);
+  spr_renderer_render(r->original_food_shadow,ctx);
+  spr_renderer_render(r->original_food_add,ctx);
+  spr_renderer_render(r->original_names,ctx);
   bst_renderer_render(r->bstb, ctx);
   bp_renderer_render(r->bpr, ctx);
   bst_renderer_render(r->bsta, ctx);
-  bd_renderer_render(r->bdr, ctx);
+  /* A circle fully containing all four screen corners cannot contribute
+     border pixels. Keep a conservative AA margin and all outside tint. */
+  float cx = r->size[0] * 0.5f + (r->global.grd - r->global.view[0]) * r->global.zoom;
+  float cy = r->size[1] * 0.5f + (r->global.grd - r->global.view[1]) * r->global.zoom;
+  float fx = fmaxf(fabsf(cx), fabsf((float)r->size[0] - cx));
+  float fy = fmaxf(fabsf(cy), fabsf((float)r->size[1] - cy));
+  float radius = r->global.zoom * r->global.bd_radius;
+  if (r->global.bd_opacity > 0.0f &&
+      !(radius > 4.0f && fx * fx + fy * fy < (radius - 4.0f) * (radius - 4.0f)))
+    bd_renderer_render(r->bdr, ctx);
   bp_renderer_render(r->astr, ctx);
-  mm_renderer_render(r->mmr, ctx);
+  if (r->global.minimap_opacity > 0.0f) mm_renderer_render(r->mmr, ctx);
+  spr_renderer_render(r->original_hud,ctx);
+  spr_renderer_render(r->original_hud_add,ctx);
   vkCmdEndRenderPass(ctx->frames[ctx->current_frame].cmd);
 }
 
@@ -517,6 +620,9 @@ void renderer_render_cursor(renderer* r, tcontext* ctx) {
                           r->pipeline_layout, 0, 1,
                           &r->global_set[ctx->current_frame], 0, NULL);
 
+  /* ImGui plates have already been drawn. Restore the full viewport above. */
+  spr_renderer_render(r->overlay_text, ctx);
+  spr_renderer_render(r->overlay_text_add, ctx);
   spr_renderer_render(r->cr, ctx);
 }
 
@@ -639,8 +745,8 @@ static void renderer_bg_swap_step(renderer* r, tcontext* ctx) {
       if (!s->upload) s->job = -1;
     }
   } else if (!s->retired && s->want != r->background) {
-    const background_def* bg = &BACKGROUNDS[s->want];
-    const char* path = bg->path ? bg->path : BACKGROUNDS[BACKGROUND_WYRM].path;
+    const background_def* bg = &(*background_at(s->want));
+    const char* path = bg->path ? bg->path : (*background_at(BACKGROUND_WYRM)).path;
     snprintf(s->path, sizeof(s->path), "%s", path);
     s->job = s->want;
     SDL_SetAtomicInt(&s->decoded, 0);
@@ -655,8 +761,8 @@ static void renderer_bg_swap_step(renderer* r, tcontext* ctx) {
   /* This frame's tile size follows the floor its own set shows. */
   int shown = (s->ready && (s->bound & (1u << cur))) ? s->ready_index
                                                      : r->background;
-  r->global.bg_size[0] = BACKGROUNDS[shown].tile_w;
-  r->global.bg_size[1] = BACKGROUNDS[shown].tile_h;
+  r->global.bg_size[0] = (*background_at(shown)).tile_w;
+  r->global.bg_size[1] = (*background_at(shown)).tile_h;
 }
 
 static void renderer_bg_swap_destroy(renderer* r, tcontext* ctx) {
@@ -673,6 +779,12 @@ static void renderer_bg_swap_destroy(renderer* r, tcontext* ctx) {
 
 void renderer_set_background(renderer* r, tcontext* ctx, int index) {
   index = background_clamp(index);
+  /* A new photo under the same index (OM, 2026-11-08): load it again. */
+  static int custom_seen = -1;
+  if (index == BACKGROUND_CUSTOM && custom_seen != wyrm_custom_floor_generation) {
+    custom_seen = wyrm_custom_floor_generation;
+    if (r->background == BACKGROUND_CUSTOM) r->background = -1;
+  }
   if (!r->bg_swap) {
     if (index == r->background) return;
     r->bg_swap = calloc(1, sizeof(bg_swap));
@@ -689,8 +801,8 @@ void renderer_set_background(renderer* r, tcontext* ctx, int index) {
 static void renderer_set_background_now(renderer* r, tcontext* ctx, int index) {
   index = background_clamp(index);
   if (index == r->background) return;
-  const background_def* bg = &BACKGROUNDS[index];
-  const char* path = bg->path ? bg->path : BACKGROUNDS[BACKGROUND_WYRM].path;
+  const background_def* bg = &(*background_at(index));
+  const char* path = bg->path ? bg->path : (*background_at(BACKGROUND_WYRM)).path;
 
   texture* next = create_mipmap_texture(ctx, path);
   if (!next) return; /* keep what is on screen rather than showing nothing */
@@ -898,6 +1010,14 @@ void renderer_destroy(renderer* r, tcontext* ctx) {
   bst_renderer_destroy(r->bsta, ctx);
   bp_renderer_destroy(r->bpr, ctx);
   bst_renderer_destroy(r->bstb, ctx);
+  spr_renderer_destroy(r->original_food_shadow,ctx);
+  spr_renderer_destroy(r->original_food_add,ctx);
+  spr_renderer_destroy(r->original_names,ctx);
+  spr_renderer_destroy(r->original_hud,ctx);
+  spr_renderer_destroy(r->original_hud_add,ctx);
+  wyrm_text_normal = wyrm_text_add = NULL;
+  spr_renderer_destroy(r->overlay_text,ctx);
+  spr_renderer_destroy(r->overlay_text_add,ctx);
   fd_renderer_destroy(r->fdr, ctx);
   bg_renderer_destroy(r->bgr, ctx);
   tdbuffer_destroy(ctx, r->global_buffer);
@@ -916,6 +1036,12 @@ void renderer_destroy(renderer* r, tcontext* ctx) {
   android_arrows_destroy(ctx);
   android_look_destroy(ctx);
   if (r->tags_descriptor) igImplVulkan_RemoveTexture(r->tags_descriptor);
+  if (r->sheet_set) igImplVulkan_RemoveTexture(r->sheet_set);
+  if (r->minimap_set) igImplVulkan_RemoveTexture(r->minimap_set);
+  wyrm_sheet_set = wyrm_minimap_set = VK_NULL_HANDLE;
+  destroy_texture(ctx, r->minimap_art_tex);
+  destroy_texture(ctx, r->original_art_tex);
+  wyrm_extras_destroy(ctx);
   destroy_texture(ctx, r->tags_tex);
   destroy_texture(ctx, r->home_icons_tex);
   destroy_texture(ctx, r->logo_tex);
@@ -926,6 +1052,7 @@ void renderer_destroy(renderer* r, tcontext* ctx) {
   destroy_texture(ctx, r->bg_tex);
   vkDestroySampler(ctx->device, r->nearest_sampler, NULL);
   vkDestroySampler(ctx->device, r->atlas_sampler, NULL);
+  vkDestroySampler(ctx->device, r->sheet_sampler, NULL);
   vkDestroySampler(ctx->device, r->bead_sampler, NULL);
   vkDestroySampler(ctx->device, r->linear_sampler, NULL);
   free(r);
@@ -940,9 +1067,18 @@ void renderer_resize(renderer* r, tcontext* ctx, ivec2 size) {
 void renderer_clear_instances(renderer* r) {
   r->fdr->num_instances = 0;
   r->fdr->num_p_instances = 0;
+  r->fdr->num_t_instances = 0;
+  r->fdr->num_u_instances = 0;
   r->bsta->num_instances = 0;
   r->bpr->num_instances = 0;
   r->bstb->num_instances = 0;
   r->astr->num_instances = 0;
   r->cr->num_instances = 0;
+  r->original_food_shadow->num_instances = 0;
+  r->original_food_add->num_instances = 0;
+  r->original_names->num_instances = 0;
+  r->original_hud->num_instances = 0;
+  r->original_hud_add->num_instances = 0;
+  r->overlay_text->num_instances = 0;
+  r->overlay_text_add->num_instances = 0;
 }

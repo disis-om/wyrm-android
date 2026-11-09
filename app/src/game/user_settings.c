@@ -78,7 +78,7 @@ static bool sanitize_mobile_controls(mobile_control_settings* controls) {
     changed = true;
   }
   if (controls->joystick_mode < MOBILE_JOYSTICK_DYNAMIC ||
-      controls->joystick_mode > MOBILE_STEERING_ARROW) {
+      controls->joystick_mode > MOBILE_STEERING_CLASSIC) {
     controls->joystick_mode = MOBILE_JOYSTICK_DYNAMIC;
     changed = true;
   }
@@ -212,6 +212,20 @@ void user_settings_ext_default(user_settings_ext* x) {
   x->keys_white_v1 = true;
   x->keys_grey_fill_v1 = true;
   for (int i = 0; i < 20; ++i) x->key_fill[i] = 9;
+  for (int i = 0; i < 20; ++i) x->key_label_opacity[i] = 1.0f;
+  x->food_original_v1 = true;
+  x->lb_size = .75f;
+  x->lb_original_v1 = true;
+  x->near_joy_x = -1.0f;
+  x->near_joy_y = -1.0f;
+  x->near_joy_size = 1.0f;
+  x->arrow_colour_own = false;
+  x->name_scale = 1.0f;
+  x->name_scale_v1 = true;
+  x->chat_text_scale = 1.0f;
+  x->arrow_double_tap_boost = true;
+  x->arrow_double_tap_boost_v1 = true;
+  x->native_text_style = 1;
 #ifdef WYRM_DESKTOP
   x->eyes_back_key = GLFW_KEY_E;
 #endif
@@ -238,6 +252,14 @@ float* user_settings_key_opacity(user_settings* settings, int action) {
 static bool ext_take_float(float* field, int present, float lo, float hi,
                            float fallback) {
   if (present && isfinite(*field) && *field >= lo && *field <= hi) return false;
+  *field = fallback;
+  return true;
+}
+
+/* An int field this build knows the range of; missing or outside = fallback. */
+static bool ext_take_int(int32_t* field, int present, int32_t lo, int32_t hi,
+                         int32_t fallback) {
+  if (present && *field >= lo && *field <= hi) return false;
   *field = fallback;
   return true;
 }
@@ -398,6 +420,99 @@ bool user_settings_ext_fix(user_settings* settings, size_t bytes_read) {
     fixed |= ext_take_float(&ext->arrow_sens, written >= sens_at + 4, 0.0f,
                             1.0f, 0.0f);
   }
+  {
+    /* Food and skin textures (OM, 2026-10-25): missing or unknown = 0. */
+    size_t food_at = offsetof(user_settings_ext, food_tex);
+    fixed |= ext_take_int(&ext->food_tex[0], written >= food_at + 4, 0, 7, 0);
+    fixed |= ext_take_int(&ext->food_tex[1], written >= food_at + 8, 0, 7, 0);
+    size_t tex_at = offsetof(user_settings_ext, skin_tex);
+    fixed |= ext_take_int(&ext->skin_tex, written >= tex_at + 4, 0, 9, 0);
+    size_t mine_at = offsetof(user_settings_ext, skin_tex_mine);
+    fixed |= ext_take_bool(&ext->skin_tex_mine, written >= mine_at + 1);
+  }
+  {
+    /* Zoom bar flip (OM, 2026-10-30): missing = not flipped. */
+    size_t flip_at = offsetof(user_settings_ext, zoom_flip);
+    fixed |= ext_take_bool(&ext->zoom_flip, written >= flip_at + 1);
+  }
+  {
+    /* Key label opacity (OM, 2026-11-01): missing = full. */
+    size_t label_at = offsetof(user_settings_ext, key_label_opacity);
+    for (int i = 0; i < 20; ++i)
+      fixed |= ext_take_float(&ext->key_label_opacity[i],
+                              written >= label_at + 4 * (size_t)(i + 1), 0.0f,
+                              1.0f, 1.0f);
+  }
+  {
+    /* Food size back to the original once (OM, 2026-11-01): whatever was
+       set becomes 1x (and follows the zoom again); changed after this, it
+       stays. */
+    unsigned char done = 0;
+    size_t lb_at = offsetof(user_settings_ext, lb_original_v1);
+    unsigned char lb_done = 0;
+    if (written >= lb_at+1 && bytes_read >= ext_at+lb_at+1)
+      memcpy(&lb_done, &ext->lb_original_v1, 1);
+    if (lb_done != 1) {
+      ext->lb_size = .75f;
+      ext->lb_original_v1 = true;
+      fixed = 1;
+    }
+    fixed |= ext_take_float(&ext->lb_size, true, .25f, 3.0f, .75f);
+    size_t name_at = offsetof(user_settings_ext, name_scale_v1);
+    unsigned char name_done = 0;
+    if (written >= name_at+1 && bytes_read >= ext_at+name_at+1)
+      memcpy(&name_done, &ext->name_scale_v1, 1);
+    if (name_done != 1) {
+      int old = settings->snake_names_font_size;
+      ext->name_scale = old == 0 ? .8f : old == 2 ? 1.2f : 1.0f;
+      ext->name_scale_v1 = true;
+      fixed = 1;
+    }
+    fixed |= ext_take_float(&ext->name_scale, true, .5f, 2.5f, 1.0f);
+    size_t chat_at = offsetof(user_settings_ext, chat_text_scale);
+    fixed |= ext_take_float(&ext->chat_text_scale, written >= chat_at+4,
+                            .5f, 2.5f, 1.0f);
+    size_t tap_at = offsetof(user_settings_ext, arrow_double_tap_boost_v1);
+    unsigned char tap_done=0, tap_value=2;
+    if (written>=tap_at+1 && bytes_read>=ext_at+tap_at+1) {
+      memcpy(&tap_done,&ext->arrow_double_tap_boost_v1,1);
+      memcpy(&tap_value,&ext->arrow_double_tap_boost,1);
+    }
+    if (tap_done!=1 || tap_value>1) {
+      ext->arrow_double_tap_boost=true;
+      ext->arrow_double_tap_boost_v1=true;
+      fixed=1;
+    }
+    size_t text_at = offsetof(user_settings_ext, native_text_style);
+    fixed |= ext_take_int(&ext->native_text_style,
+                          written >= text_at + sizeof(ext->native_text_style) &&
+                          bytes_read >= ext_at + text_at + sizeof(ext->native_text_style),
+                          0, 1, 1);
+    size_t food_at = offsetof(user_settings_ext, food_original_v1);
+    if (written >= food_at + 1 && bytes_read >= ext_at + food_at + 1)
+      memcpy(&done, &ext->food_original_v1, 1);
+    if (done != 1) {
+      for (int m = 0; m < 2; ++m) {
+        settings->modes[m].food_scale = 1.0f;
+        settings->modes[m].const_food_scale = false;
+      }
+      ext->food_original_v1 = true;
+      fixed = 1;
+    }
+  }
+  {
+    /* Near Original's joystick (OM, 2026-11-01): missing = the original's. */
+    size_t nj_at = offsetof(user_settings_ext, near_joy_x);
+    fixed |= ext_take_float(&ext->near_joy_x, written >= nj_at + 4, -1.0f,
+                            1.0f, -1.0f);
+    fixed |= ext_take_float(&ext->near_joy_y, written >= nj_at + 8, -1.0f,
+                            1.0f, -1.0f);
+    fixed |= ext_take_float(&ext->near_joy_size, written >= nj_at + 12, 0.65f,
+                            1.45f, 1.0f);
+  }
+  /* Missing (every file before 2026-11-01) = the snake's colour. */
+  fixed |= ext_take_bool(&ext->arrow_colour_own,
+                         written >= offsetof(user_settings_ext, arrow_colour_own) + 1);
   /* A longer tail belongs to a newer build. Do not shrink it just to rewrite
      the size we already understood. A shorter one is missing fields, so save. */
   if (written < (uint32_t)sizeof(user_settings_ext)) fixed = 1;

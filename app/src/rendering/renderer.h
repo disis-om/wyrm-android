@@ -56,6 +56,14 @@ typedef struct renderer {
      of its own: a tag is a rotated rectangle over the arena, which a draw list
      does in one call, and the alternative was a whole new shader to say the
      same thing. */
+  texture* original_art_tex;
+  /* Wyrm HUD type and the original minimap discs as ImGui images
+     (OM, 2026-11-01): game/sheet_text.h, game/minimap_art.h. */
+  texture* minimap_art_tex;
+  VkDescriptorSet sheet_set, minimap_set;
+  spr_renderer *original_food_shadow, *original_food_add, *original_names,
+               *original_hud, *original_hud_add,
+               *overlay_text, *overlay_text_add;
   texture* tags_tex;
   VkDescriptorSet logo_descriptor;
   VkDescriptorSet home_icons_descriptor;
@@ -63,6 +71,8 @@ typedef struct renderer {
 
   VkSampler linear_sampler;
   VkSampler atlas_sampler;
+  /* The original's art as Starling samples it (OM, 2026-11-01). */
+  VkSampler sheet_sampler;
   /* The game atlas (beads, eyes, accessories): mipmapped up to
      BEAD_ATLAS_MAX_LOD. See renderer.c. */
   VkSampler bead_sampler;

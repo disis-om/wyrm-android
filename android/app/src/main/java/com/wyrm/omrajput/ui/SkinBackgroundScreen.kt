@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,6 +87,8 @@ private fun FloorCell(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(12.dp)
     Column(modifier = modifier.clickable(onClick = onClick)) {
         Box(
@@ -94,10 +96,10 @@ private fun FloorCell(
                 .fillMaxWidth()
                 .aspectRatio(1f)
                 .clip(shape)
-                .background(Wyrm.Well)
+                .background(wyrmScopedPalette.well)
                 .border(
                     if (chosen) 2.dp else 1.dp,
-                    if (chosen) Wyrm.Ink else Wyrm.Rule,
+                    if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.rule,
                     shape,
                 ),
             contentAlignment = Alignment.Center,
@@ -116,7 +118,7 @@ private fun FloorCell(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 12.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                 )
             }
         }
@@ -126,7 +128,7 @@ private fun FloorCell(
             fontFamily = Wyrm.Body,
             fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
             fontSize = 12.sp,
-            color = if (chosen) Wyrm.Ink else Wyrm.Quiet,
+            color = if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.quiet,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),

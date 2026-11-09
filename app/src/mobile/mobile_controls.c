@@ -1,4 +1,5 @@
 #include "mobile_controls.h"
+#include "../game/sheet_text.h" /* the zoom bar's - and + (OM, 2026-11-01) */
 
 #include <math.h>
 #include <string.h>
@@ -33,14 +34,18 @@ static float control_scale(tenv* env) {
    sideways play (that stored choice is kept). Every reader of the steering
    mode goes through here; nothing is sent differently. */
 int mobile_controls_steering_mode(tenv* env) {
-  if (env->wnd->size[1] > env->wnd->size[0]) return MOBILE_STEERING_ARROW;
+  if (env->wnd->size[1] > env->wnd->size[0] &&
+      env->usr->usrs.mobile_controls.joystick_mode != MOBILE_STEERING_CLASSIC)
+    return MOBILE_STEERING_ARROW;
   return env->usr->usrs.mobile_controls.joystick_mode;
 }
 
 /*
  * Near Original (OM, 2026-10-02): slither's own controls, from the original
  * game's Main.as. Its unit is the short side / 480 (`force_game_scale`).
- * Fixed joystick at (150u, H - 130u), boost at (W - 140u, H - 140u), both
+ * Fixed joystick at (150u, H - 130u), boost at (W - 140u, H - 140u) on a
+ * phone, (100u, H - 100u) and (W - 100u, H - 100u) on a larger screen
+ * (Main.as isPhone, 2026-10-30), both
  * mirrored when the joystick is on the right (Wyrm's Handedness = the
  * original's flip). Display and touch only.
  */
@@ -151,23 +156,86 @@ static bool original_joystick_right(tenv* env) {
   return env->usr->usrs.mobile_controls.handedness != MOBILE_LEFT_HANDED;
 }
 
+/* Main.as `isPhone()` (OM, 2026-10-30): the long side in inches under 7.
+   Phones get the original's 150/130 joystick and 140/140 boost, larger
+   screens its 100/100 and 100/100 (map top left). Inches = long side in
+   pixels / (display scale x 160 on Android, x 163 on iOS). Unknown scale =
+   phone, the original's case for every handset. */
+static bool original_is_phone(tenv* env) {
+  int long_side = env->wnd->size[0] > env->wnd->size[1] ? env->wnd->size[0]
+                                                        : env->wnd->size[1];
+  float scale = env->wnd->handle ? SDL_GetWindowDisplayScale(env->wnd->handle)
+                                 : 0.0f;
+  if (!(scale > 0.0f) || long_side <= 0) return true;
+#ifdef __APPLE__
+  const float dpi = scale * 163.0f;
+#else
+  const float dpi = scale * 160.0f;
+#endif
+  return (float)long_side / dpi < 7.0f;
+}
+
 static void original_joystick_centre(tenv* env, float* x, float* y) {
+  /* Moved in the layout editor (OM, 2026-11-01): that place. */
+  const user_settings_ext* ext = &env->usr->usrs.ext;
+  if (ext->near_joy_x >= 0.0f && ext->near_joy_y >= 0.0f) {
+    *x = clampf(ext->near_joy_x, 0.0f, 1.0f) * env->wnd->size[0];
+    *y = clampf(ext->near_joy_y, 0.0f, 1.0f) * env->wnd->size[1];
+    return;
+  }
   float u = original_unit(env);
-  *x = original_joystick_right(env) ? env->wnd->size[0] - 150.0f * u
-                                    : 150.0f * u;
-  *y = env->wnd->size[1] - 130.0f * u;
+  bool phone = original_is_phone(env);
+  float in = phone ? 150.0f : 100.0f, up = phone ? 130.0f : 100.0f;
+  *x = original_joystick_right(env) ? env->wnd->size[0] - in * u : in * u;
+  *y = env->wnd->size[1] - up * u;
 }
 
 static void original_boost_centre(tenv* env, float* x, float* y) {
   float u = original_unit(env);
-  *x = original_joystick_right(env) ? 140.0f * u
-                                    : env->wnd->size[0] - 140.0f * u;
-  *y = env->wnd->size[1] - 140.0f * u;
+  float in = original_is_phone(env) ? 140.0f : 100.0f;
+  *x = original_joystick_right(env) ? in * u : env->wnd->size[0] - in * u;
+  *y = env->wnd->size[1] - in * u;
 }
 
 /* The boost button's alpha (0.2 idle, 0.4 boosting) and the arrow's boost
    glow (`accel_a`, `accel_fr`), stepped once a frame. */
 static float original_boost_alpha = 0.3f;
+
+/* Arrow mode boosts like slither's own (OM, 2026-10-31; Main.as control mode 2;
+   Wyrm iOS/Scripts/engine_arrow_boost_2026_10_31.py): a double tap boosts while
+   that finger keeps steering. When and where the last finger came down. */
+/* Main.as mode 1: mean absolute positions of every non-button finger,
+   relative to the screen centre. IDs are owned until up/cancel, never timed out. */
+static struct { uint64_t id; float x, y; bool down, ignored; } classic_fingers[16];
+static uint64_t classic_boost_finger;
+static bool arrow_tap_boost;
+static Uint64 arrow_last_down_ms;
+static uint64_t arrow_last_down_finger;
+static bool arrow_last_tap_released;
+static bool boost_secondary;
+static bool boost_steering_promoted;
+static float boost_motion_total, boost_motion_last[2];
+static float arrow_last_down[2];
+
+/* Wyrm's arrow steering (not Near Original): boost by a second finger, a double
+   tap, or the fixed button; never a button under the finger. */
+static bool wyrm_arrow_mode(tenv* env) {
+  return !android_home_near_original() &&
+         mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW;
+}
+
+/* Main.as: a touch within 400 ms and 92 units of the last one, alone on the glass. */
+static void arrow_note_down(tenv* env, float x, float y, bool alone, uint64_t finger) {
+  Uint64 now = SDL_GetTicks();
+  float reach = 92.0f * original_unit(env);
+  arrow_tap_boost = alone && arrow_last_tap_released && arrow_last_down_ms != 0 &&
+      now - arrow_last_down_ms < 400 && fabsf(x-arrow_last_down[0]) < reach &&
+      fabsf(y-arrow_last_down[1]) < reach;
+  arrow_last_down_ms = alone ? now : 0;
+  arrow_last_down_finger = finger;
+  arrow_last_tap_released = false;
+  arrow_last_down[0] = x; arrow_last_down[1] = y;
+}
 static float original_accel_a = 0.0f;
 static float original_accel_fr = 0.0f;
 
@@ -211,6 +279,11 @@ static void set_zoom_from_touch(tenv* env, float x, float y) {
   mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
   float cx, cy, length, thickness;
   zoom_geometry(env, &cx, &cy, &length, &thickness);
+  /* A flipped bar reads the finger mirrored around its centre (2026-10-30). */
+  if (env->usr->usrs.ext.zoom_flip) {
+    x = 2.0f * cx - x;
+    y = 2.0f * cy - y;
+  }
   if (feel_zoom_spring) {
     /* The spring bar (OM, 2026-10-05): the finger pulls the knob from the
        middle; + is right (sideways bar) or up (upright bar). */
@@ -229,6 +302,12 @@ static void set_zoom_from_touch(tenv* env, float x, float y) {
 }
 
 static void reset_touches(mobile_controls_state* state) {
+  arrow_tap_boost = false;
+  arrow_last_down_ms = 0;
+  arrow_last_tap_released = false;
+  boost_secondary = false;
+  boost_steering_promoted = false; boost_motion_total = 0;
+  memset(classic_fingers, 0, sizeof(classic_fingers));
   state->joystick_down = false;
   state->boost_down = false;
   state->zoom_down = false;
@@ -236,6 +315,16 @@ static void reset_touches(mobile_controls_state* state) {
   state->ui_scroll_down = false;
   state->arrow_drag_distance = 0.0f;
   state->edit_target = MOBILE_EDIT_NONE;
+}
+
+static void sync_touch_policy(tenv* env) {
+  static int previous = -1;
+  int policy = mobile_controls_steering_mode(env) |
+      (env->usr->usrs.mobile_controls.boost_mode == MOBILE_BOOST_FIXED ? 4 : 0) |
+      (android_home_near_original() ? 8 : 0) |
+      (env->usr->usrs.ext.arrow_double_tap_boost ? 16 : 0);
+  if (previous != -1 && previous != policy) reset_touches(&env->usr->mobile_controls);
+  previous = policy;
 }
 
 /* Dear ImGui's SDL backend receives Android touch as pointer input, but it
@@ -516,11 +605,122 @@ static void original_aim(tenv* env, float x, float y) {
   state->aim_valid = true;
 }
 
+/* No position/hit-test: the original owner receives up/cancel across panels. */
+static void release_owned_touch(mobile_controls_state* state, uint64_t finger) {
+  if (state->joystick_down && state->joystick_finger == finger) {
+    if (arrow_last_down_finger == finger && !arrow_last_tap_released) arrow_last_down_ms = 0;
+    state->joystick_down = false; arrow_tap_boost = false;
+    boost_steering_promoted = false; boost_motion_total = 0;
+  }
+  if (state->boost_down && state->boost_finger == finger) {
+    state->boost_down = false; boost_secondary = false;
+    boost_steering_promoted = false; boost_motion_total = 0;
+  }
+  if (state->zoom_down && state->zoom_finger == finger) state->zoom_down = false;
+}
+
+static void take_boost(mobile_controls_state* state, uint64_t finger, float x, float y, bool secondary) {
+  state->boost_down = true; state->boost_finger = finger;
+  state->boost_origin[0] = x; state->boost_origin[1] = y;
+  boost_secondary = secondary;
+  boost_steering_promoted = false; boost_motion_total = 0;
+  boost_motion_last[0] = x; boost_motion_last[1] = y;
+  arrow_last_down_ms = 0; arrow_last_tap_released = false;
+}
+
+static bool touch_is_owned(mobile_controls_state* state, uint64_t finger) {
+  if ((state->joystick_down && state->joystick_finger == finger) ||
+      (state->boost_down && state->boost_finger == finger) ||
+      (state->zoom_down && state->zoom_finger == finger)) return true;
+  for (int i=0;i<16;++i) if (classic_fingers[i].down && classic_fingers[i].id == finger) return true;
+  return false;
+}
+
+static bool classic_touch(tenv* env, const SDL_Event* event, uint64_t finger,
+                          float x, float y) {
+  mobile_controls_state* state = &env->usr->mobile_controls;
+  int slot = -1;
+  for (int i = 0; i < 16; ++i)
+    if (classic_fingers[i].down && classic_fingers[i].id == finger) { slot = i; break; }
+  if (event->type == SDL_EVENT_FINGER_DOWN && slot < 0) {
+    float bx, by;
+    bool original = android_home_near_original();
+    if (original) original_boost_centre(env, &bx, &by);
+    else normalized_position(env, env->usr->usrs.mobile_controls.boost_x,
+                                  env->usr->usrs.mobile_controls.boost_y, &bx, &by);
+    bool shown = original || env->usr->usrs.mobile_controls.boost_mode == MOBILE_BOOST_FIXED;
+    float radius = original ? 160.0f * original_unit(env) :
+        78.0f * control_scale(env) * env->usr->usrs.mobile_controls.boost_size;
+    if (shown && !state->boost_down && inside_circle(x, y, bx, by, radius)) {
+      take_boost(state,finger,bx,by,false); return true;
+    }
+    if (!state->zoom_down && inside_zoom(env, x, y)) {
+      state->zoom_down = true; state->zoom_finger = finger;
+      set_zoom_from_touch(env, x, y); return true;
+    }
+    for (int i = 0; i < 16; ++i) if (!classic_fingers[i].down) { slot = i; break; }
+    if (slot >= 0) {
+      bool alone = true;
+      for(int i=0;i<16;++i) if(classic_fingers[i].down) alone=false;
+      if (original) arrow_note_down(env,x,y,alone && !state->boost_down && !state->zoom_down,finger);
+      else { arrow_tap_boost=false; arrow_last_down_ms=0; }
+      if(arrow_tap_boost) classic_boost_finger=finger;
+      float px=0,py=0; int count=0;
+      for(int i=0;i<16;++i) if(classic_fingers[i].down && !classic_fingers[i].ignored) {
+        px+=classic_fingers[i].x; py+=classic_fingers[i].y; ++count;
+      }
+      float dx=count ? x-px/count : 0, dy=count ? y-py/count : 0;
+      float reach=180*original_unit(env);
+      classic_fingers[slot].ignored = original ? (count && dx*dx+dy*dy>reach*reach) : count > 0;
+      classic_fingers[slot].id = finger; classic_fingers[slot].down = true;
+    }
+  }
+  if (slot < 0) return false;
+  classic_fingers[slot].x = x; classic_fingers[slot].y = y;
+  if (event->type == SDL_EVENT_FINGER_UP || event->type == SDL_EVENT_FINGER_CANCELED)
+    { if (arrow_last_down_finger == finger) {
+        arrow_last_tap_released = event->type == SDL_EVENT_FINGER_UP;
+        if (!arrow_last_tap_released) arrow_last_down_ms=0;
+      }
+      classic_fingers[slot].down = false;
+      if(classic_boost_finger==finger) arrow_tap_boost=false;
+    }
+  if (!android_home_near_original()) {
+    bool steering=false;
+    for (int i=0;i<16;++i) if(classic_fingers[i].down && !classic_fingers[i].ignored) steering=true;
+    if (!steering) for(int i=0;i<16;++i) if(classic_fingers[i].down) {
+      classic_fingers[i].ignored=false; break;
+    }
+  }
+  float dx = 0, dy = 0; int count = 0;
+  for (int i = 0; i < 16; ++i) if (classic_fingers[i].down && !classic_fingers[i].ignored) {
+    dx += classic_fingers[i].x - env->wnd->size[0] * 0.5f;
+    dy += classic_fingers[i].y - env->wnd->size[1] * 0.5f; ++count;
+  }
+  if (count) {
+    float length = sqrtf(dx * dx + dy * dy);
+    if (length > 0.5f) {
+      state->joystick_axis[0] = dx / length; state->joystick_axis[1] = dy / length;
+      state->aim_valid = true;
+    }
+  }
+  return true;
+}
+
 /* Near Original touch (Main.as touch begin): sideways the boost button takes
    a finger within 160u of its centre; the arrow takes the first finger
    anywhere; the joystick takes a finger on its half; upright a second finger
    boosts (the original hides the button there). Releases go through the
    normal path. */
+/* A booster may steer alone, but a fresh steering contact takes that role back. */
+static void reclaim_arrow_steering(mobile_controls_state* state) {
+  if (boost_steering_promoted && state->boost_down && state->joystick_down &&
+      state->joystick_finger == state->boost_finger) {
+    state->joystick_down = false;
+    boost_steering_promoted = false; boost_motion_total = 0;
+  }
+}
+
 static bool original_touch(tenv* env, const SDL_Event* event, uint64_t finger,
                            float x, float y) {
   mobile_controls_state* state = &env->usr->mobile_controls;
@@ -537,14 +737,12 @@ static bool original_touch(tenv* env, const SDL_Event* event, uint64_t finger,
       float bx, by;
       original_boost_centre(env, &bx, &by);
       if (inside_circle(x, y, bx, by, 160.0f * original_unit(env))) {
-        state->boost_down = true;
-        state->boost_finger = finger;
-        state->boost_origin[0] = bx;
-        state->boost_origin[1] = by;
+        take_boost(state,finger,bx,by,false);
         return true;
       }
     }
     if (arrow) {
+      reclaim_arrow_steering(state);
       if (!state->joystick_down) {
         state->joystick_down = true;
         state->joystick_finger = finger;
@@ -552,17 +750,20 @@ static bool original_touch(tenv* env, const SDL_Event* event, uint64_t finger,
         state->joystick_origin[1] = y;
         state->arrow_drag_distance = 0.0f;
         arrow_seed(env, x, y);
+        if (env->usr->usrs.ext.arrow_double_tap_boost)
+          arrow_note_down(env,x,y,!state->boost_down && !state->zoom_down,finger);
+        else { arrow_tap_boost=false; arrow_last_down_ms=0; }
         return true;
       }
       if (upright && !state->boost_down && state->joystick_finger != finger) {
-        state->boost_down = true;
-        state->boost_finger = finger;
-        state->boost_origin[0] = x;
-        state->boost_origin[1] = y;
+        take_boost(state,finger,x,y,true);
       }
       return true;
     }
-    bool on_side = original_joystick_right(env)
+    /* The half the joystick is on, wherever it was moved (OM, 2026-11-01). */
+    float side_x, side_y;
+    original_joystick_centre(env, &side_x, &side_y);
+    bool on_side = side_x >= env->wnd->size[0] * 0.5f
                        ? x >= env->wnd->size[0] * 0.5f
                        : x < env->wnd->size[0] * 0.5f;
     if (on_side && !state->joystick_down) {
@@ -592,10 +793,110 @@ static bool original_touch(tenv* env, const SDL_Event* event, uint64_t finger,
   return false;
 }
 
+static void finish_touch(tenv* env, uint32_t type, uint64_t finger) {
+  mobile_controls_state* state=&env->usr->mobile_controls;
+    if (arrow_last_down_finger==finger && arrow_last_down_ms) {
+      arrow_last_tap_released=type==SDL_EVENT_FINGER_UP;
+      if (!arrow_last_tap_released) arrow_last_down_ms=0;
+    }
+    release_owned_touch(state, finger);
+}
+
+static bool wyrm_touch_down(tenv* env, uint64_t finger, float x, float y) {
+  mobile_controls_state* state=&env->usr->mobile_controls;
+  mobile_control_settings* cfg=&env->usr->usrs.mobile_controls;
+  if (touch_is_owned(state,finger)) return true;
+  float jx,jy,bx,by;
+  normalized_position(env,cfg->joystick_x,cfg->joystick_y,&jx,&jy);
+  normalized_position(env,cfg->boost_x,cfg->boost_y,&bx,&by);
+  int mode=mobile_controls_steering_mode(env);
+  bool fixed=cfg->boost_mode==MOBILE_BOOST_FIXED;
+  float mid=env->wnd->size[0]*.5f;
+  bool left=mode==MOBILE_JOYSTICK_FIXED ? jx<mid : cfg->handedness==MOBILE_LEFT_HANDED;
+  bool own_half=left ? x<mid : x>=mid;
+  float scale=control_scale(env);
+  if (!state->zoom_down && inside_zoom(env,x,y)) {
+    state->zoom_down=true; state->zoom_finger=finger; set_zoom_from_touch(env,x,y); return true;
+  }
+  if (fixed && !state->boost_down && inside_circle(x,y,bx,by,78*scale*cfg->boost_size)) {
+    take_boost(state,finger,bx,by,false); return true;
+  }
+  if (mode==MOBILE_JOYSTICK_FIXED && !state->joystick_down &&
+      (own_half || inside_circle(x,y,jx,jy,125*scale*cfg->joystick_size))) {
+    state->joystick_down=true; state->joystick_finger=finger;
+    state->joystick_origin[0]=jx; state->joystick_origin[1]=jy;
+    update_joystick(env,x,y); return true;
+  }
+  if (mode==MOBILE_STEERING_ARROW) {
+    reclaim_arrow_steering(state);
+    if (state->joystick_down && state->joystick_finger!=finger) {
+      if (!fixed && !state->boost_down) { take_boost(state,finger,x,y,true); return true; }
+      return false;
+    }
+    if (!state->joystick_down) {
+      state->joystick_down=true; state->joystick_finger=finger;
+      state->joystick_origin[0]=x; state->joystick_origin[1]=y; state->arrow_drag_distance=0;
+      arrow_seed(env,x,y);
+      if (!fixed && env->usr->usrs.ext.arrow_double_tap_boost)
+        arrow_note_down(env,x,y,!state->boost_down && !state->zoom_down,finger);
+      else { arrow_tap_boost=false; arrow_last_down_ms=0; }
+      return true;
+    }
+  } else if (mode==MOBILE_JOYSTICK_DYNAMIC && !state->joystick_down && own_half) {
+    state->joystick_down=true; state->joystick_finger=finger;
+    state->joystick_origin[0]=x; state->joystick_origin[1]=y;
+    float hx,hy;
+    if (knob_follows_snake() && joystick_heading(env,&hx,&hy)) {
+      float reach=92*scale*cfg->joystick_size;
+      state->joystick_origin[0]=x-hx*reach; state->joystick_origin[1]=y-hy*reach;
+    }
+    update_joystick(env,x,y); return true;
+  }
+  if (!fixed && mode!=MOBILE_STEERING_ARROW && !own_half && !state->boost_down) {
+    take_boost(state,finger,x,y,false); return true;
+  }
+  return false;
+}
+
+/* Main.as trackTouch: an otherwise ignored booster can steer after 74 units
+   of accumulated movement when no steering contact remains. Boost ownership
+   stays independent, including while the returning contact resumes steering. */
+static bool track_boost_motion(tenv* env, uint64_t finger, float x, float y) {
+  mobile_controls_state* state = &env->usr->mobile_controls;
+  if (!state->boost_down || state->boost_finger != finger) return false;
+  float travel = fabsf(x-boost_motion_last[0]) + fabsf(y-boost_motion_last[1]);
+  boost_motion_last[0]=x; boost_motion_last[1]=y;
+  state->boost_origin[0]=x; state->boost_origin[1]=y;
+  if (mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW) {
+    if (!state->joystick_down) {
+      boost_motion_total += travel;
+      if (boost_motion_total > 74.0f * original_unit(env)) {
+        state->joystick_down=true; state->joystick_finger=finger;
+        state->joystick_origin[0]=x; state->joystick_origin[1]=y;
+        state->arrow_drag_distance=0; arrow_seed(env,x,y);
+        boost_steering_promoted=true;
+      }
+    } else if (boost_steering_promoted && state->joystick_finger==finger) {
+      update_arrow(env,x,y);
+    }
+  }
+  return true;
+}
+
+static void decay_boost_motion(tenv* env) {
+  mobile_controls_state* state = &env->usr->mobile_controls;
+  if (mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW &&
+      state->boost_down && !state->joystick_down) {
+    int steps = env->usr->gdata.data.vfrb;
+    if (steps < 0) steps=0; else if (steps > 120) steps=120;
+    boost_motion_total -= steps * 1.3f * original_unit(env);
+    if (boost_motion_total < 0) boost_motion_total=0;
+  }
+}
+
 bool mobile_controls_process_event(tenv* env, const void* raw_event) {
   const SDL_Event* event = raw_event;
   mobile_controls_state* state = &env->usr->mobile_controls;
-  mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
 
 #ifdef WYRM_DESKTOP
   /* WYRM_DESKTOP: the snake follows the mouse from the middle of the game
@@ -689,6 +990,17 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
   float x = event->tfinger.x * env->wnd->size[0];
   float y = event->tfinger.y * env->wnd->size[1];
 
+  sync_touch_policy(env);
+
+  /* Releases belong to the input owner even when a panel now covers it.
+     Clear before any UI consumer can swallow the event. */
+  if (event->type == SDL_EVENT_FINGER_UP || event->type == SDL_EVENT_FINGER_CANCELED) {
+    finish_touch(env,event->type,finger);
+    mobile_hotkeys_process_event(env, raw_event);
+    if (mobile_controls_steering_mode(env) == MOBILE_STEERING_CLASSIC)
+      classic_touch(env, event, finger, x, y);
+  }
+
   /* Playable AI's first-entry notice owns the whole touch surface. The layout
      editor never shows it, and no steering/button state can leak underneath. */
   if (ai_mode_notice_process_event(env, raw_event)) {
@@ -696,6 +1008,9 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
     mobile_hotkeys_reset_runtime(env);
     return true;
   }
+
+  if (event->type==SDL_EVENT_FINGER_DOWN && touch_is_owned(state,finger)) return true;
+  if (event->type==SDL_EVENT_FINGER_MOTION && track_boost_motion(env,finger,x,y)) return true;
 
   /* The team roster and chat window own the finger that lands on them
      (scrolling, folding, the message box); every other finger keeps
@@ -746,9 +1061,32 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
     return false;
   }
 
+  /* The zoom bar is on top (OM, 2026-11-01): a finger that lands on it
+     zooms, even where an on-screen button or the boost button lies under
+     it (Classic's zoom did nothing beside a big boost button). */
+  if (event->type == SDL_EVENT_FINGER_DOWN && !state->zoom_down &&
+      inside_zoom(env, x, y)) {
+    state->zoom_down = true;
+    state->zoom_finger = finger;
+    set_zoom_from_touch(env, x, y);
+    return true;
+  }
+  if (event->type == SDL_EVENT_FINGER_MOTION && state->zoom_down &&
+      state->zoom_finger == finger) {
+    set_zoom_from_touch(env, x, y);
+    return true;
+  }
+
   // Visible on-screen buttons own their finger before joystick, boost or zoom.
   // This preserves the direct-touch isolation contract for every button.
   if (mobile_hotkeys_process_event(env, raw_event)) return true;
+
+  if (mobile_controls_steering_mode(env) == MOBILE_STEERING_CLASSIC) {
+    if (state->zoom_down && state->zoom_finger == finger && event->type == SDL_EVENT_FINGER_MOTION) {
+      set_zoom_from_touch(env, x, y); return true;
+    }
+    return classic_touch(env, event, finger, x, y);
+  }
 
   /* Near Original: slither's own fixed controls (releases fall through). */
   if (android_home_near_original() && event->type != SDL_EVENT_FINGER_UP &&
@@ -756,110 +1094,7 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
     return original_touch(env, event, finger, x, y);
 
   if (event->type == SDL_EVENT_FINGER_DOWN) {
-    float mid = env->wnd->size[0] * 0.5f;
-    bool joystick_left = cfg->handedness == MOBILE_LEFT_HANDED;
-    bool in_joystick_half = joystick_left ? x < mid : x >= mid;
-    /* Upright there is no left or right hand (OM, 2026-10-02): the first free
-       finger anywhere starts the dynamic joystick, and once a joystick is
-       held (or it is a fixed one) any other finger is touch-zone boost, the
-       way Arrow steering already works. Fixed controls keep their drawn hit
-       circles above. Sideways is unchanged. Only which finger starts which
-       control changes; nothing is sent differently. */
-    if (env->wnd->size[1] > env->wnd->size[0])
-      in_joystick_half = mobile_controls_steering_mode(env) == MOBILE_JOYSTICK_DYNAMIC &&
-                         !state->joystick_down;
-    float jx, jy, bx, by;
-    normalized_position(env, cfg->joystick_x, cfg->joystick_y, &jx, &jy);
-    normalized_position(env, cfg->boost_x, cfg->boost_y, &bx, &by);
-    float scale = control_scale(env);
-
-    bool fixed_boost_hit =
-        cfg->boost_mode == MOBILE_BOOST_FIXED &&
-        inside_circle(x, y, bx, by, 112.0f * scale * cfg->boost_size);
-    bool fixed_joystick_hit =
-        mobile_controls_steering_mode(env) == MOBILE_JOYSTICK_FIXED &&
-        inside_circle(x, y, jx, jy, 125.0f * scale * cfg->joystick_size);
-
-    // Fixed controls own their visible hit areas even if the user moved one
-    // across the handedness divider in the layout editor.
-    if (!state->boost_down && fixed_boost_hit) {
-      state->boost_down = true;
-      state->boost_finger = finger;
-      state->boost_origin[0] = bx;
-      state->boost_origin[1] = by;
-      return true;
-    }
-    if (!state->joystick_down && fixed_joystick_hit) {
-      state->joystick_down = true;
-      state->joystick_finger = finger;
-      state->joystick_origin[0] = jx;
-      state->joystick_origin[1] = jy;
-      update_joystick(env, x, y);
-      return true;
-    }
-
-    // A deliberately placed fixed steering/boost control takes precedence
-    // over the movable zoom bar. Outside those explicit hit circles, the zoom
-    // control can safely claim its own finger.
-    if (!state->zoom_down && inside_zoom(env, x, y)) {
-      state->zoom_down = true;
-      state->zoom_finger = finger;
-      set_zoom_from_touch(env, x, y);
-      return true;
-    }
-
-    if (mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW) {
-      // Arrow steering is relative to the touch-down point. The first finger
-      // may start anywhere on the gameplay surface; moving it changes heading
-      // without snapping the snake toward the absolute tap position. In
-      // touch-zone mode the second finger may boost from anywhere. Fixed
-      // mode owns only its drawn button; letting this shortcut run there made
-      // every second touch behave as though it had hit that button.
-      if (cfg->boost_mode == MOBILE_BOOST_TOUCH_ZONE &&
-          state->joystick_down && state->joystick_finger != finger &&
-          !state->boost_down) {
-        state->boost_down = true;
-        state->boost_finger = finger;
-        state->boost_origin[0] = x;
-        state->boost_origin[1] = y;
-        return true;
-      }
-      if (!state->joystick_down) {
-        state->joystick_down = true;
-        state->joystick_finger = finger;
-        state->joystick_origin[0] = x;
-        state->joystick_origin[1] = y;
-        state->arrow_drag_distance = 0.0f;
-        arrow_seed(env, x, y);
-        return true;
-      }
-    } else if (mobile_controls_steering_mode(env) == MOBILE_JOYSTICK_DYNAMIC &&
-               !state->joystick_down && in_joystick_half) {
-      state->joystick_down = true;
-      state->joystick_finger = finger;
-      state->joystick_origin[0] = x;
-      state->joystick_origin[1] = y;
-      /* The base is placed so the finger holds the knob on the snake's side:
-         the stick starts where the snake is going, not in the centre. */
-      float hx, hy;
-      if (knob_follows_snake() && joystick_heading(env, &hx, &hy)) {
-        float reach = 92.0f * control_scale(env) * cfg->joystick_size;
-        state->joystick_origin[0] = x - hx * reach;
-        state->joystick_origin[1] = y - hy * reach;
-      }
-      update_joystick(env, x, y);
-      return true;
-    }
-
-    bool can_take_boost = cfg->boost_mode == MOBILE_BOOST_TOUCH_ZONE &&
-                          !in_joystick_half;
-    if (!state->boost_down && can_take_boost) {
-      state->boost_down = true;
-      state->boost_finger = finger;
-      state->boost_origin[0] = x;
-      state->boost_origin[1] = y;
-      return true;
-    }
+    return wyrm_touch_down(env,finger,x,y);
   } else if (event->type == SDL_EVENT_FINGER_MOTION) {
     if (state->joystick_down && state->joystick_finger == finger) {
       if (mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW)
@@ -876,6 +1111,7 @@ bool mobile_controls_process_event(tenv* env, const void* raw_event) {
     bool released_owned_touch = false;
     if (state->joystick_down && state->joystick_finger == finger) {
       state->joystick_down = false;
+      arrow_tap_boost = false; /* the double tap's boost ends with its finger */
       released_owned_touch = true;
     }
     if (state->boost_down && state->boost_finger == finger) {
@@ -900,6 +1136,43 @@ bool mobile_controls_process_event(tenv* env, const void* event) {
 
 void mobile_controls_update(tenv* env) {
   mobile_controls_state* state = &env->usr->mobile_controls;
+#ifdef WYRM_SDL_JNI
+  sync_touch_policy(env);
+#endif
+
+#ifdef WYRM_SDL_JNI
+  static Uint64 last_touch_audit;
+  Uint64 now = SDL_GetTicks();
+  if (now-last_touch_audit >= 100) {
+    last_touch_audit=now;
+    uint64_t live[64]; int live_count=0, device_count=0;
+    SDL_TouchID* devices=SDL_GetTouchDevices(&device_count);
+    for(int d=0;devices && d<device_count;++d) {
+      int count=0; SDL_Finger** fingers=SDL_GetTouchFingers(devices[d],&count);
+      for(int f=0;fingers && f<count && live_count<64;++f) live[live_count++]=(uint64_t)fingers[f]->id;
+      SDL_free(fingers);
+    }
+    SDL_free(devices);
+    uint64_t owners[3]={state->joystick_finger,state->boost_finger,state->zoom_finger};
+    for(int i=0;i<3;++i) {
+      bool found=false; for(int j=0;j<live_count;++j) if(owners[i]==live[j]) found=true;
+      if(!found) release_owned_touch(state,owners[i]);
+    }
+    for(int i=0;i<16;++i) if(classic_fingers[i].down) {
+      bool found=false; for(int j=0;j<live_count;++j) if(classic_fingers[i].id==live[j]) found=true;
+      if(!found) {
+        if(classic_boost_finger==classic_fingers[i].id) arrow_tap_boost=false;
+        if(arrow_last_down_finger==classic_fingers[i].id) { arrow_last_down_ms=0; arrow_last_tap_released=false; }
+        classic_fingers[i].down=false;
+      }
+    }
+    mobile_hotkeys_state* keys=&env->usr->mobile_hotkeys;
+    for(int i=0;i<NUM_MOBILE_ACTIONS;++i) if(keys->down[i]) {
+      bool found=false; for(int j=0;j<live_count;++j) if(keys->finger[i]==live[j]) found=true;
+      if(!found) keys->down[i]=false;
+    }
+  }
+#endif
 
   /*
    * Outside a live match, nothing may still be holding a gameplay control.
@@ -919,9 +1192,7 @@ void mobile_controls_update(tenv* env) {
   if (env->usr->gdata.curr_screen != PLAYING ||
       (env->usr->gdata.conn != CONNECTED &&
        env->usr->gdata.conn != AI_CONNECTED)) {
-    state->joystick_down = false;
-    state->boost_down = false;
-    state->zoom_down = false;
+    reset_touches(state);
     state->aim_valid = false;
     state->arrow_drag_distance = 0.0f;
     /* The overlay buttons have the same gate and so had the same wound, but
@@ -944,6 +1215,7 @@ void mobile_controls_update(tenv* env) {
    */
   {
     game_data* gdata = &env->usr->gdata;
+    decay_boost_motion(env);
     float vfr = gdata->data.vfr;
     if (!(vfr > 0.0f) || vfr > 4.0f) vfr = 1.0f;
 
@@ -996,7 +1268,8 @@ void mobile_controls_update(tenv* env) {
     /* Near Original: the boost button's alpha (Main.as: 0.2 idle, up to 0.4
        while boosting, 0.01 a frame) and the arrow's boost glow (accel_a
        +0.02 / -0.03 a frame, accel_fr +0.15 while boosting). */
-    if (state->boost_down) {
+    /* Arrow's tap-boost glows too (OM, 2026-11-01). */
+    if (state->boost_down || (arrow_tap_boost && state->joystick_down)) {
       original_boost_alpha += 0.01f * vfr;
       if (original_boost_alpha > 0.4f) original_boost_alpha = 0.4f;
       original_accel_a += 0.02f * vfr;
@@ -1041,10 +1314,22 @@ bool mobile_controls_get_aim(tenv* env, int* x, int* y) {
 
 bool mobile_controls_boost_down(tenv* env) {
 #ifdef WYRM_SDL_JNI
-  return env->usr->mobile_controls.boost_down;
+  mobile_controls_state* state=&env->usr->mobile_controls;
+  int mode=mobile_controls_steering_mode(env);
+  bool original=android_home_near_original();
+  bool fixed=env->usr->usrs.mobile_controls.boost_mode==MOBILE_BOOST_FIXED;
+  if (mode==MOBILE_STEERING_CLASSIC) {
+    int count=0;
+    for(int i=0;i<16;++i) if(classic_fingers[i].down && (!original || !classic_fingers[i].ignored)) ++count;
+    if ((original || !fixed) && count>1) return true;
+    if (original && arrow_tap_boost)
+      for(int i=0;i<16;++i) if(classic_fingers[i].down && classic_fingers[i].id==classic_boost_finger) return true;
+  }
+  if (arrow_tap_boost && state->joystick_down && (wyrm_arrow_mode(env) || (original && mode==MOBILE_STEERING_ARROW)) &&
+      env->usr->usrs.ext.arrow_double_tap_boost && (original || !fixed)) return true;
+  return state->boost_down;
 #else
-  (void)env;
-  return false;
+  (void)env; return false;
 #endif
 }
 
@@ -1078,6 +1363,23 @@ static bool arrow_geometry(tenv* env, float* ax, float* ay, float* dx,
   *ay = env->wnd->size[1] * 0.5f - lay + state->arrow_draw[1] + *dy * drift;
   *length = 70.0f * scale * arrow->size;
   *width = 52.0f * scale * arrow->size;
+  return true;
+}
+
+/* The assist laser follows the finger in Classic, as it follows the arrow
+   in Arrow (OM, 2026-11-01). Draw-only: classic_touch already steers by
+   this same axis. */
+bool mobile_controls_classic_aim(tenv* env, float* dx, float* dy) {
+  if (!dx || !dy || mobile_controls_steering_mode(env) != MOBILE_STEERING_CLASSIC)
+    return false;
+  mobile_controls_state* state = &env->usr->mobile_controls;
+  float x = 0, y = 0; int count = 0;
+  for (int i = 0; i < 16; ++i)
+    if (classic_fingers[i].down && !classic_fingers[i].ignored) {
+      x += classic_fingers[i].x; y += classic_fingers[i].y; ++count;
+    }
+  if (!count || !state->aim_valid) return false;
+  *dx = x/count; *dy = y/count;
   return true;
 }
 
@@ -1133,6 +1435,8 @@ static void draw_paper_disc(ImDrawList* dl, float cx, float cy, float radius,
                        48, 1.5f);
 }
 
+static void original_halo(ImDrawList* dl, float cx, float cy, float radius,
+                          float spread, float alpha);
 static void draw_joystick(tenv* env, ImDrawList* dl, float cx, float cy,
                           bool active, bool editor) {
   mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
@@ -1140,43 +1444,33 @@ static void draw_joystick(tenv* env, ImDrawList* dl, float cx, float cy,
   float radius = 92.0f * control_scale(env) * cfg->joystick_size;
   float alpha = env->usr->usrs.joystick_opacity;
 
-  draw_paper_disc(dl, cx, cy, radius, alpha, active);
-  /* How far the thumb may travel, at the faintest weight that still reads. */
-  ImDrawList_AddCircle(dl, (ImVec2){cx, cy}, radius * 0.62f,
-                       active
-                           ? arena_theme_colour(ARENA_THEME_ON_INK, alpha * 0.22f)
-                           : arena_theme_colour(ARENA_THEME_INK, alpha * 0.14f),
-                       48, 1.0f);
-
+  /* Wyrm keeps the same paper/ink skin before, during and after a hold. */
+  float a = clampf(alpha, 0.05f, 1.0f);
+  float base = radius * 0.73f;
   float ax = state->joystick_axis[0];
   float ay = state->joystick_axis[1];
-  /* At rest (or held in the dead zone) the knob shows where the snake goes. */
   float hx, hy;
-  if (!editor && knob_follows_snake() &&
-      (!active || (fabsf(ax) < 0.08f && fabsf(ay) < 0.08f)) &&
-      joystick_heading(env, &hx, &hy)) {
+  bool still = fabsf(ax) < 0.08f && fabsf(ay) < 0.08f;
+  if (editor) {
+    ax = ay = 0.0f;
+  } else if (!active && !knob_follows_snake()) {
+    ax = ay = 0.0f; /* the reset knob: back to the middle */
+  } else if ((!state->aim_valid || still) && knob_follows_snake() &&
+             joystick_heading(env, &hx, &hy)) {
+    /* Nothing steered yet: where the snake goes. Once let go, the knob
+       stays exactly where it was (OM, 2026-11-01): no jump back to the
+       middle or to the head's still-turning angle. */
     ax = hx;
     ay = hy;
   }
-  float kx = cx + ax * radius * 0.58f;
-  float ky = cy + ay * radius * 0.58f;
-  if (editor) {
-    kx = cx;
-    ky = cy;
-  }
-  float knob = radius * 0.39f;
-  ImDrawList_AddCircleFilled(dl, (ImVec2){kx, ky + knob * 0.12f}, knob * 1.06f,
-                             color_u32(0, 0, 0, alpha * 0.18f), 36);
-  ImDrawList_AddCircleFilled(dl, (ImVec2){kx, ky}, knob,
-                             active
-                                 ? arena_theme_colour(ARENA_THEME_ON_INK, alpha * 0.96f)
-                                 : arena_theme_colour(ARENA_THEME_INK, alpha * 0.92f),
-                             36);
-  ImDrawList_AddCircle(dl, (ImVec2){kx, ky}, knob,
-                       active
-                           ? arena_theme_colour(ARENA_THEME_ON_INK, alpha)
-                           : arena_theme_colour(ARENA_THEME_INK, alpha),
-                       36, 1.5f);
+  draw_paper_disc(dl,cx,cy,base,a,false);
+  float knob = base * 0.402f;
+  float kx = cx + ax * base * 0.536f;
+  float ky = cy + ay * base * 0.536f;
+  original_halo(dl, kx, ky, knob, knob * 0.146f, a);
+  ImDrawList_AddCircleFilled(dl, (ImVec2){kx, ky}, knob, arena_theme_colour(ARENA_THEME_INK,a), 32);
+  (void)active;
+
 }
 
 static void draw_boost(tenv* env, ImDrawList* dl, float cx, float cy,
@@ -1188,18 +1482,22 @@ static void draw_boost(tenv* env, ImDrawList* dl, float cx, float cy,
 
   draw_paper_disc(dl, cx, cy, radius, alpha, active);
 
-  /* Two chevrons, drawn rather than typed: the interface font has no glyph
-     worth using here, and lines stay crisp at any control size. */
-  float glyph = radius * 0.30f;
-  ImU32 ink = arena_theme_colour(ARENA_THEME_INK, 1.0f);
-  for (int i = 0; i < 2; ++i) {
-    float ox = cx + (i == 0 ? -glyph * 0.55f : glyph * 0.45f);
-    ImVec2 chevron[3] = {{ox - glyph * 0.35f, cy - glyph * 0.62f},
-                         {ox + glyph * 0.35f, cy},
-                         {ox - glyph * 0.35f, cy + glyph * 0.62f}};
-    ImDrawList_AddPolyline(dl, chevron, 3, ink, ImDrawFlags_None,
-                           radius * 0.075f);
+  /* The original boost's triangle (OM, 2026-11-01): boostie's, pointing
+     up, with its soft shadow, on the disc's scale (r 110), in Wyrm's ink.
+     It follows the button's size and opacity. */
+  float tk = radius / 110.0f;
+  for (int i = 1; i <= 4; ++i) {
+    float drop = (2.0f + 4.0f * i) * tk;
+    ImDrawList_AddTriangleFilled(
+        dl, (ImVec2){cx, cy - 41.5f * tk + drop},
+        (ImVec2){cx + 56.0f * tk, cy + 25.5f * tk + drop},
+        (ImVec2){cx - 56.0f * tk, cy + 25.5f * tk + drop},
+        color_u32(0, 0, 0, alpha * 0.07f));
   }
+  ImDrawList_AddTriangleFilled(dl, (ImVec2){cx, cy - 41.5f * tk},
+                               (ImVec2){cx + 56.0f * tk, cy + 25.5f * tk},
+                               (ImVec2){cx - 56.0f * tk, cy + 25.5f * tk},
+                               arena_theme_colour(ARENA_THEME_INK, alpha));
 }
 
 typedef struct mobile_arrow_shape {
@@ -1254,6 +1552,77 @@ static mobile_arrow_shape arrow_shape(int style) {
 }
 
 static void draw_original_arrow(tenv* env, ImDrawList* dl);
+static ImU32 original_arrow_colour(tenv* env, float alpha);
+
+/* slither's arrow layers on any outline (OM, 2026-11-01), as
+   draw_original_arrow lays them: the DropShadowFilter halo as rings out
+   from the path along each corner's bisector (erfc profile, sigma 6 px,
+   at most 11.5 px past the outline), the 9 px black outline, the fill, and
+   while boosting the ADD copy (the colour doubled at `glow`). `s` is screen
+   px per texture px. `convex` fills in one call, else a fan from `centre`. */
+static void draw_layered_arrow(ImDrawList* dl, const ImVec2* p, int n,
+                               ImVec2 centre, float s, float alpha,
+                               ImU32 fill, float glow, bool convex) {
+  if (n < 3 || n > 8 || alpha <= 0.0f) return;
+  float area = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    int next = (i + 1) % n;
+    area += p[i].x * p[next].y - p[next].x * p[i].y;
+  }
+  float side = area > 0.0f ? 1.0f : -1.0f;
+  const int bands = 6;
+  const float sigma = 6.0f, reach = 11.5f;
+  float before = 0.0f;
+  for (int j = bands; j >= 1; --j) {
+    float x = (j - 0.5f) * (reach / bands);
+    float want = alpha * 0.5f * erfcf(x / (sigma * 1.41421356f));
+    float a = before >= 0.999f ? 0.0f : 1.0f - (1.0f - want) / (1.0f - before);
+    if (a > 0.003f) {
+      float d = (4.5f + j * (reach / bands)) * s;
+      ImVec2 q[8];
+      for (int i = 0; i < n; ++i) {
+        int prev = (i + n - 1) % n, next = (i + 1) % n;
+        float e1x = p[i].x - p[prev].x, e1y = p[i].y - p[prev].y;
+        float e2x = p[next].x - p[i].x, e2y = p[next].y - p[i].y;
+        float l1 = sqrtf(e1x * e1x + e1y * e1y), l2 = sqrtf(e2x * e2x + e2y * e2y);
+        if (l1 < 0.0001f) l1 = 0.0001f;
+        if (l2 < 0.0001f) l2 = 0.0001f;
+        float n1x = e1y / l1, n1y = -e1x / l1;
+        float n2x = e2y / l2, n2y = -e2x / l2;
+        float bx = n1x + n2x, by = n1y + n2y;
+        float bl = sqrtf(bx * bx + by * by);
+        if (bl < 0.0001f) { bx = n1x; by = n1y; bl = 1.0f; }
+        q[i] = (ImVec2){p[i].x + bx / bl * d * side, p[i].y + by / bl * d * side};
+      }
+      ImU32 shade = color_u32(0, 0, 0, a);
+      for (int i = 0; i < n; ++i) {
+        int next = (i + 1) % n;
+        ImDrawList_AddTriangleFilled(dl, p[i], p[next], q[next], shade);
+        ImDrawList_AddTriangleFilled(dl, p[i], q[next], q[i], shade);
+      }
+    }
+    if (want > before) before = want;
+  }
+  ImDrawList_AddPolyline(dl, p, n, color_u32(0, 0, 0, alpha),
+                         ImDrawFlags_Closed, 9.0f * s);
+  for (int pass = 0; pass < 2; ++pass) {
+    ImU32 colour = fill;
+    if (pass == 1) {
+      if (glow <= 0.004f) break;
+      ImVec4 base;
+      igColorConvertU32ToFloat4(&base, fill);
+      colour = color_u32(base.x * 2.0f > 1.0f ? 1.0f : base.x * 2.0f,
+                         base.y * 2.0f > 1.0f ? 1.0f : base.y * 2.0f,
+                         base.z * 2.0f > 1.0f ? 1.0f : base.z * 2.0f, glow);
+    }
+    if (convex) {
+      ImDrawList_AddConvexPolyFilled(dl, p, n, colour);
+    } else {
+      for (int i = 0; i < n; ++i)
+        ImDrawList_AddTriangleFilled(dl, centre, p[i], p[(i + 1) % n], colour);
+    }
+  }
+}
 
 static void draw_arrow(tenv* env, ImDrawList* dl) {
   mobile_control_settings* cfg = &env->usr->usrs.mobile_controls;
@@ -1292,16 +1661,20 @@ static void draw_arrow(tenv* env, ImDrawList* dl) {
   ImU32 fill = color_u32(arrow->color[0] * brightness,
                          arrow->color[1] * brightness,
                          arrow->color[2] * brightness, alpha);
-  if (env->usr->usrs.arrow_style == MOBILE_ARROW_CURRENT) {
-    ImDrawList_AddConvexPolyFilled(dl, points, shape.count, fill);
-  } else {
-    for (int i = 0; i < shape.count; ++i)
-      ImDrawList_AddTriangleFilled(dl, (ImVec2){ax, ay}, points[i],
-                                   points[(i + 1) % shape.count], fill);
+  /* The snake's arrow colour, as slither's, until the player picks one
+     (OM, 2026-11-01); the brightness slider is for a picked colour. */
+  if (!env->usr->usrs.ext.arrow_colour_own) fill = original_arrow_colour(env, alpha);
+  /* slither's layers (OM, 2026-11-01): its 9 px outline and halo are for a
+     52 px long arrow, so they scale with this one's length. */
+  float lo = 0.0f, hi = 0.0f;
+  for (int i = 0; i < shape.count; ++i) {
+    if (shape.along[i] < lo) lo = shape.along[i];
+    if (shape.along[i] > hi) hi = shape.along[i];
   }
-  ImDrawList_AddPolyline(dl, points, shape.count,
-                         color_u32(0.015f, 0.022f, 0.028f, alpha),
-                         ImDrawFlags_Closed, 4.0f);
+  float s = (hi - lo) * length / 52.0f;
+  float glow = alpha * original_accel_a * (0.5f + 0.5f * cosf(original_accel_fr));
+  draw_layered_arrow(dl, points, shape.count, (ImVec2){ax, ay}, s, alpha, fill,
+                     glow, env->usr->usrs.arrow_style == MOBILE_ARROW_CURRENT);
 }
 
 /* ---- Near Original drawing (Main.as textures, drawn here) ---- */
@@ -1459,6 +1832,10 @@ static void draw_original_joystick(tenv* env, ImDrawList* dl) {
   float u = original_unit(env);
   float cx, cy;
   original_joystick_centre(env, &cx, &cy);
+  /* Its size from the layout editor (OM, 2026-11-01), 1 = the original's. */
+  float js = env->usr->usrs.ext.near_joy_size;
+  if (!(js >= 0.65f && js <= 1.45f)) js = 1.0f;
+  u *= js;
   float base = 64.0f * 0.7f * u;
   original_halo(dl, cx, cy, base, 7.0f * 0.7f * u, 0.35f);
   ImDrawList_AddCircleFilled(dl, (ImVec2){cx, cy}, base,
@@ -1506,7 +1883,7 @@ static void draw_original_boost(tenv* env, ImDrawList* dl) {
 static void draw_original_controls(tenv* env, ImDrawList* dl) {
   if (mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW)
     draw_original_arrow(env, dl);
-  else
+  else if (mobile_controls_steering_mode(env) != MOBILE_STEERING_CLASSIC)
     draw_original_joystick(env, dl);
   /* Upright the original has no button: a second finger boosts. */
   if (env->wnd->size[0] >= env->wnd->size[1]) draw_original_boost(env, dl);
@@ -1559,6 +1936,14 @@ static void draw_zoom(tenv* env, ImDrawList* dl, bool editor) {
     else
       knob = (ImVec2){cx, cy - zoom_spring_t * half_len};
   }
+  /* Flipped (OM, 2026-10-30): the knob, run and marks mirror along the bar. */
+  const bool zoom_flip = env->usr->usrs.ext.zoom_flip;
+  if (zoom_flip) {
+    if (cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL)
+      knob.x = 2.0f * cx - knob.x;
+    else
+      knob.y = 2.0f * cy - knob.y;
+  }
   /* The run reads from the near end to the knob, whichever way the bar sits. */
   ImVec2 fill_min = track_min;
   ImVec2 fill_max = track_max;
@@ -1570,7 +1955,7 @@ static void draw_zoom(tenv* env, ImDrawList* dl, bool editor) {
       fill_min.y = knob.y < cy ? knob.y : cy;
       fill_max.y = knob.y < cy ? cy : knob.y;
     }
-    float mark = half * 0.9f;
+    /* Fit the complete baked glyph, including its halo, inside the track. */
     ImU32 sign = arena_theme_colour(ARENA_THEME_INK, alpha * 0.9f);
     float inset = half * 2.2f;
     ImVec2 minus, plus;
@@ -1581,13 +1966,22 @@ static void draw_zoom(tenv* env, ImDrawList* dl, bool editor) {
       minus = (ImVec2){cx, track_max.y - inset};
       plus = (ImVec2){cx, track_min.y + inset};
     }
-    ImDrawList_AddLine(dl, (ImVec2){minus.x - mark, minus.y}, (ImVec2){minus.x + mark, minus.y}, sign, 2.5f);
-    ImDrawList_AddLine(dl, (ImVec2){plus.x - mark, plus.y}, (ImVec2){plus.x + mark, plus.y}, sign, 2.5f);
-    ImDrawList_AddLine(dl, (ImVec2){plus.x, plus.y - mark}, (ImVec2){plus.x, plus.y + mark}, sign, 2.5f);
-  } else if (cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL)
-    fill_max.x = knob.x;
-  else
-    fill_min.y = knob.y;
+    if (zoom_flip) {
+      ImVec2 swap = minus;
+      minus = plus;
+      plus = swap;
+    }
+    /* The original's - and + (OM, 2026-11-01): the sheet's Black glyphs,
+       white over their baked outline, as wide as the old marks. */
+    (void)sign;
+    ImU32 white = color_u32(1, 1, 1, alpha * 0.95f);
+    sheet_glyph_fit('-', SHEET_BLACK, half*1.1f, half*1.1f, minus.x, minus.y, white);
+    sheet_glyph_fit('+', SHEET_BLACK, half*1.1f, half*1.1f, plus.x, plus.y, white);
+  } else if (cfg->zoom_orientation == MOBILE_ZOOM_HORIZONTAL) {
+    if (zoom_flip) fill_min.x = knob.x; else fill_max.x = knob.x;
+  } else {
+    if (zoom_flip) fill_max.y = knob.y; else fill_min.y = knob.y;
+  }
   ImDrawList_AddRectFilled(dl, fill_min, fill_max,
                            arena_theme_colour(ARENA_THEME_INK, alpha * 0.78f),
                            half, 0);
@@ -1622,8 +2016,8 @@ void mobile_controls_draw_gameplay(tenv* env) {
      buttons stay the player's. */
   if (android_home_near_original()) {
     draw_original_controls(env, dl);
-    draw_zoom(env, dl, false);
     mobile_hotkeys_draw_gameplay(env);
+    draw_zoom(env, dl, false); /* on top (OM, 2026-11-01) */
     return;
   }
   float jx, jy, bx, by;
@@ -1640,15 +2034,16 @@ void mobile_controls_draw_gameplay(tenv* env) {
     }
     draw_joystick(env, dl, jx, jy, state->joystick_down, false);
   }
-  if (cfg->boost_mode == MOBILE_BOOST_FIXED || state->boost_down) {
-    if (cfg->boost_mode == MOBILE_BOOST_TOUCH_ZONE) {
-      bx = state->boost_origin[0];
-      by = state->boost_origin[1];
-    }
-    draw_boost(env, dl, bx, by, state->boost_down, false);
-  }
-  draw_zoom(env, dl, false);
+  /* The fixed button only, and only while "Show boost button" is on (OM,
+     2026-10-31); it lights while any boost is on. No button follows a finger. */
+  bool arrow_boost = mobile_controls_steering_mode(env) == MOBILE_STEERING_ARROW;
+  bool boosting = state->boost_down || (arrow_boost && arrow_tap_boost && state->joystick_down);
+  if (cfg->boost_mode == MOBILE_BOOST_FIXED)
+    draw_boost(env, dl, bx, by, boosting, false);
   mobile_hotkeys_draw_gameplay(env);
+  /* The zoom bar over the buttons and boost, as it takes their touches
+     (OM, 2026-11-01). */
+  draw_zoom(env, dl, false);
 #else
   (void)env;
 #endif

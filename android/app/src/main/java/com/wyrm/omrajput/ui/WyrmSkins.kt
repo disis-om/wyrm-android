@@ -17,9 +17,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import com.wyrm.omrajput.WyrmActivity
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.ceil
 
 /**
  * Wyrm skins (OM, 2026-10-13): creatures and strip looks the engine draws
@@ -83,53 +91,113 @@ internal object WyrmSkins {
 }
 
 /**
- * The worn skin, moving gently and slowly on the Skin page's preview (OM,
- * 2026-10-13): its frames in turn, each blended into the next. Until the
- * frames are in, the still picture.
+ * The worn skin on the Skin page's preview, live (OM, 2026-10-25): the arena's
+ * own skin drawing (game/wyrm_skin_preview.c) draws a snake that swims, turns
+ * and now and then boosts, every frame, for as long as the page is open. It
+ * was a 32-frame picture loop. Until the engine library answers, the still
+ * picture. [rgb] is the snake's colour (strip looks wear it).
  */
 @Composable
-internal fun WyrmSkinLive(number: Int, still: ImageBitmap?, modifier: Modifier = Modifier) {
-    val sheet by rememberWyrmSkinFrames(number)
-    val clock = rememberInfiniteTransition(label = "wyrm-skin-live")
-    val phase by clock.animateFloat(
-        initialValue = 0f, targetValue = WyrmSkins.LIVE_FRAMES.toFloat(),
-        animationSpec = infiniteRepeatable(tween(WyrmSkins.LIVE_MILLIS, easing = LinearEasing)),
-        label = "wyrm-skin-frame",
-    )
+internal fun WyrmSkinLive(number: Int, still: ImageBitmap?, modifier: Modifier = Modifier, rgb: Int = 0x8B8CF0) {
+    val mesh = remember { WyrmSkinMesh() }
+    var frameNanos by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(number) {
+        while (true) withFrameNanos { frameNanos = it }
+    }
     Canvas(modifier.padding(horizontal = 18.dp, vertical = 10.dp)) {
-        val s = sheet
-        if (s == null) {
+        val now = frameNanos / 1_000_000_000.0
+        val packed = if (frameNanos == 0L) 0L else WyrmActivity.wyrmSkinPreview(
+            number, size.width, size.height, now, rgb and 0xFFFFFF, mesh.xy, mesh.argb, mesh.idx,
+        )
+        val vertices = (packed and 0xFFFF).toInt()
+        val indices = (packed ushr 16).toInt()
+        if (vertices <= 0 || indices <= 0) {
             if (still != null) drawFitted(still, null)
             return@Canvas
         }
-        val cw = s.width / WyrmSkins.LIVE_COLUMNS
-        val ch = s.height / WyrmSkins.LIVE_ROWS
-        val scale = min(size.width / cw, size.height / ch)
-        val w = (cw * scale).roundToInt()
-        val h = (ch * scale).roundToInt()
-        val at = IntOffset(((size.width - w) / 2f).roundToInt(), ((size.height - h) / 2f).roundToInt())
-        val f0 = phase.toInt().coerceIn(0, WyrmSkins.LIVE_FRAMES - 1)
-        val f1 = (f0 + 1) % WyrmSkins.LIVE_FRAMES
-        val mix = (phase - f0).coerceIn(0f, 1f)
-        fun frame(f: Int, alpha: Float) = drawImage(
-            s, srcOffset = IntOffset((f % WyrmSkins.LIVE_COLUMNS) * cw, (f / WyrmSkins.LIVE_COLUMNS) * ch),
-            srcSize = IntSize(cw, ch), dstOffset = at, dstSize = IntSize(w, h), alpha = alpha,
-            filterQuality = FilterQuality.Medium,
-        )
-        frame(f0, 1f)
-        if (mix > 0.01f) frame(f1, mix)
+        drawIntoCanvas { canvas ->
+            mesh.canvas.draw(canvas.nativeCanvas, size.width, size.height,
+                vertices, indices, mesh.xy, mesh.argb, mesh.idx, mesh.paint)
+        }
     }
 }
 
+/** The live preview's buffers, kept across frames. */
+private class WyrmSkinMesh {
+    val canvas = WyrmMeshCanvas()
+    val xy = FloatArray(MAX_VERTICES * 2)
+    val argb = IntArray(MAX_VERTICES)
+    val idx = ShortArray(MAX_VERTICES * 3)
+    val paint = android.graphics.Paint().apply { isAntiAlias = true }
+
+    companion object {
+        const val MAX_VERTICES = 30000
+    }
+}
+
+/** Validate JNI geometry before Skia sees it. Android 13 and earlier use a
+ * bounded software mesh surface: reported Mali GLES RenderThread faults are
+ * in HWUI drawMesh, so that path receives only a bitmap on those releases.
+ * This is a driver mitigation; a device run is still required to prove it.
+ */
+internal class WyrmMeshCanvas {
+    private var bitmap: android.graphics.Bitmap? = null
+    private val bitmapPaint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+
+    fun draw(target: android.graphics.Canvas, width: Float, height: Float,
+             vertices: Int, indices: Int, xy: FloatArray, colors: IntArray,
+             order: ShortArray, paint: android.graphics.Paint) {
+        if (!width.isFinite() || !height.isFinite() || width <= 0f || height <= 0f ||
+            vertices <= 0 || vertices > 30000 || vertices > xy.size / 2 || vertices > colors.size ||
+            indices <= 0 || indices > order.size || indices % 3 != 0) return
+        for (i in 0 until vertices * 2) if (!xy[i].isFinite()) return
+        for (i in 0 until indices) if ((order[i].toInt() and 0xFFFF) >= vertices) return
+        if (android.os.Build.VERSION.SDK_INT > 33 || !target.isHardwareAccelerated) {
+            target.drawVertices(android.graphics.Canvas.VertexMode.TRIANGLES, vertices * 2,
+                xy, 0, null, 0, colors, 0, order, 0, indices, paint)
+            return
+        }
+        // At most 1536 x 1536 x 4 bytes per visible preview; reuse across frames.
+        val scale = min(1f, 1536f / maxOf(width, height))
+        val w = ceil((width * scale).toDouble()).toInt().coerceIn(1, 1536)
+        val h = ceil((height * scale).toDouble()).toInt().coerceIn(1, 1536)
+        var image = bitmap
+        if (image == null || image.width != w || image.height != h) {
+            image = runCatching { android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888) }
+                .getOrNull() ?: return
+            // Do not recycle the previous image while RenderThread may hold it.
+            bitmap = image
+        }
+        image.eraseColor(android.graphics.Color.TRANSPARENT)
+        val software = android.graphics.Canvas(image)
+        software.scale(scale, scale)
+        software.drawVertices(android.graphics.Canvas.VertexMode.TRIANGLES, vertices * 2,
+            xy, 0, null, 0, colors, 0, order, 0, indices, paint)
+        target.drawBitmap(image, null, android.graphics.RectF(0f, 0f, width, height), bitmapPaint)
+    }
+}
+
+/** Slither's colour for a skin group (rrs/ggs/bbs), for a strip look's colour. */
+internal fun slitherGroupRgb(group: Int): Int {
+    val g = if (group in SLITHER_R.indices) group else 0
+    return (SLITHER_R[g] shl 16) or (SLITHER_G[g] shl 8) or SLITHER_B[g]
+}
+
+private val SLITHER_R = intArrayOf(192, 144, 128, 128, 238, 255, 255, 255, 224, 255, 144, 80, 255, 40, 100, 120, 72, 160, 255, 56, 56, 78, 255, 101, 128, 60, 0, 217, 255, 144, 32, 240, 240, 240, 240, 32, 40, 104, 0, 104, 0)
+private val SLITHER_G = intArrayOf(128, 153, 208, 255, 238, 160, 144, 64, 48, 255, 153, 80, 192, 136, 117, 134, 84, 80, 224, 68, 68, 35, 86, 200, 132, 192, 255, 69, 64, 144, 32, 32, 240, 144, 32, 240, 60, 128, 0, 40, 0)
+private val SLITHER_B = intArrayOf(255, 255, 208, 128, 112, 96, 144, 64, 224, 255, 255, 80, 80, 96, 255, 255, 255, 255, 64, 255, 255, 192, 9, 232, 144, 72, 83, 69, 64, 144, 240, 32, 32, 32, 240, 32, 173, 255, 112, 170, 0)
+
 @Composable
 internal fun WyrmSkinTile(selected: Boolean, label: String, image: ImageBitmap?, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(15.dp)
     Column(
         Modifier
             .fillMaxSize()
             .clip(shape)
-            .background(Wyrm.Card.copy(alpha = 0.92f))
-            .border(if (selected) 2.dp else 1.dp, if (selected) Wyrm.Ink else Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card.copy(alpha = 0.92f))
+            .border(if (selected) 2.dp else 1.dp, if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule, shape)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -137,17 +205,19 @@ internal fun WyrmSkinTile(selected: Boolean, label: String, image: ImageBitmap?,
     ) {
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
             if (image != null) Canvas(Modifier.fillMaxSize()) { drawFitted(image, null) }
-            else Text("NONE", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.sp, letterSpacing = 0.7.sp, color = Wyrm.Ink)
+            else Text("NONE", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.sp, letterSpacing = 0.7.sp, color = wyrmScopedPalette.ink)
             if (selected) SelectionCheck(Modifier.align(Alignment.TopEnd))
         }
         Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp,
-            color = if (selected) Wyrm.Ink else Wyrm.Quiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            color = if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.quiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
 private fun WyrmSkinsCaption(text: String) {
-    Text(text, fontFamily = Wyrm.Body, fontSize = 12.5.sp, lineHeight = 18.sp, color = Wyrm.Quiet,
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Text(text, fontFamily = Wyrm.Body, fontSize = 12.5.sp, lineHeight = 18.sp, color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 10.dp))
 }
 
@@ -165,6 +235,8 @@ internal fun WyrmSkinBlockedPopup(
     onCustom: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         Modifier
             .fillMaxSize()
@@ -176,16 +248,16 @@ internal fun WyrmSkinBlockedPopup(
             Modifier
                 .padding(horizontal = 28.dp)
                 .clip(wyrmRounded(22.dp))
-                .background(Wyrm.Card)
+                .background(wyrmScopedPalette.card)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("$skinName is on", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Wyrm.Ink)
+            Text("$skinName is on", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = wyrmScopedPalette.ink)
             Text(
                 "You are wearing the ${if (strip) "strip look" else "creature skin"} $skinName, so $what stay off. " +
                     "To use them, choose a default skin or make a custom one.",
-                fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = Wyrm.Quiet,
+                fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = wyrmScopedPalette.quiet,
             )
             WyrmPopupButton("Choose a default skin", filled = true, onClick = onDefault)
             WyrmPopupButton("Make a custom skin", filled = false, onClick = onCustom)
@@ -196,19 +268,21 @@ internal fun WyrmSkinBlockedPopup(
 
 @Composable
 private fun WyrmPopupButton(label: String, filled: Boolean, quiet: Boolean = false, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     Box(
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(if (filled) Wyrm.Ink else androidx.compose.ui.graphics.Color.Transparent)
-            .border(if (filled || quiet) 0.dp else 1.dp, Wyrm.Rule, shape)
+            .background(if (filled) wyrmScopedPalette.ink else androidx.compose.ui.graphics.Color.Transparent)
+            .border(if (filled || quiet) 0.dp else 1.dp, wyrmScopedPalette.rule, shape)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-            color = if (filled) Wyrm.OnInk else if (quiet) Wyrm.Quiet else Wyrm.Ink)
+            color = if (filled) wyrmScopedPalette.onInk else if (quiet) wyrmScopedPalette.quiet else wyrmScopedPalette.ink)
     }
 }
 

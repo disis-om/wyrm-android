@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,13 +101,15 @@ fun OnScreenButtonsContent(
 
 @Composable
 internal fun OnScreenButtonsPreview(buttons: List<Hotkey>, scale: Float, opacity: Float) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(156.dp)
             .clip(wyrmRounded(10.dp))
-            .background(Wyrm.Well)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(10.dp)),
+            .background(wyrmScopedPalette.well)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(10.dp)),
     ) {
         Text(
             text = "PREVIEW",
@@ -115,7 +117,7 @@ internal fun OnScreenButtonsPreview(buttons: List<Hotkey>, scale: Float, opacity
             fontWeight = FontWeight.Bold,
             fontSize = 9.sp,
             letterSpacing = 1.4.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.padding(12.dp),
         )
         buttons.forEach { button ->

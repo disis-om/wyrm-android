@@ -1,12 +1,19 @@
 #include "redraw.h"
+#include "original_art.h"
+#include "sheet_text.h"
+#include "../platform/android_home.h"
 #include "../platform/android_team.h"
 #include "ui_overlay.h"
 
 #include "../user.h"
 #include "backgrounds.h"
 #include "tags.h"
+#include "../network/battledome.h"
 #include "studio.h"
 #include "wyrm_skins.h"
+#include "wyrm_extras.h"
+#include "wyrm_audio.h"
+#include "wyrm_extras.h"
 #include "../mobile/mobile_controls.h"
 #if defined(WYRM_SDL_JNI)
 #include "../platform/android_look.h"
@@ -51,14 +58,39 @@ void minimap_float_to_u8(const float* src, uint8_t* dst, int mmsz) {
  * 0 draws our snake from those slither colours too. */
 #define WYRM_BUILT_BEADS_IN_ARENA 1
 
-/* Boost glow (OM, 2026-10-18): light and fixed. The glow used to be a sprite
-   2-3x a bead (Simple) plus one 6x a bead (Normal) on every body point, which
-   alone could drop the frame rate while a long snake boosted. Now about half
-   the size, a softer alpha and every third point; no strength slider. */
-#define WYRM_BOOST_ALPHA 0.6f
-#define WYRM_BOOST_SIMPLE 0.45f
-#define WYRM_BOOST_WIDE 1.7f
-#define WYRM_BOOST_STRIDE 3
+/* Boost glow (OM, 2026-10-23): the reference size and strength (the 10-18
+   half-size glow hid under the body), drawn lighter. The glow is additive, so
+   every k-th sprite at k times the alpha adds up to the same light; k keeps
+   sprites at most WYRM_BOOST_SPACING of a glow radius apart and one sprite's
+   blended alpha under 1 (bst.slang's falloff peaks at 0.4 of the instance
+   alpha, so the instance alpha may reach WYRM_BOOST_PEAK). */
+#define WYRM_BOOST_SPACING 0.45f
+#define WYRM_BOOST_MAX_STRIDE 4
+#define WYRM_BOOST_PEAK 2.5f
+
+static int wyrm_boost_stride(game_data* gdata, int bp, float glsz,
+                             float peak) {
+  if (bp < 2 || !(glsz > 0)) return 1;
+  float dx = gdata->data.pbx[1] - gdata->data.pbx[0];
+  float dy = gdata->data.pby[1] - gdata->data.pby[0];
+  float step = sqrtf(dx * dx + dy * dy) * gdata->data.gsc;
+  if (!(step > 0.01f)) return 1;
+  int k = (int)(glsz * WYRM_BOOST_SPACING / step);
+  int cap = (int)(WYRM_BOOST_PEAK / fmaxf(peak, 0.01f));
+  if (k > cap) k = cap;
+  if (k > WYRM_BOOST_MAX_STRIDE) k = WYRM_BOOST_MAX_STRIDE;
+  return k < 1 ? 1 : k;
+}
+
+/* The bead a strided sprite takes its colour from: each run of k sprites
+   steps through every phase, so a skin whose colours repeat every k beads
+   still shows all of them. */
+static int wyrm_boost_bead(int j, int k) {
+  return k > 1 ? j + (j / k) % k : j;
+}
+
+static const snake* colour_cache_snake;
+static remote_skin* colour_cache_skin;
 
 static uint32_t built_skin_rgba(tenv* env, snake* o, int index) {
   tuser_data* usr = env->usr;
@@ -73,15 +105,22 @@ static uint32_t built_skin_rgba(tenv* env, snake* o, int index) {
    * recycled between lives, so the name has to still match: otherwise whoever
    * inherits an id would inherit a stranger's colours with it. */
   game_data* gdata = &usr->gdata;
-  int remote_count = gdata->remote_skins ? (int)tdarray_length(gdata->remote_skins) : 0;
-  for (int i = 0; i < remote_count; ++i) {
-    remote_skin* skin = gdata->remote_skins + i;
-    if (skin->snake_id != o->id) continue;
-    if (strncmp(skin->nickname, o->nk, sizeof(skin->nickname) - 1) != 0) return 0;
-    if (index >= skin->length) return 0;
-    skin->last_used_ms = SDL_GetTicks();
-    return skin->rgba[index];
+  if (colour_cache_snake != o) {
+    colour_cache_snake = o;
+    colour_cache_skin = NULL;
+    int count = gdata->remote_skins ? (int)tdarray_length(gdata->remote_skins) : 0;
+    for (int i = 0; i < count; ++i) {
+      remote_skin* skin = gdata->remote_skins + i;
+      if (skin->snake_id != o->id) continue;
+      if (strncmp(skin->nickname, o->nk, sizeof(skin->nickname) - 1) == 0) {
+        colour_cache_skin = skin;
+        skin->last_used_ms = SDL_GetTicks();
+      }
+      break;
+    }
   }
+  if (colour_cache_skin && index < colour_cache_skin->length)
+    return colour_cache_skin->rgba[index];
   return 0;
 }
 
@@ -149,11 +188,44 @@ static vec4s built_skin_color(uint32_t rgba, float alpha_scale) {
 
 static int apple_air_kind(uint32_t rgba) {
   uint32_t tag = rgba >> 24;
-  return tag == 0xFEu ? 0 : tag == 0xFDu ? 1 : -1;
+  /* AIR bead styles 2..5 (OM, 2026-10-26): 0xFC..0xF9 name nsk 2..5. */
+  if (tag >= 0xF9u && tag <= 0xFEu) return (int)(0xFEu - tag);
+  return -1;
+}
+
+/* The styles' 224 px half-cells (generate-air-styles.py), as (row, column)
+   in 224 px units of the 3136 x 4032 atlas: base, then shine. */
+static const unsigned char apple_air_style_cells[4][2][2] = {
+    {{12, 3}, {15, 0}}, {{13, 3}, {15, 1}}, {{14, 3}, {15, 2}}, {{15, 3}, {16, 8}}};
+static const float apple_air_style_shine_a[4] = {0.8f, 0.8f, 0.7f, 0.55f};
+#define APPLE_AIR_STYLE_SPAN 2.5f
+
+static vec4s apple_air_style_uv(int kind, int shine) {
+  const unsigned char* cell = apple_air_style_cells[kind - 2][shine ? 1 : 0];
+  return (vec4s){{cell[1] / 14.0f, cell[0] / 18.0f, 1 / 14.0f, 1 / 18.0f}};
 }
 
 static vec4s apple_air_bead_uv(int kind) {
+  if (kind >= 2) return apple_air_style_uv(kind, 0);
   return (vec4s){{(2 + kind) / 7.0f, 6 / 9.0f, 1 / 7.0f, 1 / 9.0f}};
+}
+
+/* After a style bead was pushed (its quad one bead wide): the picture is 2.5
+   beads wide round the same centre, and its shine goes over it. */
+static void apple_air_style_finish(bp_renderer* r, int kind, float alpha) {
+  if (kind < 2 || kind > 5 || r->num_instances <= 0) return;
+  bp_instance* last = r->instances + r->num_instances - 1;
+  float grow = last->circle.z * (APPLE_AIR_STYLE_SPAN - 1) * 0.5f;
+  last->circle.x -= grow;
+  last->circle.y -= grow;
+  last->circle.z *= APPLE_AIR_STYLE_SPAN;
+  /* Light at a distance (OM, 2026-10-26): under 8 px the shine is not seen,
+     so it is not drawn; nothing else changes, so nothing flickers. */
+  if (last->circle.z < 8.0f) return;
+  bp_instance shine = *last;
+  shine.uv_rect = apple_air_style_uv(kind, 1);
+  shine.color = (vec4s){{1, 1, 1, alpha * apple_air_style_shine_a[kind - 2]}};
+  bp_renderer_push(r, &shine);
 }
 
 static vec4s apple_air_shadow_uv(void) {
@@ -170,8 +242,10 @@ static vec4s apple_air_tint(uint32_t rgba, float alpha) {
   float lo = fminf(c[0], fminf(c[1], c[2]));
   float hi = fmaxf(c[0], fmaxf(c[1], c[2]));
   float mid = c[0] + c[1] + c[2] - lo - hi;
-  if (mid + hi < 255) {
-    float lift = 1 + (255 - (mid + hi)) / 2;
+  /* nsk_min2c: 255 for nsk 0 and 1, 128 for the drawn styles. */
+  float min2c = apple_air_kind(rgba) >= 2 ? 128.0f : 255.0f;
+  if (mid + hi < min2c) {
+    float lift = 1 + (min2c - (mid + hi)) / 2;
     for (int i = 0; i < 3; ++i) c[i] = fminf(255, c[i] + lift);
   }
   for (int i = 0; i < 3; ++i) c[i] = floorf(c[i]);
@@ -890,7 +964,439 @@ static void draw_snake_imgui_eyes(tenv* env, snake* o, float fang, float hx,
   }
 }
 
+/* Battledome letters (OM, 2026-10-24; network/battledome.h). The server
+ * spells its words with one pellet per pixel of a 5 x 7 font, `cell` apart.
+ * Shown as pixels they read as loose dots, so each pixel is joined to its
+ * neighbours by a straight stroke, like the font's own lines: across, down
+ * and diagonally, but a diagonal only where no pixel already turns that
+ * corner (else an L or a box would get a needless slash). The ring words are
+ * turned, so neighbours are found by distance, never by a fixed grid. */
+typedef struct bd_px {
+  float x, y, cell;
+  vec3s c;
+  float a;
+} bd_px;
+
+#define BD_MAX_PX 6144
+static bd_px bd_pxs[BD_MAX_PX];
+
+static int bd_px_cmp(const void* a, const void* b) {
+  float d = ((const bd_px*)a)->x - ((const bd_px*)b)->x;
+  return (d > 0) - (d < 0);
+}
+
+/* Whether a letter pixel of this cell size sits at world (x, y). The list is
+   sorted by x. */
+static bool bd_px_at(int n, float x, float y, float cell) {
+  float tol = cell * 0.3f;
+  int lo = 0, hi = n;
+  while (lo < hi) {
+    int mid = (lo + hi) / 2;
+    if (bd_pxs[mid].x < x - tol) lo = mid + 1;
+    else hi = mid;
+  }
+  for (int i = lo; i < n && bd_pxs[i].x <= x + tol; i++)
+    if (fabsf(bd_pxs[i].y - y) <= tol && fabsf(bd_pxs[i].cell - cell) < 0.5f)
+      return true;
+  return false;
+}
+
+static void bd_dot(fd_renderer* fdr, float sx, float sy, float w, vec3s c,
+                   float a) {
+  /* fd.slang fills 0.9 of the quad. */
+  float z = w / 0.9f;
+  fd_renderer_push_t(fdr, &(fd_instance){{sx - z * 0.5f, sy - z * 0.5f, z},
+                                         (vec4s){c.r, c.g, c.b, a / 0.7f},
+                                         0.0f, 0.0f});
+}
+
+/* A round-capped line as a row of dots close enough to read as one. */
+static void bd_line(fd_renderer* fdr, float ax, float ay, float bx, float by,
+                    float w, vec3s c, float a) {
+  float len = hypotf(bx - ax, by - ay);
+  int n = (int)ceilf(len / fmaxf(1.0f, w * 0.25f));
+  if (n > 256) n = 256;
+  for (int k = 1; k < n; k++) {
+    float f = (float)k / (float)n;
+    bd_dot(fdr, ax + (bx - ax) * f, ay + (by - ay) * f, w, c, a);
+  }
+}
+
+static void draw_battledome(tenv* env, float mww2, float mhh2) {
+  tuser_data* usr = env->usr;
+  game_data* gdata = &usr->gdata;
+  fd_renderer* fdr = usr->r->fdr;
+  float gsc = gdata->data.gsc;
+
+  int n = 0;
+  int foods_len = tdarray_length(gdata->data.foods);
+  for (int i = 0; i < foods_len && n < BD_MAX_PX; i++) {
+    food* fo = gdata->data.foods + i;
+    float cell;
+    bool square;
+    if (fo->eaten ||
+        !battledome_text_pixel(fo->xx, fo->yy, fo->sz, &cell, &square))
+      continue;
+    /* A cell beyond the food margin, so a stroke into the edge still draws. */
+    if (fo->xx < gdata->data.fpx1 - 2 * cell || fo->yy < gdata->data.fpy1 - 2 * cell ||
+        fo->xx > gdata->data.fpx2 + 2 * cell || fo->yy > gdata->data.fpy2 + 2 * cell)
+      continue;
+    bd_pxs[n++] = (bd_px){fo->xx, fo->yy, cell, gdata->cg_colors[fo->cv], fo->fr};
+  }
+  if (n > 1) qsort(bd_pxs, (size_t)n, sizeof(bd_px), bd_px_cmp);
+
+  for (int i = 0; i < n; i++) {
+    bd_px* p = bd_pxs + i;
+    float w = p->cell * 0.62f * gsc;
+    float sx = mww2 + gsc * (p->x - gdata->data.view_xx);
+    float sy = mhh2 + gsc * (p->y - gdata->data.view_yy);
+    bd_dot(fdr, sx, sy, w, p->c, p->a);
+
+    /* Each pair once: only neighbours further along x (or level, below). */
+    for (int j = i + 1; j < n && bd_pxs[j].x - p->x <= p->cell * 1.6f; j++) {
+      bd_px* q = bd_pxs + j;
+      if (fabsf(q->cell - p->cell) >= 0.5f) continue;
+      float dx = q->x - p->x, dy = q->y - p->y;
+      float d = sqrtf(dx * dx + dy * dy) / p->cell;
+      bool straight = fabsf(d - 1.0f) <= 0.2f;
+      bool diagonal = fabsf(d - 1.41421f) <= 0.2f;
+      if (!straight && !diagonal) continue;
+      if (diagonal) {
+        /* The two corner pixels between them, in the text's own (maybe
+           turned) grid: d = u + v with u, v one cell and at right angles. */
+        float ux = (dx + dy) * 0.5f, uy = (dy - dx) * 0.5f;
+        if (bd_px_at(n, p->x + ux, p->y + uy, p->cell) ||
+            bd_px_at(n, p->x + dx - ux, p->y + dy - uy, p->cell))
+          continue;
+      }
+      float qx = mww2 + gsc * (q->x - gdata->data.view_xx);
+      float qy = mhh2 + gsc * (q->y - gdata->data.view_yy);
+      bd_line(fdr, sx, sy, qx, qy, w, p->c, fminf(p->a, q->a));
+    }
+  }
+
+  /* The dome: a green ring of the server's radius round the middle, as the
+     server's own live view draws it, only where it is on screen. */
+  float dome_x, dome_y, dome_r;
+  if (battledome_dome(&dome_x, &dome_y, &dome_r)) {
+    float sx = mww2 + gsc * (dome_x - gdata->data.view_xx);
+    float sy = mhh2 + gsc * (dome_y - gdata->data.view_yy);
+    float rr = dome_r * gsc;
+    float half = sqrtf(mww2 * mww2 + mhh2 * mhh2);
+    float dist = hypotf(sx - mww2, sy - mhh2);
+    if (rr > 1 && dist + half > rr && dist - half < rr) {
+      float unit = fminf(mww2, mhh2) * 2.0f / 480.0f;
+      float w = fmaxf(3.0f, 2.5f * unit);
+      int steps = (int)fminf(20000.0f, 2 * PI * rr / (w * 0.4f));
+      vec3s green = {0.0f, 1.0f, 0.0f};
+      for (int k = 0; k < steps; k++) {
+        float a = 2 * PI * (float)k / (float)steps;
+        float px = sx + cosf(a) * rr, py = sy + sinf(a) * rr;
+        if (px < -w || py < -w || px > 2 * mww2 + w || py > 2 * mhh2 + w)
+          continue;
+        bd_dot(fdr, px, py, w, green, 1.0f);
+      }
+    }
+  }
+}
+
+/* Food textures (OM, 2026-10-25; fd.slang food_texture). `shape` carries
+   texture * 16 + shape. A pellet under WYRM_FOOD_LIGHT_PX across, or any
+   pellet on a screen with more than WYRM_FOOD_CROWD in view, is one cheap
+   dot whatever the texture: the far and the crowded cost least. */
+#define WYRM_FOOD_LIGHT_PX 6.0f
+#define WYRM_FOOD_CROWD 1800
+
+static void wyrm_food_push(fd_renderer* fdr, float cx, float cy, float d, vec3s c,
+                           float fade, float flicker, float shape, int tex,
+                           bool crowded) {
+  /* One look at every distance (OM, 2026-10-26): no far or crowded swap,
+     which showed a different pellet while zooming and as food appeared. */
+  (void)crowded;
+  switch (tex) {
+    case 1: {
+      /* The AIR client: a dark disc a little larger and lower, blurred,
+         under the orb (Main.as foimg_t / per_color_imgs img_t). Too small to
+         see, the shadow is left out. */
+      float z = d * 0.58f;
+      if (d * 0.9f >= WYRM_FOOD_LIGHT_PX)
+        fd_renderer_push_u(fdr, &(fd_instance){{cx - z * 0.5f, cy + d * 0.08f - z * 0.5f, z},
+                                             (vec4s){0, 0, 0, fade}, 0.0f, 6 * 16.0f});
+      fd_renderer_push(fdr, &(fd_instance){{cx - d * 0.5f, cy - d * 0.5f, d},
+                                           (vec4s){c.r, c.g, c.b, fade}, flicker,
+                                           1 * 16.0f});
+      return;
+    }
+    case 2:
+      fd_renderer_push(fdr, &(fd_instance){{cx - d * 0.5f, cy - d * 0.5f, d},
+                                           (vec4s){c.r, c.g, c.b, fade}, 0.0f,
+                                           2 * 16.0f});
+      return;
+    case 3: {
+      float z = d * 0.3f;
+      fd_renderer_push(fdr, &(fd_instance){{cx - z * 0.5f, cy - z * 0.5f, z},
+                                           (vec4s){c.r, c.g, c.b, fade}, 0.0f,
+                                           3 * 16.0f});
+      return;
+    }
+    case 4:
+      fd_renderer_push(fdr, &(fd_instance){{cx - d * 0.5f, cy - d * 0.5f, d},
+                                           (vec4s){c.r, c.g, c.b, fade}, 0.0f,
+                                           4 * 16.0f});
+      return;
+    case 6:
+    case 7:
+      /* Candy and Pixel (OM, 2026-10-26): fd.slang styles 7 and 8 (6 is the
+         Slither app's shadow). */
+      fd_renderer_push(fdr, &(fd_instance){{cx - d * 0.5f, cy - d * 0.5f, d},
+                                           (vec4s){c.r, c.g, c.b, fade}, 0.0f,
+                                           (tex + 1) * 16.0f});
+      return;
+    case 5:
+      /* Gem (OM, 2026-10-26; it replaced Small): a cut stone. */
+      fd_renderer_push(fdr, &(fd_instance){{cx - d * 0.5f, cy - d * 0.5f, d},
+                                           (vec4s){c.r, c.g, c.b, fade}, 0.0f,
+                                           5 * 16.0f});
+      return;
+    default:
+      fd_renderer_push(fdr, &(fd_instance){{cx - d * 0.5f, cy - d * 0.5f, d},
+                                           (vec4s){c.r, c.g, c.b, fade}, flicker,
+                                           shape});
+      return;
+  }
+}
+
+/* Skin textures (OM, 2026-10-25), NTL 9.76's "Skin texture": 1 Rounded
+   plain (a disc in the bead's colour), 2 Squared plain (upright squares, the
+   head's first two round), 3 NTL textured (a soft shaded ball, keeping the
+   body's light and dark rhythm), 4 Striped plain (squares turned with the
+   body). Runs after a snake's beads are pushed and rewrites them; shadows
+   (black) and Skin Studio beads (their own atlas) are left alone. */
+/* Hidden bead parts, far snakes and the frame budget (OM, 2026-10-30;
+   Wyrm iOS/Scripts/engine_bead_cull_2026_10_30.py). */
+static int wyrm_budget_level;
+static float wyrm_budget_avg_ms, wyrm_budget_target_ms = 1000.0f / 60.0f;
+static Uint64 wyrm_budget_last_ns, wyrm_budget_changed_ns, wyrm_budget_rate_ns;
+
+/* Once a frame: how far this frame came after the last, against the display. */
+static void wyrm_budget_tick(tenv* env) {
+  Uint64 now = SDL_GetTicksNS();
+  if (wyrm_budget_rate_ns == 0 || now - wyrm_budget_rate_ns > SDL_NS_PER_SECOND) {
+    wyrm_budget_rate_ns = now;
+    SDL_DisplayID display =
+        env->wnd && env->wnd->handle ? SDL_GetDisplayForWindow(env->wnd->handle) : 0;
+    const SDL_DisplayMode* dm = display ? SDL_GetCurrentDisplayMode(display) : NULL;
+    if (dm && dm->refresh_rate >= 30.0f && dm->refresh_rate <= 360.0f)
+      wyrm_budget_target_ms = 1000.0f / dm->refresh_rate;
+  }
+  float dt = wyrm_budget_last_ns ? (float)(now - wyrm_budget_last_ns) / 1e6f : -1;
+  wyrm_budget_last_ns = now;
+  /* A pause (menu, background) starts the average afresh. */
+  if (dt <= 0 || dt > 250) {
+    wyrm_budget_avg_ms = wyrm_budget_target_ms;
+    return;
+  }
+  wyrm_budget_avg_ms += (dt - wyrm_budget_avg_ms) * 0.05f;
+  float since = (float)(now - wyrm_budget_changed_ns) / 1e9f;
+  int before = wyrm_budget_level;
+  if (wyrm_budget_avg_ms > wyrm_budget_target_ms * 1.2f && since > 1.0f &&
+      wyrm_budget_level < 3)
+    wyrm_budget_level++;
+  else if (wyrm_budget_avg_ms < wyrm_budget_target_ms * 1.05f && since > 4.0f &&
+           wyrm_budget_level > 0)
+    wyrm_budget_level--;
+  if (wyrm_budget_level != before) {
+    wyrm_budget_changed_ns = now;
+    SDL_Log("Wyrm frame budget: level %d (%.1f ms a frame, display %.1f ms)",
+            wyrm_budget_level, wyrm_budget_avg_ms, wyrm_budget_target_ms);
+  }
+}
+
+/* A round body bead of this snake (not a shadow, not the square plain bead). */
+static bool bead_round_body(const bp_instance* in, float size) {
+  if (fabsf(in->circle.z - size) > 0.01f) return false;
+  if (in->color.r == 0 && in->color.g == 0 && in->color.b == 0) return false;
+  float u = in->uv_rect.x;
+  return !(u < -1.5f && u > -2.5f);
+}
+
+/* Solid to its rim: alpha 1 and a colour-group cell (rows 0..5) or a plain kind. */
+static bool bead_solid_cover(const bp_instance* in) {
+  if (in->color.a < 0.999f) return false;
+  float u = in->uv_rect.x;
+  if (u < -0.5f) return true;
+  if (u >= 3.0f) return false;
+  return fabsf(in->uv_rect.z - 1.0f / 7.0f) < 1e-5f &&
+         fabsf(in->uv_rect.w - 1.0f / 9.0f) < 1e-5f &&
+         in->uv_rect.y < 6.0f / 9.0f - 1e-4f;
+}
+
+static bool bead_shadow(const bp_instance* in) {
+  return in->uv_rect.x < 3.0f && in->uv_rect.x > -0.5f && in->color.r == 0 &&
+         in->color.g == 0 && in->color.b == 0;
+}
+
+#define WYRM_CULL_MAX 8192
+static void bead_cull_apply(tenv* env, snake* o, int start, float size) {
+  static int idx[WYRM_CULL_MAX];
+  static unsigned char drop[WYRM_CULL_MAX];
+  bp_renderer* r = env->usr->r->bpr;
+  int end = r->num_instances;
+  if (start < 0 || end - start < 2 || size < 1.0f) return;
+  /* Every bead and every shadow stays (OM, 2026-11-07: "zooming made the
+     beads fewer and more; lower their quality, not their count", and
+     shadows vanished mid-match). Thinning every other bead and dropping
+     other snakes' shadows under load are gone; what is left only clips the
+     parts of a bead hidden under the next one (less overdraw, same look).
+     Quality already falls with distance by itself: the bead atlas is
+     mipmapped (bead_sampler), so small beads read smaller levels.
+     Wyrm iOS/Scripts/engine_bead_count_2026_11_07.py. */
+  (void)o;
+  const float thin = 0.0f;
+  const bool drop_shadows = false;
+
+  int n = 0;
+  for (int i = start; i < end && n < WYRM_CULL_MAX; i++)
+    if (bead_round_body(r->instances + i, size)) {
+      idx[n] = i;
+      drop[n] = 0;
+      n++;
+    }
+
+  /* Far beads: every other one, where its kept neighbours still overlap by
+     half a bead or more. The tail tip and the last four (the head) stay. */
+  for (int k = 1; k < n - 4; k += 2) {
+    const bp_instance* a = r->instances + idx[k - 1];
+    const bp_instance* b = r->instances + idx[k + 1];
+    float dx = b->circle.x - a->circle.x, dy = b->circle.y - a->circle.y;
+    if (dx * dx + dy * dy < 4.0f * thin * thin) drop[k] = 1;
+  }
+
+  /* Hidden parts: each kept bead against the next kept one. */
+  const float edge = 2.0f; /* EDGE_SOFTNESS in modules/common.slang */
+  const float half = 0.5f * (size + edge);
+  const float solid = fminf(half - edge - 0.5f, 0.95f * half);
+  for (int k = 0; k < n; k++) {
+    if (drop[k]) continue;
+    bp_instance* in = r->instances + idx[k];
+    in->clip = (vec4s){{0, 0, 0, 0}};
+    int next = k + 1;
+    while (next < n && drop[next]) next++;
+    if (next >= n || solid <= 0) continue;
+    const bp_instance* cover = r->instances + idx[next];
+    if (!bead_solid_cover(cover)) continue;
+    float dx = cover->circle.x - in->circle.x, dy = cover->circle.y - in->circle.y;
+    float s = sqrtf(dx * dx + dy * dy);
+    if (s < 0.5f) continue;
+    float d = (s * s + half * half - solid * solid) / (2.0f * s);
+    if (d >= half - 0.5f) continue;
+    in->clip = (vec4s){{dx / s, dy / s, d, 1}};
+  }
+
+  bool any = drop_shadows;
+  for (int k = 0; k < n && !any; k++) any = drop[k];
+  if (!any) return;
+  int kept = start, k = 0;
+  for (int i = start; i < end; i++) {
+    if (k < n && idx[k] == i) {
+      if (drop[k++]) continue;
+    } else if (drop_shadows && bead_shadow(r->instances + i)) {
+      continue;
+    }
+    r->instances[kept++] = r->instances[i];
+  }
+  r->num_instances = kept;
+}
+
+static bool skin_uv_same(vec4s a, vec4s b) {
+  return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
+}
+
+static bool skin_texture_bead(const bp_instance* in) {
+  if (in->uv_rect.x >= 3.0f) return false;
+  return !(in->color.r == 0 && in->color.g == 0 && in->color.b == 0);
+}
+
+static void skin_texture_apply(tenv* env, snake* o, int start) {
+  user_settings* usrs = &env->usr->usrs;
+  int tex = usrs->ext.skin_tex;
+  /* Only Rounded plain (1) and NTL textured (3) are offered (OM, 2026-10-26);
+     a saved Squared or Striped plain draws Wyrm's beads. */
+  /* Rounded plain (1), NTL textured (3) and the five of 2026-10-26 (5..9). */
+  if (tex != 1 && tex != 3 && (tex < 5 || tex > 9)) return;
+  game_data* gdata = &env->usr->gdata;
+  if (usrs->ext.skin_tex_mine && o->id != gdata->data.snake_id) return;
+  bp_renderer* r = env->usr->r->bpr;
+  int end = r->num_instances;
+  if (start < 0 || start >= end) return;
+
+  int beads = 0;
+  float head_px = 0;
+  for (int i = start; i < end; i++)
+    if (skin_texture_bead(r->instances + i)) {
+      beads++;
+      head_px = r->instances[i].circle.z; /* the head is pushed last */
+    }
+  /* Every bead at every zoom (OM, 2026-11-07): the far-away "every other
+     bead" thinning made the snake's beads come and go while zooming. */
+  bool thin = false;
+  (void)head_px;
+
+  int seen = 0, kept = start;
+  for (int i = start; i < end; i++) {
+    bp_instance in = r->instances[i];
+    if (!skin_texture_bead(&in)) {
+      /* No shadow under a plain or NTL snake: NTL draws none with them. Studio
+         beads (their own atlas) stay. */
+      if (in.uv_rect.x >= 3.0f) r->instances[kept++] = in;
+      continue;
+    }
+    int from_head = beads - 1 - seen;
+    seen++;
+    if (thin && from_head > 2 && (from_head & 1)) continue;
+
+    vec3s col = {{in.color.r, in.color.g, in.color.b}};
+    float shade = 1.0f;
+    for (int g = 0; g < NUM_COLOR_GROUPS; g++) {
+      if (g == BLANK_UV) continue;
+      if (skin_uv_same(gdata->cg_uvs[g], in.uv_rect)) {
+        shade = in.color.r;
+        col = gdata->cg_colors[g];
+        break;
+      }
+    }
+    int kind = 2;
+    if (tex == 1) kind = 1;
+    else if (tex == 2) {
+      kind = from_head < 2 ? 1 : 2;
+      in.circle.w = 0;
+    } else if (tex >= 5) {
+      /* Glossy, Matte, Neon, Pearl, Metal (OM, 2026-10-26): upright like NTL
+         textured, with the body's light and dark rhythm. */
+      kind = tex;
+      in.circle.w = 0;
+      col.r *= shade;
+      col.g *= shade;
+      col.b *= shade;
+    } else if (tex == 3) {
+      /* Upright, as NTL draws its sheet: the light comes from the top left
+         whichever way the body runs. */
+      kind = 3;
+      in.circle.w = 0;
+      col.r *= shade;
+      col.g *= shade;
+      col.b *= shade;
+    }
+    in.uv_rect = (vec4s){{-(float)kind, 0, 0, 0}};
+    in.color = (vec4s){{col.r, col.g, col.b, in.color.a}};
+    r->instances[kept++] = in;
+  }
+  r->num_instances = kept;
+}
+
 void redraw(tenv* env) {
+  colour_cache_snake = NULL;
+  colour_cache_skin = NULL;
   android_team_begin_frame();
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
@@ -903,12 +1409,17 @@ void redraw(tenv* env) {
   tags_tick(env);
   /* Tags flying off dead snakes (OM, 2026-10-13). */
   tags_draw_flying(env);
+  /* The frame budget (OM, 2026-10-30): measured once a frame. */
+  wyrm_budget_tick(env);
 
   float lvx = gdata->data.view_xx;
   float lvy = gdata->data.view_xx;
 
   float mww2 = ctx->size[0] / 2.0f;
   float mhh2 = ctx->size[1] / 2.0f;
+  /* AIR's sounds: the view box (follows the zoom) and the boost. */
+  wyrm_audio_view(mww2, mhh2);
+  wyrm_audio_frame(gdata);
 
   float mwwp50 = ctx->size[0] + 50;
   float mhhp50 = ctx->size[1] + 50;
@@ -958,12 +1469,22 @@ void redraw(tenv* env) {
   int foods_len = tdarray_length(gdata->data.foods);
   int preys_len = tdarray_length(gdata->data.preys);
 
-  float food_scale = mode->const_food_scale ? 1.0f : gdata->data.gsc;
+  /* Every texture follows the snake's zoom; the one Food size slider is
+     applied once in d. Legacy const_food_scale storage is ignored. */
+  float food_scale = gdata->data.gsc;
+  float bd_cell = 0;
+  /* Food texture and the crowded screen (OM, 2026-10-25). */
+  const int food_tex =
+      usrs->ext.food_tex[usrs->hotkeys[HOTKEY_ASSIST].active ? 1 : 0];
+  const bool food_crowded = false; /* texture appearance never depends on crowd */
+  bool bd_square = false;
 
   if (mode->uniform_food_color) {
     for (int i = foods_len - 1; i >= 0; i--) {
       food* fo = gdata->data.foods + i;
 
+      if (battledome_text_pixel(fo->xx, fo->yy, fo->sz, &bd_cell, &bd_square))
+        continue;
       if (usrs->hotkeys[HOTKEY_BIG_FOOD].active && fo->sz < 10) continue;
 
       if (fo->rx >= gdata->data.fpx1 && fo->ry >= gdata->data.fpy1 &&
@@ -977,18 +1498,21 @@ void redraw(tenv* env) {
         float fy =
             mhh2 + gdata->data.gsc * (fo->ry - gdata->data.view_yy) - d * 0.5;
 
-        fd_renderer_push(usr->r->fdr,
-                         &(fd_instance){{fx, fy, d},
-                                        (vec4s){c.r, c.g, c.b, fo->fr},
-                                        mode->food_flicker *
-                                            (.5 + .5 * cosf(fo->gfr / 13)),
-                                        food_shape(fo, mode->food_type)});
+        if (food_tex == 1) {
+          original_food(usr->r,fx+d*.5f,fy+d*.5f,d,c,fo->fr,
+                        mode->uniform_food_color ? -1 : fo->cv);
+        } else
+        wyrm_food_push(usr->r->fdr, fx + d * 0.5f, fy + d * 0.5f, d, c, fo->fr,
+                       mode->food_flicker * (.5 + .5 * cosf(fo->gfr / 13)),
+                       food_shape(fo, mode->food_type), food_tex, food_crowded);
       }
     }
   } else {
     for (int i = foods_len - 1; i >= 0; i--) {
       food* fo = gdata->data.foods + i;
 
+      if (battledome_text_pixel(fo->xx, fo->yy, fo->sz, &bd_cell, &bd_square))
+        continue;
       if (usrs->hotkeys[HOTKEY_BIG_FOOD].active && fo->sz < 10) continue;
 
       if (fo->rx >= gdata->data.fpx1 && fo->ry >= gdata->data.fpy1 &&
@@ -1001,15 +1525,20 @@ void redraw(tenv* env) {
         float fy =
             mhh2 + gdata->data.gsc * (fo->ry - gdata->data.view_yy) - d * 0.5;
 
-        fd_renderer_push(usr->r->fdr,
-                         &(fd_instance){{fx, fy, d},
-                                        (vec4s){c.r, c.g, c.b, fo->fr},
-                                        mode->food_flicker *
-                                            (.5 + .5 * cosf(fo->gfr / 13)),
-                                        food_shape(fo, mode->food_type)});
+        if (food_tex == 1) {
+          original_food(usr->r,fx+d*.5f,fy+d*.5f,d,c,fo->fr,
+                        mode->uniform_food_color ? -1 : fo->cv);
+        } else
+        wyrm_food_push(usr->r->fdr, fx + d * 0.5f, fy + d * 0.5f, d, c, fo->fr,
+                       mode->food_flicker * (.5 + .5 * cosf(fo->gfr / 13)),
+                       food_shape(fo, mode->food_type), food_tex, food_crowded);
       }
     }
   }
+
+  /* Battledome letters and dome: their own layer, drawn after the food
+     (so above it) and before the snakes. */
+  draw_battledome(env, mww2, mhh2);
 
   for (int i = preys_len - 1; i >= 0; i--) {
     prey* pr = gdata->data.preys + i;
@@ -1068,15 +1597,18 @@ void redraw(tenv* env) {
     }
   }
 
-  igPushFont(
-      usr->imgui_data.mono_font[usrs->snake_names_font_size],
-      usr->imgui_data.mono_font[usrs->snake_names_font_size]->LegacySize);
-  ImFont* snake_name_font =
-      usr->imgui_data.mono_font[usrs->snake_names_font_size];
+  ImFont* snake_name_font = usr->imgui_data.mono_font[FONT_SIZE_REGULAR];
+#if defined(__ANDROID__)
+  const float snake_name_font_size =
+      13.0f*fminf(ctx->size[0],ctx->size[1])/480.0f/SHEET_EM*usrs->ext.name_scale;
+#else
+  const float snake_name_font_size = snake_name_font->LegacySize*usrs->ext.name_scale;
+#endif
+  /* Measure fallback strings at the same size that is actually drawn. */
+  igPushFont(snake_name_font, snake_name_font_size);
 #if !defined(__ANDROID__)
   ImFont* snake_score_font =
-      usr->imgui_data.mono_font_bold[usrs->snake_names_font_size];
-  const float snake_name_font_size = snake_name_font->LegacySize;
+      usr->imgui_data.mono_font_bold[FONT_SIZE_REGULAR];
   ImDrawList* snake_name_draw_list =
       igGetForegroundDrawList_ViewportPtr(igGetMainViewport());
 #endif
@@ -1146,6 +1678,16 @@ void redraw(tenv* env) {
           glm_vec3_lerp((float*)scolor, (vec3){1, 1, 1},
                         mode->player_names_outline ? 0.8f : 0.7f, lcolor);
 
+          if (android_home_near_original()) {
+            float z=gdata->data.gsc;
+            float unit=fminf(ctx->size[0],ctx->size[1])/480.0f;
+            float textz=z+((gdata->ai_mode ? .8f : .7f)*unit-z)*.25f;
+            float size=13*z*unit/(textz > .001f ? textz : .001f)*usrs->ext.name_scale;
+            vec3s colour=*scolor;
+            for(int j=0;j<3;++j) colour.raw[j] = fminf(255,roundf(127.5f+colour.raw[j]*255*.64f))/255;
+            original_name(usr->r,o->nk,size,ntx,
+                mhh2+(o->yy+o->fy+30+13*o->sc-gdata->data.view_yy)*z,colour,a);
+          } else {
           ntx = ntx - (usrs->snake_scores ? tsize.x : nsize.x) * 0.5f;
           nty = nty + 32 + 11 * o->sc * gdata->data.gsc;
 
@@ -1162,15 +1704,35 @@ void redraw(tenv* env) {
               name_shadow = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, 0.9f * a});
             }
             const char* label = usrs->snake_scores ? nk_label_buff : o->nk;
-            float size = snake_name_font->LegacySize;
+            float size = 13.0f*fminf(ctx->size[0],ctx->size[1])/480.0f/SHEET_EM*usrs->ext.name_scale;
             float lift = size * 0.07f;
             if (lift < 1.0f) lift = 1.0f;
+            if (sheet_ok(label)) {
+              /* The original's thin glyphs (OM, 2026-11-01), centred on
+                 their own width. */
+              float shown = usrs->snake_scores ? tsize.x : nsize.x;
+              float sx = ntx + (shown - sheet_width(label, size, SHEET_THIN)) * 0.5f;
+              /* Main.as names (OM, 2026-11-01): csw = 0.5 + 0.64 c, face at
+                 the name's alpha, outline 0.75 of it, both NORMAL. Not the
+                 floor's dark ink: that read dark and muddy on light floors. */
+              ImU32 sheet_ink = name_ink;
+              if (o->id == gdata->data.snake_id ||
+                  !android_team_is_teammate(env, o->ntl_id, o->nk)) {
+                ImVec4 csw = {fminf(1, fmaxf(0, roundf(127.5f + scolor->r*255*.64f)/255)),
+                              fminf(1, fmaxf(0, roundf(127.5f + scolor->g*255*.64f)/255)),
+                              fminf(1, fmaxf(0, roundf(127.5f + scolor->b*255*.64f)/255)), a};
+                sheet_ink = igColorConvertFloat4ToU32(csw);
+              }
+              sheet_draw(name_draw_list, label, size, (ImVec2){sx, nty}, sheet_ink,
+                         SHEET_THIN, 0.75f, false);
+            } else {
             ImDrawList_AddText_FontPtr(name_draw_list, snake_name_font, size,
                                        (ImVec2){ntx + lift, nty + lift},
                                        name_shadow, label, NULL, 0, NULL);
             ImDrawList_AddText_FontPtr(name_draw_list, snake_name_font, size,
                                        (ImVec2){ntx, nty}, name_ink, label,
                                        NULL, 0, NULL);
+            }
           }
 #else
           if (mode->player_names_outline) {
@@ -1216,6 +1778,7 @@ void redraw(tenv* env) {
                 score_rep_str, NULL, 0, NULL);
           }
 #endif
+          }
         }
       }
 
@@ -1258,7 +1821,7 @@ void redraw(tenv* env) {
         float wwk = 0;
         float nkr = 0;
         float msl = o->msl;
-        float mct = 6 / (mode->qsm * o->sep / 6.0f);
+        float mct = 6 / (mode->qsm * o->sep / 6.0f) * air_looks_density(o);
 
         float omct = mct;
         float rmct = 1 / mct;
@@ -1570,8 +2133,10 @@ void redraw(tenv* env) {
         /* Wyrm skins (OM, 2026-10-13, wyrm_skins.c): a creature or strip look
            takes the place of the beads, eyes, boost glow, tag and accessory.
            Yours from your setting, everyone else's from their corner. */
+        /* Assist mode shows no Wyrm skin (OM, 2026-10-25): the snake wears
+           its ordinary beads there, as its skin block carries them. */
         const int wyrm_skin =
-            rope_mode ? 0
+            rope_mode || usrs->hotkeys[HOTKEY_ASSIST].active ? 0
             : o->id == gdata->data.snake_id ? user_settings_wyrm_skin(usrs)
                                             : o->wyrm_skin;
         if (wyrm_skin) {
@@ -1606,6 +2171,8 @@ void redraw(tenv* env) {
           float om = 0;
           float mr = 0;
 
+          /* Skin texture (OM, 2026-10-25): this snake's beads start here. */
+          int skin_tex_start = usr->r->bpr->num_instances;
           if (mode->render_mode == 0) {
             float shadow_strength = 0.25f;
 
@@ -1683,7 +2250,7 @@ void redraw(tenv* env) {
                                        mww2, mhh2);
                     }
                   } else if (air_shadow) {
-                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                    air_snake_shadow_behind(env, (int)j, air_half * air_looks_swell(o, (int)j - 4), a, mww2, mhh2,
                                             &air_sx, &air_sy);
                   } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
@@ -1699,7 +2266,10 @@ void redraw(tenv* env) {
 
                       bp_renderer_push(
                           usr->r->bpr,
-                          &(bp_instance){{fix - shsz, fiy - shsz, 2 * shsz,
+                          /* Main.as swells the head's shadows with its beads. */
+                          &(bp_instance){{fix - shsz * air_looks_swell(o, (int)k),
+                                          fiy - shsz * air_looks_swell(o, (int)k),
+                                          2 * shsz * air_looks_swell(o, (int)k),
                                           gdata->data.pba[(int)j]},
                                          gdata->SHADOW_UV,
                                          {0, 0, 0, shadow_strength * a}});
@@ -1745,6 +2315,8 @@ void redraw(tenv* env) {
                               ? apple_air_tint(built, a)
                           : built ? built_skin_color(built, a)
                                   : (vec4s){{1, 1, 1, a}}});
+                  if (!studio_own(env, o) && apple_air_kind(built) >= 2)
+                    apple_air_style_finish(usr->r->bpr, apple_air_kind(built), a);
                 }
             } else {
               for (j = bp - 1; j >= 0; j--)
@@ -1753,7 +2325,7 @@ void redraw(tenv* env) {
                   py = gdata->data.pby[(int)j];
 
                   if (air_shadow) {
-                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                    air_snake_shadow_behind(env, (int)j, air_half * air_looks_swell(o, (int)j - 4), a, mww2, mhh2,
                                             &air_sx, &air_sy);
                   } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
@@ -1769,7 +2341,10 @@ void redraw(tenv* env) {
 
                       bp_renderer_push(
                           usr->r->bpr,
-                          &(bp_instance){{fix - shsz, fiy - shsz, 2 * shsz,
+                          /* Main.as swells the head's shadows with its beads. */
+                          &(bp_instance){{fix - shsz * air_looks_swell(o, (int)k),
+                                          fiy - shsz * air_looks_swell(o, (int)k),
+                                          2 * shsz * air_looks_swell(o, (int)k),
                                           gdata->data.pba[(int)j]},
                                          gdata->SHADOW_UV,
                                          {0, 0, 0, shadow_strength * a}});
@@ -1786,17 +2361,41 @@ void redraw(tenv* env) {
                       gdata->default_skins[o->cv]
                                           [1 + ((int)j % default_skin_len)];
                   float se = gdata->worm_effect[(int)j % WORM_EFFECT_LEN];
+                  /* Main.as `swell` (skin 27): the head's beads grow. */
+                  float slsz = lsz * air_looks_swell(o, (int)j);
 
                   bp_renderer_push(
                       usr->r->bpr,
                       &(bp_instance){
-                          {fix - (gdata->data.gsc * lsz),
-                           fiy - (gdata->data.gsc * lsz),
-                           gdata->data.gsc * 2 * lsz, gdata->data.pba[(int)j]},
+                          {fix - (gdata->data.gsc * slsz),
+                           fiy - (gdata->data.gsc * slsz),
+                           gdata->data.gsc * 2 * slsz, gdata->data.pba[(int)j]},
                           gdata->cg_uvs[cg_id],
                           {se, se, se, a}});
+                  /* Main.as fdhc / fdtc / fdl (skin 60): bead 37 fades out over the
+                     first 30 beads from the head and bead 38 over the last 30,
+                     each drawn on top a touch larger (1 + 0.075 fdam). */
+                  if (air_looks_on(o) && o->cv == 60) {
+                    const float fdl = 30.0f;
+                    float fdam = 0.0f;
+                    int fdc = -1;
+                    if (j < fdl) { fdam = 1.0f - j / fdl; fdc = 37; }
+                    else if (j > bp - fdl) { fdam = 1.0f - (bp - j) / fdl; fdc = 38; }
+                    if (fdc >= 0 && fdam > 0.0f) {
+                      float fsz = (1.0f + 0.075f * fdam) * slsz;
+                      bp_renderer_push(
+                          usr->r->bpr,
+                          &(bp_instance){
+                              {fix - (gdata->data.gsc * fsz),
+                               fiy - (gdata->data.gsc * fsz),
+                               gdata->data.gsc * 2 * fsz, gdata->data.pba[(int)j]},
+                              gdata->cg_uvs[fdc],
+                              {se, se, se, a * fdam}});
+                    }
+                  }
                 }
             }
+            skin_texture_apply(env, o, skin_tex_start);
           } else if (mode->render_mode == 1) {
             if (air_shadow)
               air_snake_shadow_ends(env, bp, air_half, a, mww2, mhh2, &air_sx,
@@ -1834,7 +2433,7 @@ void redraw(tenv* env) {
                   py = gdata->data.pby[(int)j];
 
                   if (air_shadow) {
-                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                    air_snake_shadow_behind(env, (int)j, air_half * air_looks_swell(o, (int)j - 4), a, mww2, mhh2,
                                             &air_sx, &air_sy);
                   } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
@@ -1886,7 +2485,7 @@ void redraw(tenv* env) {
                   py = gdata->data.pby[(int)j];
 
                   if (air_shadow) {
-                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                    air_snake_shadow_behind(env, (int)j, air_half * air_looks_swell(o, (int)j - 4), a, mww2, mhh2,
                                             &air_sx, &air_sy);
                   } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
@@ -1922,12 +2521,14 @@ void redraw(tenv* env) {
                                           [1 + ((int)j % default_skin_len)];
                   vec3s* cg_col = gdata->cg_colors + cg_id;
 
+                  /* Main.as `swell` in Solid and Flat too (skin 27). */
+                  float wlsz = lsz * air_looks_swell(o, (int)j);
                   bp_renderer_push(
                       usr->r->bpr,
                       &(bp_instance){
-                          {fix - (gdata->data.gsc * lsz),
-                           fiy - (gdata->data.gsc * lsz),
-                           gdata->data.gsc * 2 * lsz, gdata->data.pba[(int)j]},
+                          {fix - (gdata->data.gsc * wlsz),
+                           fiy - (gdata->data.gsc * wlsz),
+                           gdata->data.gsc * 2 * wlsz, gdata->data.pba[(int)j]},
                           gdata->cg_uvs[BLANK_UV],
                           {cg_col->r, cg_col->g, cg_col->b, a}});
                 }
@@ -1969,7 +2570,7 @@ void redraw(tenv* env) {
                   py = gdata->data.pby[(int)j];
 
                   if (air_shadow) {
-                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                    air_snake_shadow_behind(env, (int)j, air_half * air_looks_swell(o, (int)j - 4), a, mww2, mhh2,
                                             &air_sx, &air_sy);
                   } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
@@ -2021,7 +2622,7 @@ void redraw(tenv* env) {
                   py = gdata->data.pby[(int)j];
 
                   if (air_shadow) {
-                    air_snake_shadow_behind(env, (int)j, air_half, a, mww2, mhh2,
+                    air_snake_shadow_behind(env, (int)j, air_half * air_looks_swell(o, (int)j - 4), a, mww2, mhh2,
                                             &air_sx, &air_sy);
                   } else if (j >= 4 && show_snake_shadows) {
                     k = j - 4;
@@ -2055,12 +2656,14 @@ void redraw(tenv* env) {
                   int cg_id = gdata->default_skins[o->cv][1];
                   vec3s* cg_col = gdata->cg_colors + cg_id;
 
+                  /* Main.as `swell` in Solid and Flat too (skin 27). */
+                  float wlsz = lsz * air_looks_swell(o, (int)j);
                   bp_renderer_push(
                       usr->r->bpr,
                       &(bp_instance){
-                          {fix - (gdata->data.gsc * lsz),
-                           fiy - (gdata->data.gsc * lsz),
-                           gdata->data.gsc * 2 * lsz, gdata->data.pba[(int)j]},
+                          {fix - (gdata->data.gsc * wlsz),
+                           fiy - (gdata->data.gsc * wlsz),
+                           gdata->data.gsc * 2 * wlsz, gdata->data.pba[(int)j]},
                           gdata->cg_uvs[BLANK_UV],
                           {cg_col->r, cg_col->g, cg_col->b, a}});
                 }
@@ -2069,6 +2672,9 @@ void redraw(tenv* env) {
             /* Skinless: the plain body's width and length, skin see-through. */
             draw_skinless_strip(env, o, bp, mww2, mhh2, lsz, a);
           }
+          /* Hidden bead parts and far beads (OM, 2026-10-30). */
+          if (mode->render_mode != 3)
+            bead_cull_apply(env, o, skin_tex_start, gdata->data.gsc * 2 * lsz);
 
           // debugging
           // for (int bpi = pts_len - 1; bpi >= 0; bpi--) {
@@ -2144,12 +2750,14 @@ void redraw(tenv* env) {
                 om = m * .37;
                 mr = powf(m, .5);
                 float glsz =
-                    (0.7f + 0.5f * mode->boost_type + 0.6f * mr) * gdata->data.gsc * lsz;
-                float strength = (1 + mode->boost_type * WYRM_BOOST_SIMPLE) * WYRM_BOOST_ALPHA;
+                    (1 + mode->boost_type + mr) * gdata->data.gsc * lsz;
+                float strength = 1 + mode->boost_type * mode->boost_strength;
+                int bstk = wyrm_boost_stride(gdata, bp, glsz, strength * .38f);
+                strength *= bstk;
 
                 if (o->cusk) {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % bstk) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2184,7 +2792,7 @@ void redraw(tenv* env) {
                     }
                 } else {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % bstk) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2221,12 +2829,14 @@ void redraw(tenv* env) {
               }
               // boost effect 2:
               if (mode->boost_type == 0 && o->tsp > o->fsp) {
-                float glsz = lsz * WYRM_BOOST_WIDE * gdata->data.gsc;
-                float strength = 0.7f * WYRM_BOOST_SIMPLE;
+                float glsz = lsz * 3 * gdata->data.gsc;
+                float strength = 0.7f * mode->boost_strength;
+                int bstk = wyrm_boost_stride(gdata, bp, glsz, strength * .37f);
+                strength *= bstk;
 
                 if (o->cusk) {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % bstk) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2261,7 +2871,7 @@ void redraw(tenv* env) {
                     }
                 } else {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % bstk) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2304,12 +2914,14 @@ void redraw(tenv* env) {
                 om = m * .37;
                 mr = powf(m, .5);
                 float glsz =
-                    (0.7f + 0.5f * mode->boost_type + 0.6f * mr) * gdata->data.gsc * lsz;
-                float strength = (1 + mode->boost_type * WYRM_BOOST_SIMPLE) * WYRM_BOOST_ALPHA;
+                    (1 + mode->boost_type + mr) * gdata->data.gsc * lsz;
+                float strength = 1 + mode->boost_type * mode->boost_strength;
+                int bstk = wyrm_boost_stride(gdata, bp, glsz, strength * .38f);
+                strength *= bstk;
 
                 if (o->cusk) {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % bstk) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2332,9 +2944,9 @@ void redraw(tenv* env) {
 
                       float alpha = strength * d2 * a * mr * .38 *
                                     (.6 + .4 * cosf(j / 4 - 1.15 * o->sfr));
-                      int cg_id = o->cusk_data[(int)j % o->cusk_len];
+                      int cg_id = o->cusk_data[wyrm_boost_bead((int)j, bstk) % o->cusk_len];
                       vec3s studio_glow;
-                      vec3s* shc = studio_glow_for(env, o, (int)j, &studio_glow,
+                      vec3s* shc = studio_glow_for(env, o, wyrm_boost_bead((int)j, bstk), &studio_glow,
                                                    gdata->cg_glow_colors + cg_id);
 
                       bst_renderer_push(
@@ -2344,7 +2956,7 @@ void redraw(tenv* env) {
                     }
                 } else {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % bstk) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2371,7 +2983,7 @@ void redraw(tenv* env) {
                       int default_skin_len = gdata->default_skins[o->cv][0];
                       int cg_id =
                           gdata->default_skins[o->cv]
-                                              [1 + ((int)j % default_skin_len)];
+                                              [1 + (wyrm_boost_bead((int)j, bstk) % default_skin_len)];
                       vec3s* shc = gdata->cg_glow_colors + cg_id;
 
                       bst_renderer_push(
@@ -2383,12 +2995,14 @@ void redraw(tenv* env) {
               }
               // boost effect 2:
               if (mode->boost_type == 0 && o->tsp > o->fsp) {
-                float glsz = lsz * WYRM_BOOST_WIDE * gdata->data.gsc;
-                float strength = 0.7f * WYRM_BOOST_SIMPLE;
+                float glsz = lsz * 3 * gdata->data.gsc;
+                float strength = 0.7f * mode->boost_strength;
+                int bstk = wyrm_boost_stride(gdata, bp, glsz, strength * .37f);
+                strength *= bstk;
 
                 if (o->cusk) {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % bstk) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2411,9 +3025,9 @@ void redraw(tenv* env) {
 
                       float alpha = strength * d2 * a * om *
                                     (.5 + .5 * cosf(j / 4 - o->sfr));
-                      int cg_id = o->cusk_data[(int)j % o->cusk_len];
+                      int cg_id = o->cusk_data[wyrm_boost_bead((int)j, bstk) % o->cusk_len];
                       vec3s studio_glow;
-                      vec3s* shc = studio_glow_for(env, o, (int)j, &studio_glow,
+                      vec3s* shc = studio_glow_for(env, o, wyrm_boost_bead((int)j, bstk), &studio_glow,
                                                    gdata->cg_glow_colors + cg_id);
 
                       bst_renderer_push(
@@ -2423,7 +3037,7 @@ void redraw(tenv* env) {
                     }
                 } else {
                   for (j = bp - 1; j >= 0; j--)
-                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % WYRM_BOOST_STRIDE) == 0) {
+                    if (gdata->data.pbu[(int)j] == 2 && ((int)j % bstk) == 0) {
                       ox = tx;
                       oy = ty;
                       tx = gdata->data.pbx[(int)j];
@@ -2450,7 +3064,7 @@ void redraw(tenv* env) {
                       int default_skin_len = gdata->default_skins[o->cv][0];
                       int cg_id =
                           gdata->default_skins[o->cv]
-                                              [1 + ((int)j % default_skin_len)];
+                                              [1 + (wyrm_boost_bead((int)j, bstk) % default_skin_len)];
                       vec3s* shc = gdata->cg_glow_colors + cg_id;
 
                       bst_renderer_push(
@@ -2467,6 +3081,7 @@ void redraw(tenv* env) {
           float ed = 6 * ssc;   // o->ed
           float esp = 6 * ssc;  // o->esp
           float er = 6;         // o->er
+          air_looks_eye_params(o, &ed, &esp, &er);
           default_skin_data* dfs = gdata->dfs + ((1 - o->cusk) * (1 + o->cv));
           float pr = dfs->pr;
           float iris_r = er * ssc * gdata->data.gsc;
@@ -2499,9 +3114,28 @@ void redraw(tenv* env) {
                sprite eyes uncovered (OM, 2026-10-12). */
             if (mode->render_mode == 3 || spine_mesh)
               draw_snake_imgui_eyes(env, o, fang, hx, hy, ssc, ea, mww2, mhh2);
+            else if (air_looks_hide_eyes(o))
+              ;
             else if (studio_own(env, o))
               studio_draw_eyes(env, o, fang, hx, hy, ssc, ea, mww2, mhh2);
             else {
+          /* Main.as `eo`: the slug's eyes sit on a dark rim (OM, 2026-11-07). */
+          {
+            float rim = air_looks_eye_rim(o);
+            for (int side = -1; rim > 0 && side <= 1; side += 2) {
+              float rx2 = cosf(fang) * ed + cosf(fang + side * (PI / 2)) * (esp + .5);
+              float ry2 = sinf(fang) * ed + sinf(fang + side * (PI / 2)) * (esp + .5);
+              float rr = iris_r + rim * 0.5f * gdata->data.gsc;
+              bp_renderer_push(
+                  usr->r->bpr,
+                  &(bp_instance){
+                      {(mww2 + (rx2 + hx - gdata->data.view_xx) * gdata->data.gsc) - rr,
+                       (mhh2 + (ry2 + hy - gdata->data.view_yy) * gdata->data.gsc) - rr,
+                       rr * 2, 0},
+                      gdata->cg_uvs[BLANK_UV],
+                      {0, 0, 0, ea}});
+            }
+          }
           bp_renderer_push(
               usr->r->bpr,
               &(bp_instance){
@@ -2562,17 +3196,23 @@ void redraw(tenv* env) {
             }
           }
 
+          /* AIR's special skins (OM, 2026-11-07, game/wyrm_extras.c). */
+          air_looks_draw(env, o, hx, hy, fang, ssc, ea, mww2, mhh2, lsz, ed,
+                         !(usrs->hotkeys[HOTKEY_ASSIST].active && usrs->ext.assist_hide_cosmetics) &&
+                             mode->show_accessories);
+
           // The tag hangs off the head, over everything else the snake is
           // wearing, which is where the mod puts it too.
-          const int hide_own_cosmetics =
+          const int hide_cosmetics =
               usrs->hotkeys[HOTKEY_ASSIST].active &&
-              usrs->ext.assist_hide_cosmetics &&
-              o->id == gdata->data.snake_id;
-          if (!hide_own_cosmetics)
+              usrs->ext.assist_hide_cosmetics;
+          if (!hide_cosmetics)
           tags_draw(env, o, o->id == gdata->data.snake_id, false);
 
           // accessory:
-          if (!hide_own_cosmetics && mode->show_accessories && o->accessory < NUM_ACCESSORIES) {
+          /* A special AIR skin draws its accessory after its art (wyrm_extras.c). */
+          if (!hide_cosmetics && mode->show_accessories && o->accessory < NUM_ACCESSORIES &&
+              !air_looks_owns_accessory(o)) {
             accessory_data* acc = gdata->accessories + o->accessory;
             ex = acc->of * cosf(fang) * ed;
             ey = acc->of * sinf(fang) * ed;
@@ -2590,7 +3230,7 @@ void redraw(tenv* env) {
 #if defined(WYRM_SDL_JNI)
           // Wyrm's own hair, ears and glasses: the player's snake only, and
           // only on this phone (platform/android_look.c).
-          if (!hide_own_cosmetics && o->id == gdata->data.snake_id)
+          if (!hide_cosmetics && o->id == gdata->data.snake_id)
             wyrm_look_draw(env, hx, hy, fang, lsz, ea, mww2, mhh2);
 #endif
         } else {
@@ -2648,10 +3288,11 @@ void redraw(tenv* env) {
   usr->r->global.bd_color[1] = usrs->bd_color[1];
   usr->r->global.bd_color[2] = usrs->bd_color[2];
   usr->r->global.bg_scale = mode->bg_scale;
-  /* "None" is the absence of a floor, so it is drawn as one: the pass still
-     runs, with nothing of it reaching the frame, and the clear shows through
-     as flat black. */
+  /* "None" skips the floor draw; the clear shows through as flat black. */
   const int floor_index = background_clamp(usrs->arena_background);
+  /* Your photo's path can arrive after the renderer started (OM, 2026-11-08). */
+  if (floor_index == BACKGROUND_CUSTOM && usr->r->background != BACKGROUND_CUSTOM)
+    renderer_set_background(usr->r, env->ctx, BACKGROUND_CUSTOM);
   usr->r->global.bg_opacity = floor_index == BACKGROUND_NONE ? 0.0f : 1.0f;
   usr->r->global.bd_opacity = 0.8f;
   usr->r->global.minimap_data_size = gdata->data.mmsz;
@@ -2705,8 +3346,10 @@ void redraw(tenv* env) {
   lerp_minimap_float(gdata->data.mm_data_follow, gdata->data.mm_data,
                      gdata->data.mmsz, 0.035f * gdata->data.vfr);
 
-  minimap_float_to_u8(gdata->data.mm_data_follow, usr->r->mmr->minimap,
-                      gdata->data.mmsz);
+  /* The visible ImGui minimap reads the smooth float data directly. */
+  if (usr->r->global.minimap_opacity > 0.0f)
+    minimap_float_to_u8(gdata->data.mm_data_follow, usr->r->mmr->minimap,
+                        gdata->data.mmsz);
 
   gdata->data.frames++;
 

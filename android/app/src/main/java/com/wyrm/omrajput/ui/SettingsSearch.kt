@@ -25,7 +25,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -146,6 +146,8 @@ class SettingsSearchEntry(
 /** The search field at the top of the hub. */
 @Composable
 internal fun SettingsSearchField(query: String, onQuery: (String) -> Unit, placeholder: String = "Search settings") {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val requester = remember { androidx.compose.ui.focus.FocusRequester() }
     val searchRegistry = LocalSearchShortcut.current
     val searchId = remember { Any() }
@@ -156,28 +158,28 @@ internal fun SettingsSearchField(query: String, onQuery: (String) -> Unit, place
     var focused by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val shape = wyrmRounded(13.dp)
-    val style = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink)
+    val style = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink)
     Row(
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
             .fillMaxWidth()
             .height(44.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, if (focused) Wyrm.Ink.copy(alpha = 0.35f) else Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, if (focused) wyrmScopedPalette.ink else wyrmScopedPalette.rule, shape)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IosIcon(IosGlyph.MAGNIFIER, Wyrm.Quiet, size = 16.dp, semibold = true)
+        IosIcon(IosGlyph.MAGNIFIER, wyrmScopedPalette.quiet, size = 16.dp, semibold = true)
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            if (query.isEmpty()) Text(placeholder, style = style.copy(color = Wyrm.Quiet), maxLines = 1)
+            if (query.isEmpty()) Text(placeholder, style = style.copy(color = wyrmScopedPalette.quiet), maxLines = 1)
             BasicTextField(
                 value = query,
                 onValueChange = onQuery,
                 singleLine = true,
                 textStyle = style,
-                cursorBrush = SolidColor(Wyrm.Link),
+                cursorBrush = SolidColor(wyrmScopedPalette.link),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,
                     autoCorrectEnabled = false,
@@ -190,7 +192,7 @@ internal fun SettingsSearchField(query: String, onQuery: (String) -> Unit, place
         if (query.isNotEmpty()) {
             IosIcon(
                 IosGlyph.XMARK_CIRCLE,
-                Wyrm.Chevron,
+                wyrmScopedPalette.chevron,
                 size = 18.dp,
                 modifier = Modifier.clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -204,6 +206,8 @@ internal fun SettingsSearchField(query: String, onQuery: (String) -> Unit, place
 /** Results: each card is the page it belongs to, the live control, and an arrow to its place. */
 @Composable
 internal fun SettingsSearchResults(query: String, entries: List<SettingsSearchEntry>, onClear: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val focus = LocalFocusManager.current
     val words = query.lowercase().split(' ').filter { it.isNotBlank() }
     val first = query.lowercase()
@@ -217,7 +221,7 @@ internal fun SettingsSearchResults(query: String, entries: List<SettingsSearchEn
             fontWeight = FontWeight.SemiBold,
             fontSize = 11.5.sp,
             letterSpacing = 0.6.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.padding(horizontal = 20.dp),
         )
         ranked.take(40).forEach { entry ->
@@ -227,8 +231,8 @@ internal fun SettingsSearchResults(query: String, entries: List<SettingsSearchEn
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth()
                     .clip(shape)
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, shape),
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, shape),
             ) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 14.dp, end = 10.dp, top = 10.dp),
@@ -240,22 +244,22 @@ internal fun SettingsSearchResults(query: String, entries: List<SettingsSearchEn
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
                         letterSpacing = 1.1.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.weight(1f),
                     )
                     Box(
                         Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(Wyrm.Well)
-                            .border(1.dp, Wyrm.Rule, CircleShape)
+                            .background(wyrmScopedPalette.well)
+                            .border(1.dp, wyrmScopedPalette.rule, CircleShape)
                             .clickable {
                                 focus.clearFocus()
                                 SettingsFocus.reveal(entry.id)
                                 entry.open?.invoke() ?: onClear()
                             },
                         contentAlignment = Alignment.Center,
-                    ) { IosIcon(IosGlyph.ARROW_UP_RIGHT, Wyrm.Ink, size = 12.dp, semibold = true) }
+                    ) { IosIcon(IosGlyph.ARROW_UP_RIGHT, wyrmScopedPalette.ink, size = 12.dp, semibold = true) }
                 }
                 entry.control()
             }

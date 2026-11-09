@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -45,6 +46,14 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.graphics.Brush
 import kotlin.math.roundToInt
+
+/** Under the Boost card (OM, 2026-10-23); the same words on iOS. */
+internal const val BOOST_PERFORMANCE_NOTE =
+    "Boost glow is the heaviest effect in the arena. Every boosting snake lights up " +
+        "its whole body, so a crowd of boosting snakes can make the game lag and the " +
+        "frame rate drop. If you see lag or FPS drops, set Show boost on to Mine or turn " +
+        "Boost effect off. A lower Boost strength only makes the glow dimmer; it does " +
+        "not make it faster."
 
 /**
  * Spec page 12 — Settings › Assist.
@@ -65,15 +74,17 @@ fun SettingsAssistScreen(
     /** The worn skin, so the Snake preview is the player's own snake (OM, 2026-10-05). */
     skin: SkinState = SkinState(),
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     // Settings search picks the tab that holds the row it opened.
     var mode by remember { mutableIntStateOf(if (SettingsFocus.target?.startsWith("normal.") == true) 0 else 1) }
     var advanced by remember { mutableStateOf(true) }
     val foodIds = setOf("food_type", "food_scale", "food_float", "food_flicker",
-        "const_food_scale", "uniform_food_color", "food_color")
+        "uniform_food_color", "food_color")
     val dotIds = setOf("show_crosshair", "head_dot_size", "head_dot_color")
     val snakeIds = setOf("render_mode", "spine", "spine_mine", "spine_width", "snake_shadow", "hide_cosmetics")
-    // Boost has its own card (OM, 2026-10-18); its strength slider is gone.
-    val boostIds = setOf("show_boost", "boost_type", "boost_own")
+    // Boost has its own card (OM, 2026-10-18); its strength slider is back (2026-10-23).
+    val boostIds = setOf("show_boost", "boost_type", "boost_strength", "boost_own")
     val laser = listOfNotNull(
         settings.named("general.laser_thickness"),
         settings.named("general.laser_color"),
@@ -95,13 +106,13 @@ fun SettingsAssistScreen(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                 )
                 Text(
                     text = "Tune the normal arena and the helper view independently.",
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
@@ -229,6 +240,7 @@ fun SettingsAssistScreen(
                 // Boost (OM, 2026-10-18): on/off, its style, and whose boost shows.
                 val boostOn = modeSettings.firstOrNull { it.id.substringAfter('.') == "show_boost" }
                 val boostType = modeSettings.firstOrNull { it.id.substringAfter('.') == "boost_type" }
+                val boostStrength = modeSettings.firstOrNull { it.id.substringAfter('.') == "boost_strength" }
                 val boostOwn = settings.firstOrNull { it.id == "$group.boost_own" }
                 if (boostOn != null) {
                     SettingsSectionLabel("Boost")
@@ -241,6 +253,9 @@ fun SettingsAssistScreen(
                         ) {
                             Column {
                                 boostType?.let { setting ->
+                                    SettingTypedRow(setting = setting, first = false, onChange = onChange)
+                                }
+                                boostStrength?.let { setting ->
                                     SettingTypedRow(setting = setting, first = false, onChange = onChange)
                                 }
                                 boostOwn?.let { setting ->
@@ -257,6 +272,7 @@ fun SettingsAssistScreen(
                             }
                         }
                     }
+                    SettingsCaption(BOOST_PERFORMANCE_NOTE)
                 }
 
                 // Only when a colour is left to set here (food and the head dot
@@ -378,21 +394,30 @@ fun SettingsAssistScreen(
  * the accessory and the look are left off.
  */
 @Composable
-private fun SnakeBodyPreview(
+internal fun SnakeBodyPreview(
     mode: Int,
     spine: Boolean,
     spineWidth: Float,
     shadow: Boolean,
     skin: SkinState,
     hideCosmetics: Boolean,
+    nameScale: Float? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val textures by rememberSkinTextures()
+    val previewContext = androidx.compose.ui.platform.LocalContext.current
+    val nameBitmap = remember(previewContext) {
+        previewContext.assets.open("textures/name_size_preview.png").use {
+            android.graphics.BitmapFactory.decodeStream(it)?.let { image -> image.asImageBitmap() }
+        }
+    }
     val savedLook = WyrmLookStore.spec()
     val custom = skin.custom && skin.code.isNotEmpty()
     val codeGroups = skin.code.mapNotNull { SkinCatalog.group(it) }.filter { it in SkinCatalog.validGroups }.take(256)
     val source = if (custom && codeGroups.isNotEmpty()) codeGroups
         else SkinCatalog.presets.getOrNull(skin.preset) ?: listOf(7)
-    val total = 160
+    val total = if (nameScale == null) 160 else 28
     // Index 0 is the head, as the engine counts a pattern.
     val groups = List(total) { source[it % source.size] }
     val colors = if (custom && codeGroups.isNotEmpty()) List(total) { skin.colourAt(it % codeGroups.size) } else List(total) { 0 }
@@ -413,26 +438,26 @@ private fun SnakeBodyPreview(
     }
 
     Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-        Text("Preview", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet)
+        Text("Preview", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet)
         Spacer(Modifier.height(8.dp))
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(88.dp)
-                .background(Wyrm.Well, wyrmRounded(12.dp))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(12.dp)),
+                .height(if (nameScale == null) 88.dp else 128.dp)
+                .background(wyrmScopedPalette.well, wyrmRounded(12.dp))
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(12.dp)),
         ) {
-            Canvas(Modifier.fillMaxWidth().height(88.dp)) {
+            Canvas(Modifier.fillMaxWidth().height(if (nameScale == null) 88.dp else 128.dp)) {
                 val px = 1.dp.toPx()
                 val span = 1f + (total - 1) * (8f / 48f) + 0.7f
-                val scale = minOf(size.height * 0.34f, (size.width - 28.dp.toPx()) / span)
+                val scale = minOf(if (nameScale == null) size.height * 0.34f else 29.dp.toPx(), (size.width - 28.dp.toPx()) / span)
                 val step = 8f * (scale / 48f)
-                val left = (size.width - span * scale) / 2f
-                val amp = size.height * 0.16f
+                val left = if (nameScale == null) (size.width-span*scale)/2f else size.width*.5f-scale*.5f-(total-1)*step
+                val amp = size.height * (if (nameScale == null) 0.16f else 0.06f)
                 // Segment 0 is the tail (left), total - 1 the head (right).
                 fun place(segment: Int): Offset {
                     val along = segment / (total - 1f)
-                    return Offset(left + scale * 0.5f + segment * step, size.height * 0.5f + amp * sin(along * 6.2831855f * 1.15f))
+                    return Offset(left + scale * 0.5f + segment * step, size.height * (if (nameScale == null) 0.5f else 0.3f) + amp * sin(along * 6.2831855f * 1.15f))
                 }
                 fun heading(segment: Int): Float {
                     val a = place((segment - 1).coerceAtLeast(0))
@@ -511,6 +536,12 @@ private fun SnakeBodyPreview(
                         }
                     }
                 }
+                if (nameScale != null && nameBitmap != null) {
+                    val factor = (13f / 52f) * (scale / 29f) * nameScale
+                    val nw = nameBitmap.width * factor
+                    val nh = nameBitmap.height * factor
+                    drawImageInto(nameBitmap, head.x - nw/2f, head.y + scale*.7f, nw, nh, null, 1f)
+                }
             }
         }
     }
@@ -525,6 +556,8 @@ internal fun spineWidthLabel(value: Float): String = when {
 
 @Composable
 private fun HeadDotPreview(size: Setting?, colour: Setting?) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val channels = colour?.channels ?: listOf(1f, 1f, 1f, 1f)
     val dot = Color(channels[0], channels[1], channels[2], 1f)
     val diameter = (size?.number ?: 10f).coerceIn(4f, 32f)
@@ -534,15 +567,15 @@ private fun HeadDotPreview(size: Setting?, colour: Setting?) {
             text = "Size relative to snake head",
             fontFamily = Wyrm.Body,
             fontSize = 12.5.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
         Spacer(Modifier.height(8.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(74.dp)
-                .background(Wyrm.Well, wyrmRounded(12.dp))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(12.dp)),
+                .background(wyrmScopedPalette.well, wyrmRounded(12.dp))
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(12.dp)),
         ) {
             Canvas(Modifier.fillMaxWidth().height(74.dp)) {
                 val headRadius = 22.dp.toPx()
@@ -550,7 +583,7 @@ private fun HeadDotPreview(size: Setting?, colour: Setting?) {
                 // The arena head is 29 world units wide. Both it and the dot
                 // receive the same snake-scale and camera projection, so this
                 // ratio is exactly what survives on screen at every zoom.
-                drawCircle(Wyrm.Ink, headRadius, headCenter)
+                drawCircle(wyrmScopedPalette.ink, headRadius, headCenter)
                 drawCircle(
                     color = dot,
                     radius = headRadius * diameter / 29f,

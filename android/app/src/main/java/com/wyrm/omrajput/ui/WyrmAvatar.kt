@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +56,8 @@ fun WyrmAvatar(
     /** A friend with Wyrm open (2026-10-09): a green dot on the corner. */
     online: Boolean = false,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     // The profile's big face gets the 256 px copy; every smaller place asks the
     // server for the 128 px one (OM, 2026-10-14, Discord-style).
     val source = remember(url, size) { avatarSource(url, big = size >= 72.dp) }
@@ -102,10 +104,10 @@ fun WyrmAvatar(
                 .offset(x = dot * 0.18f, y = dot * 0.18f)
                 .size(dot)
                 .clip(CircleShape)
-                .background(Wyrm.Card)
+                .background(wyrmScopedPalette.card)
                 .padding(dot * 0.16f)
                 .clip(CircleShape)
-                .background(Wyrm.Live),
+                .background(wyrmScopedPalette.live),
         )
     }
     }

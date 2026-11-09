@@ -37,7 +37,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -169,6 +169,8 @@ fun IosProfileScreen(
     photoBusy: Boolean = false,
     photoError: String = "",
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val initials = profileInitials(displayName)
@@ -302,7 +304,7 @@ fun IosProfileScreen(
                                             Modifier
                                                 .weight(1f)
                                                 .aspectRatio(1f)
-                                                .background(Wyrm.Well.copy(alpha = if ((row * 3 + column) % 2 == 0) 1f else 0.7f)),
+                                                .background(wyrmScopedPalette.well.copy(alpha = if ((row * 3 + column) % 2 == 0) 1f else 0.7f)),
                                         )
                                     }
                                 }
@@ -342,7 +344,7 @@ fun IosProfileScreen(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Wyrm.Ink.copy(alpha = 0.3f))
+                    .background(wyrmScopedPalette.ink)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { badgeShown = null },
             )
         }
@@ -397,6 +399,8 @@ private fun ProfileHeader(
     onToggleFollow: () -> Unit,
     onMessage: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             val interaction = remember { MutableInteractionSource() }
@@ -419,22 +423,22 @@ private fun ProfileHeader(
             }
         }
         Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Wyrm.Ink,
+            Text(displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = wyrmScopedPalette.ink,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             if (!own && followsYou) {
                 Text(
                     if (isFollowing) "Friends" else "Follows you",
-                    fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 10.5.sp, color = Wyrm.Live,
-                    modifier = Modifier.clip(WyrmCapsule).background(Wyrm.Live.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 3.dp),
+                    fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 10.5.sp, color = wyrmScopedPalette.live,
+                    modifier = Modifier.clip(WyrmCapsule).background(wyrmScopedPalette.live.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 3.dp),
                 )
             }
         }
         if (bio.isNotBlank()) {
-            Text(bio, fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = Wyrm.Mute, modifier = Modifier.padding(top = 4.dp))
+            Text(bio, fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = wyrmScopedPalette.mute, modifier = Modifier.padding(top = 4.dp))
         } else if (own) {
             Text(
                 "Add a line about how you play",
-                fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = Wyrm.Link,
+                fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = wyrmScopedPalette.link,
                 modifier = Modifier
                     .padding(top = 4.dp)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onEdit),
@@ -462,13 +466,15 @@ private fun ProfileHeader(
         }
         if (!own && ready && !canMessage) {
             Text("You can message each other once you both follow.", fontFamily = Wyrm.Body, fontSize = 11.sp,
-                color = Wyrm.Quiet, modifier = Modifier.padding(top = 6.dp))
+                color = wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 6.dp))
         }
     }
 }
 
 @Composable
 private fun RowScope.ProfileStat(value: String, label: String, onClick: (() -> Unit)?) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column(
@@ -479,27 +485,31 @@ private fun RowScope.ProfileStat(value: String, label: String, onClick: (() -> U
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Wyrm.Ink, maxLines = 1,
+        Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = wyrmScopedPalette.ink, maxLines = 1,
             style = TextStyle(fontFeatureSettings = "tnum"))
-        Text(label, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet, maxLines = 1)
+        Text(label, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet, maxLines = 1)
     }
 }
 
 @Composable
 private fun ProfileChip(icon: Int, label: String, value: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
-        Modifier.height(28.dp).clip(WyrmCapsule).background(Wyrm.Well).padding(horizontal = 10.dp),
+        Modifier.height(28.dp).clip(WyrmCapsule).background(wyrmScopedPalette.well).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Icon(painterResource(icon), null, tint = Wyrm.Quiet, modifier = Modifier.size(11.dp))
-        Text(label, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
-        Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Wyrm.Ink)
+        Icon(painterResource(icon), null, tint = wyrmScopedPalette.quiet, modifier = Modifier.size(11.dp))
+        Text(label, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
+        Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = wyrmScopedPalette.ink)
     }
 }
 
 @Composable
 private fun RowScope.ProfileButton(title: String, filled: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -509,12 +519,12 @@ private fun RowScope.ProfileButton(title: String, filled: Boolean, enabled: Bool
             .scale(pressScale(pressed, enabled))
             .alpha(if (enabled) 1f else 0.45f)
             .clip(wyrmRounded(11.dp))
-            .background(if (filled) Wyrm.Ink else Wyrm.Well)
+            .background(if (filled) wyrmScopedPalette.ink else wyrmScopedPalette.well)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-            color = if (filled) Wyrm.OnInk else Wyrm.Ink)
+            color = if (filled) wyrmScopedPalette.onInk else wyrmScopedPalette.ink)
     }
 }
 
@@ -522,16 +532,18 @@ private fun RowScope.ProfileButton(title: String, filled: Boolean, enabled: Bool
 
 @Composable
 private fun ProfileBadgeStrip(badges: List<Badge>?, onOpen: (Badge) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val list = badges.orEmpty().withIndex()
         .sortedWith(compareBy<IndexedValue<Badge>>({ !it.value.earned }, { it.index }))
         .map { it.value }
     Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
             Text("BADGES", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 10.5.sp,
-                letterSpacing = 0.9.sp, color = Wyrm.Quiet, modifier = Modifier.weight(1f))
+                letterSpacing = 0.9.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.weight(1f))
             if (badges != null) {
                 Text("${badges.count { it.earned }} of ${badges.size}", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold,
-                    fontSize = 11.5.sp, color = Wyrm.Quiet)
+                    fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
             }
         }
         Row(
@@ -542,8 +554,8 @@ private fun ProfileBadgeStrip(badges: List<Badge>?, onOpen: (Badge) -> Unit) {
             if (list.isEmpty()) {
                 repeat(6) {
                     Column(Modifier.width(70.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Box(Modifier.padding(3.5.dp).size(58.dp).clip(CircleShape).background(Wyrm.Well))
-                        Box(Modifier.width(48.dp).height(9.dp).clip(wyrmRounded(4.dp)).background(Wyrm.Well))
+                        Box(Modifier.padding(3.5.dp).size(58.dp).clip(CircleShape).background(wyrmScopedPalette.well))
+                        Box(Modifier.width(48.dp).height(9.dp).clip(wyrmRounded(4.dp)).background(wyrmScopedPalette.well))
                     }
                 }
             } else {
@@ -563,10 +575,12 @@ private fun ProfileBadgeStrip(badges: List<Badge>?, onOpen: (Badge) -> Unit) {
 
 @Composable
 private fun ProfileBadgeMedal(badge: Badge, size: Dp, showsTitle: Boolean = true) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        val ink = Wyrm.Ink
-        val well = Wyrm.Well
-        val live = Wyrm.Live
+        val ink = wyrmScopedPalette.ink
+        val well = wyrmScopedPalette.well
+        val live = wyrmScopedPalette.live
         Box(Modifier.padding(size * 0.06f).size(size), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize()) {
                 val s = this.size.minDimension
@@ -584,12 +598,12 @@ private fun ProfileBadgeMedal(badge: Badge, size: Dp, showsTitle: Boolean = true
                     )
                 }
             }
-            Icon(painterResource(badge.icon), null, tint = if (badge.earned) Wyrm.OnInk else Wyrm.Quiet,
+            Icon(painterResource(badge.icon), null, tint = if (badge.earned) wyrmScopedPalette.onInk else wyrmScopedPalette.quiet,
                 modifier = Modifier.size(size * 0.34f))
         }
         if (showsTitle) {
             Text(badge.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 10.5.sp,
-                color = if (badge.earned) Wyrm.Ink else Wyrm.Quiet, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (badge.earned) wyrmScopedPalette.ink else wyrmScopedPalette.quiet, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center, modifier = Modifier.width(size + 14.dp))
         }
     }
@@ -597,34 +611,36 @@ private fun ProfileBadgeMedal(badge: Badge, size: Dp, showsTitle: Boolean = true
 
 @Composable
 private fun ProfileBadgeSheet(badge: Badge, insetBottom: Dp, onDone: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(28.dp)
     Column(
         Modifier
             .padding(start = 12.dp, end = 12.dp, bottom = 12.dp + insetBottom)
             .fillMaxWidth()
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
             .padding(vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ProfileBadgeMedal(badge, 92.dp, showsTitle = false)
-        Text(badge.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 21.sp, color = Wyrm.Ink)
-        Text(badge.detail, fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Mute, textAlign = TextAlign.Center,
+        Text(badge.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 21.sp, color = wyrmScopedPalette.ink)
+        Text(badge.detail, fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.mute, textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 24.dp))
         if (badge.earned) {
-            Text("Earned", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Live,
-                modifier = Modifier.clip(WyrmCapsule).background(Wyrm.Live.copy(alpha = 0.14f)).padding(horizontal = 12.dp, vertical = 5.dp))
+            Text("Earned", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = wyrmScopedPalette.live,
+                modifier = Modifier.clip(WyrmCapsule).background(wyrmScopedPalette.live.copy(alpha = 0.14f)).padding(horizontal = 12.dp, vertical = 5.dp))
         } else {
             Column(Modifier.fillMaxWidth().padding(horizontal = 30.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                BoxWithConstraints(Modifier.fillMaxWidth().height(8.dp).clip(WyrmCapsule).background(Wyrm.Well)) {
-                    Box(Modifier.width(kotlin.comparisons.maxOf(8.dp, maxWidth * badge.fraction)).height(8.dp).clip(WyrmCapsule).background(Wyrm.Live))
+                BoxWithConstraints(Modifier.fillMaxWidth().height(8.dp).clip(WyrmCapsule).background(wyrmScopedPalette.well)) {
+                    Box(Modifier.width(kotlin.comparisons.maxOf(8.dp, maxWidth * badge.fraction)).height(8.dp).clip(WyrmCapsule).background(wyrmScopedPalette.live))
                 }
                 Text("${profileNumber(badge.progress.toLong())} of ${profileNumber(badge.goal.toLong())}", fontFamily = Wyrm.Body,
-                    fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Quiet)
+                    fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet)
             }
         }
         Box(Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp)) { PaperPrimaryButton("Done", onClick = onDone) }
@@ -635,15 +651,17 @@ private fun ProfileBadgeSheet(badge: Badge, insetBottom: Dp, onDone: () -> Unit)
 
 @Composable
 private fun ProfileGridHeader() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(Modifier.fillMaxWidth().padding(top = 20.dp)) {
         Box(Modifier.fillMaxWidth().height(44.dp), contentAlignment = Alignment.Center) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                Icon(painterResource(LucideR.drawable.lucide_ic_grid_3x3), null, tint = Wyrm.Ink, modifier = Modifier.size(14.dp))
-                Text("Trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = Wyrm.Ink)
+                Icon(painterResource(LucideR.drawable.lucide_ic_grid_3x3), null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(14.dp))
+                Text("Trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = wyrmScopedPalette.ink)
             }
-            Box(Modifier.align(Alignment.BottomCenter).width(90.dp).height(2.dp).background(Wyrm.Ink))
+            Box(Modifier.align(Alignment.BottomCenter).width(90.dp).height(2.dp).background(wyrmScopedPalette.ink))
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
     }
 }
 
@@ -683,13 +701,15 @@ private fun ProfileGridRow(row: List<Trail>, onOpen: (String) -> Unit) {
  */
 @Composable
 private fun ProfileTrailTile(trail: Trail) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val address = trail.thumbUrl ?: trail.photo?.url
     Box(
         Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .clip(androidx.compose.ui.graphics.RectangleShape)
-            .background(if (trail.photo == null) Wyrm.Ink else Wyrm.Well),
+            .background(if (trail.photo == null) wyrmScopedPalette.ink else wyrmScopedPalette.well),
     ) {
         if (trail.photo != null && address != null) {
             var image by remember(address) { mutableStateOf(TrailImages.peek(address)) }
@@ -701,7 +721,7 @@ private fun ProfileTrailTile(trail: Trail) {
             Text(
                 trail.caption,
                 fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, lineHeight = 16.sp,
-                color = Wyrm.OnInk, maxLines = 5, overflow = TextOverflow.Ellipsis,
+                color = wyrmScopedPalette.onInk, maxLines = 5, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxSize().padding(9.dp),
             )
         }
@@ -711,7 +731,7 @@ private fun ProfileTrailTile(trail: Trail) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Box(Modifier.size(7.dp).clip(CircleShape).background(Wyrm.Live))
+                Box(Modifier.size(7.dp).clip(CircleShape).background(wyrmScopedPalette.live))
                 Text(
                     "${trail.likeCount}",
                     fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White,
@@ -724,6 +744,8 @@ private fun ProfileTrailTile(trail: Trail) {
 
 @Composable
 private fun ProfileGridEmpty(own: Boolean, failed: Boolean, name: String, onNewTrail: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -731,7 +753,7 @@ private fun ProfileGridEmpty(own: Boolean, failed: Boolean, name: String, onNewT
     ) {
         Icon(
             painterResource(if (failed) LucideR.drawable.lucide_ic_wifi_off else LucideR.drawable.lucide_ic_grid_3x3),
-            null, tint = Wyrm.Quiet, modifier = Modifier.size(26.dp),
+            null, tint = wyrmScopedPalette.quiet, modifier = Modifier.size(26.dp),
         )
         Text(
             when {
@@ -739,7 +761,7 @@ private fun ProfileGridEmpty(own: Boolean, failed: Boolean, name: String, onNewT
                 own -> "Share your first trail"
                 else -> "No trails yet"
             },
-            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = Wyrm.Ink,
+            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = wyrmScopedPalette.ink,
         )
         Text(
             when {
@@ -747,19 +769,19 @@ private fun ProfileGridEmpty(own: Boolean, failed: Boolean, name: String, onNewT
                 own -> "A photo, a run, a few words. It shows up here and in Trails."
                 else -> "When $name posts, it shows up here."
             },
-            fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet, textAlign = TextAlign.Center,
+            fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet, textAlign = TextAlign.Center,
         )
         if (own && !failed) {
             val interaction = remember { MutableInteractionSource() }
             val pressed by interaction.collectIsPressedAsState()
             Text(
                 "New trail",
-                fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.OnInk,
+                fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = wyrmScopedPalette.onInk,
                 modifier = Modifier
                     .padding(top = 4.dp)
                     .scale(pressScale(pressed))
                     .clip(WyrmCapsule)
-                    .background(Wyrm.Ink)
+                    .background(wyrmScopedPalette.ink)
                     .clickable(interactionSource = interaction, indication = null, onClick = onNewTrail)
                     .padding(horizontal = 22.dp, vertical = 10.dp),
             )
@@ -788,6 +810,8 @@ private fun ProfileAvatarOverlay(
     onRemovePhoto: () -> Unit,
     onEdit: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val density = LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val big = min(maxWidth - 72.dp, 300.dp)
@@ -804,7 +828,7 @@ private fun ProfileAvatarOverlay(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Wyrm.Paper.copy(alpha = veil * progress.coerceIn(0f, 1f)))
+                .background(wyrmScopedPalette.paper.copy(alpha = veil * progress.coerceIn(0f, 1f)))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onCollapse),
         )
 
@@ -816,10 +840,10 @@ private fun ProfileAvatarOverlay(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Wyrm.Ink)
-            if (handle.isNotBlank()) Text(handle, fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+            Text(displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = wyrmScopedPalette.ink)
+            if (handle.isNotBlank()) Text(handle, fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet)
             if (own && photoError.isNotBlank()) {
-                Text(photoError, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge, textAlign = TextAlign.Center,
+                Text(photoError, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.badge, textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 4.dp, start = 30.dp, end = 30.dp))
             }
         }
@@ -876,6 +900,8 @@ private fun ProfilePhotoOptions(
     onRemovePhoto: () -> Unit,
     onEdit: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val rows = if (hasPhoto) 3 else 2
     val full = min(maxWidth - 32.dp, 480.dp)
     val width by animateDpAsState(if (open) full else 120.dp, iosSpring(0.5f, 0.8f), label = "photo-options-width")
@@ -895,8 +921,8 @@ private fun ProfilePhotoOptions(
             .height(height)
             .shadow(24.dp, shape, ambientColor = Color.Black.copy(alpha = 0.16f), spotColor = Color.Black.copy(alpha = 0.16f))
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
     ) {
         if (open) {
             ProfileOptionRow("Change photo", LucideR.drawable.lucide_ic_image, first = true, enabled = !busy, onClick = onChangePhoto)
@@ -906,7 +932,7 @@ private fun ProfilePhotoOptions(
             ProfileOptionRow("Edit profile", LucideR.drawable.lucide_ic_pencil, enabled = !busy, onClick = onEdit)
         } else {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(34.dp).height(5.dp).clip(WyrmCapsule).background(Wyrm.Quiet.copy(alpha = 0.5f)))
+                Box(Modifier.width(34.dp).height(5.dp).clip(WyrmCapsule).background(wyrmScopedPalette.quiet))
             }
         }
     }
@@ -921,11 +947,13 @@ private fun ProfileOptionRow(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val tint = if (destructive) Wyrm.Badge else Wyrm.Ink
+    val tint = if (destructive) wyrmScopedPalette.badge else wyrmScopedPalette.ink
     Column {
-        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
         Row(
             Modifier
                 .fillMaxWidth()

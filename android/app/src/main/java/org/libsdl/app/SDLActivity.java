@@ -710,13 +710,22 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 // C SDLmain() thread might have started (mSDLThread.start() called)
                 // while the SDL_Init() might not have been called yet,
                 // and so the previous QUIT event will be discarded by SDL_Init() and app is running, not exiting.
-                SDLActivity.mSDLThread.join(1000);
+                SDLActivity.mSDLThread.join(3000);
             } catch(Exception e) {
                 Log.v(TAG, "Problem stopping SDLThread: " + e);
             }
         }
 
-        SDLActivity.nativeQuit();
+        /* Wyrm (2026-10-23): nativeQuit destroys the lifecycle mutex and
+         * semaphore that a still-running SDLThread locks on every event pump
+         * ("pthread_mutex_lock called on a destroyed mutex", SIGABRT). While
+         * that thread lives, leave them alone; the process is ending anyway,
+         * and a recreated activity makes new ones in nativeSetupJNI. */
+        if (SDLActivity.mSDLThread != null && SDLActivity.mSDLThread.isAlive()) {
+            Log.w(TAG, "SDLThread still running at onDestroy; skipping nativeQuit");
+        } else {
+            SDLActivity.nativeQuit();
+        }
 
         super.onDestroy();
     }
@@ -1427,6 +1436,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
             if (mTextEdit == null) {
                 mTextEdit = new SDLDummyEdit(getContext());
+                // Wyrm (OM, 2026-11-08): this box only carries keys; drawn, it
+                // was a white composer-like line at the top of every screen.
+                mTextEdit.setBackground(null);
+                mTextEdit.setAlpha(0f);
 
                 mLayout.addView(mTextEdit, params);
             } else {

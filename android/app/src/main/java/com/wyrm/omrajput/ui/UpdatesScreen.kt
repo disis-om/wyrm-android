@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,10 +43,12 @@ fun UpdatesScreen(
     onOpenInstalledNotes: () -> Unit,
     onOpenAvailableNotes: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Box(
             modifier = Modifier
@@ -59,7 +61,7 @@ fun UpdatesScreen(
                 text = "‹ Back",
                 fontFamily = Wyrm.Body,
                 fontSize = 16.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .clickable(onClick = onBack)
@@ -70,11 +72,11 @@ fun UpdatesScreen(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -84,14 +86,14 @@ fun UpdatesScreen(
         ) {
                 Spacer(Modifier.height(22.dp))
 
-                Text("INSTALLED", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                Text("INSTALLED", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = installedVersion,
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.Bold,
                     fontSize = 34.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                 )
 
                 Spacer(Modifier.height(Wyrm.GapLarge))
@@ -103,7 +105,7 @@ fun UpdatesScreen(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    color = if (state.failed) Wyrm.Badge else Wyrm.Ink,
+                    color = if (state.failed) wyrmScopedPalette.badge else wyrmScopedPalette.ink,
                 )
                 if (state.detail.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
@@ -112,7 +114,7 @@ fun UpdatesScreen(
                         fontFamily = Wyrm.Body,
                         fontSize = 12.sp,
                         lineHeight = 19.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                     )
                 }
                 if (state.version.isNotEmpty() && state.available) {
@@ -134,7 +136,7 @@ fun UpdatesScreen(
                                 .fillMaxWidth((state.progress / 100f).coerceIn(0f, 1f))
                                 .height(3.dp)
                                 .clip(wyrmRounded(999.dp))
-                                .background(Wyrm.Ink)
+                                .background(wyrmScopedPalette.ink)
                         )
                     }
                 }
@@ -181,7 +183,7 @@ fun UpdatesScreen(
                     fontFamily = Wyrm.Body,
                     fontSize = 11.sp,
                     lineHeight = 17.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                 )
                 Spacer(Modifier.height(Wyrm.GapLarge))
         }

@@ -37,16 +37,33 @@ object SkinAtlas {
     // still avoiding the full 8K allocation.
     private const val SAMPLE = 2
 
-    fun load(context: Context): ImageBitmap? = try {
-        context.assets.open("textures/tex_atlas_8k.png").use { stream ->
-            val options = BitmapFactory.Options().apply {
-                inSampleSize = SAMPLE
-                inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+    /* Decoded once for the whole app and kept (OM, 2026-10-30): every screen
+       used to decode its own 12 MB copy, so each event card came in late and
+       blinked on every page change. Nothing recycles this bitmap. */
+    @Volatile private var cached: ImageBitmap? = null
+    private val lock = Any()
+
+    /** The atlas if it is already decoded, else null (never blocks). */
+    fun peek(): ImageBitmap? = cached
+
+    fun load(context: Context): ImageBitmap? {
+        cached?.let { return it }
+        synchronized(lock) {
+            cached?.let { return it }
+            val decoded = try {
+                context.applicationContext.assets.open("textures/tex_atlas_8k.png").use { stream ->
+                    val options = BitmapFactory.Options().apply {
+                        inSampleSize = SAMPLE
+                        inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+                    }
+                    BitmapFactory.decodeStream(stream, null, options)?.asImageBitmap()
+                }
+            } catch (ignored: Throwable) {
+                null
             }
-            BitmapFactory.decodeStream(stream, null, options)?.asImageBitmap()
+            cached = decoded
+            return decoded
         }
-    } catch (ignored: Throwable) {
-        null
     }
 }
 
@@ -54,8 +71,8 @@ object SkinAtlas {
 @Composable
 fun rememberSkinAtlas(): State<ImageBitmap?> {
     val context = LocalContext.current
-    return produceState<ImageBitmap?>(initialValue = null, context) {
-        value = withContext(Dispatchers.IO) { SkinAtlas.load(context) }
+    return produceState(initialValue = SkinAtlas.peek(), context) {
+        if (value == null) value = withContext(Dispatchers.IO) { SkinAtlas.load(context) }
     }
 }
 
@@ -105,6 +122,12 @@ fun DrawScope.drawBead(
     val column = group % SkinAtlas.COLUMNS
     val row = group / SkinAtlas.COLUMNS
     if (row >= SkinAtlas.ROWS) return
+    // Skin texture (OM, 2026-10-25): the editor's beads wear it too.
+    SkinTexture.bead(slitherGroupRgb(group))?.let { plain ->
+        drawImage(plain, dstOffset = IntOffset(left.toInt(), top.toInt()),
+            dstSize = IntSize(size.toInt().coerceAtLeast(1), size.toInt().coerceAtLeast(1)))
+        return
+    }
 
     drawImage(
         image = atlas,

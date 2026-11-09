@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -28,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -47,18 +46,20 @@ import androidx.compose.ui.unit.sp
 /** `WyrmScreenHeader`: uppercase kicker over a 28 bold title, optional trailing. */
 @Composable
 fun IosScreenHeader(kicker: String, title: String, trailing: (@Composable () -> Unit)? = null) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Wyrm.Paper)
+            .background(wyrmScopedPalette.paper)
             .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 14.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(kicker.uppercase(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp,
-                letterSpacing = 1.15.sp, color = Wyrm.Quiet)
+                letterSpacing = 1.15.sp, color = wyrmScopedPalette.quiet)
             Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 28.sp,
-                letterSpacing = (-0.55).sp, color = Wyrm.Ink)
+                letterSpacing = (-0.55).sp, color = wyrmScopedPalette.ink)
         }
         Spacer(Modifier.width(8.dp))
         trailing?.invoke()
@@ -68,29 +69,33 @@ fun IosScreenHeader(kicker: String, title: String, trailing: (@Composable () -> 
 /** `WyrmSectionLabel`: 10.5 semibold, tracked, quiet. */
 @Composable
 fun IosSectionLabel(text: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = text.uppercase(),
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.SemiBold,
         fontSize = 10.5.sp,
         letterSpacing = 0.9.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 8.dp),
     )
 }
 
-/** `WyrmPaperCard`: 92% card, 17 continuous corners, rule stroke, soft ink shadow. */
+/** Opaque paper card with clipped corners and a quiet rule; no elevation glow. */
 @Composable
 fun IosPaperCard(content: @Composable ColumnScope.() -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(17.dp)
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .shadow(18.dp, shape, ambientColor = Wyrm.Ink.copy(alpha = 0.035f), spotColor = Wyrm.Ink.copy(alpha = 0.035f))
+            
             .clip(shape)
-            .background(Wyrm.Card.copy(alpha = 0.92f))
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
         content = content,
     )
 }
@@ -109,6 +114,8 @@ fun IosListRow(
     badge: Int = 0,
     onClick: (() -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box {
@@ -130,15 +137,15 @@ fun IosListRow(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, fontFamily = Wyrm.Body, fontSize = 15.5.sp,
-                    color = if (destructive) Color(0xFFFF3B30) else Wyrm.Ink)
+                    color = if (destructive) Color(0xFFFF3B30) else wyrmScopedPalette.ink)
                 if (detail.isNotEmpty()) {
-                    Text(detail, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
+                    Text(detail, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.width(8.dp))
             if (value.isNotEmpty()) {
-                Text(value, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet,
+                Text(value, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet,
                     textAlign = TextAlign.End, maxLines = 2)
                 Spacer(Modifier.width(12.dp))
             }
@@ -146,7 +153,7 @@ fun IosListRow(
                 WyrmCountBadge(badge)
                 Spacer(Modifier.width(10.dp))
             }
-            if (showsChevron && onClick != null) IosIcon(IosGlyph.CHEVRON_RIGHT, Wyrm.Chevron, size = 12.dp, semibold = true)
+            if (showsChevron && onClick != null) IosIcon(IosGlyph.CHEVRON_RIGHT, wyrmScopedPalette.chevron, size = 12.dp, semibold = true)
         }
         Box(
             Modifier
@@ -154,7 +161,7 @@ fun IosListRow(
                 .padding(start = if (glyph == null) 14.dp else 56.dp)
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Wyrm.RowRule),
+                .background(wyrmScopedPalette.rowRule),
         )
     }
 }
@@ -165,13 +172,15 @@ fun IosListRow(
  */
 @Composable
 internal fun WyrmCountBadge(count: Int, modifier: Modifier = Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     if (count <= 0) return
     Box(
         modifier
             .heightIn(min = 20.dp)
             .widthIn(min = 20.dp)
             .clip(WyrmCapsule)
-            .background(Wyrm.Badge)
+            .background(wyrmScopedPalette.badge)
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -180,7 +189,7 @@ internal fun WyrmCountBadge(count: Int, modifier: Modifier = Modifier) {
             fontFamily = Wyrm.Body,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
             fontSize = 11.5.sp,
-            color = Wyrm.contentOn(Wyrm.Badge),
+            color = Wyrm.contentOn(wyrmScopedPalette.badge),
             maxLines = 1,
         )
     }
@@ -195,10 +204,12 @@ fun IosLoadoutRow(
     leading: (@Composable () -> Unit)? = null,
     onOpen: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column {
-        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -212,13 +223,13 @@ fun IosLoadoutRow(
                 leading()
                 Spacer(Modifier.width(12.dp))
             }
-            Text(title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink, maxLines = 1,
+            Text(title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink, maxLines = 1,
                 modifier = Modifier.weight(1f))
             if (value.isNotEmpty()) {
-                Text(value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Quiet, maxLines = 1)
+                Text(value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.quiet, maxLines = 1)
                 Spacer(Modifier.width(6.dp))
             }
-            Text("›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = Wyrm.Chevron)
+            Text("›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = wyrmScopedPalette.chevron)
         }
     }
 }
@@ -226,18 +237,22 @@ fun IosLoadoutRow(
 /** `WyrmLoadoutIcon`: a glyph in a 26 dp well. */
 @Composable
 fun IosLoadoutIcon(glyph: IosGlyph) {
-    Box(Modifier.size(26.dp).clip(wyrmRounded(8.dp)).background(Wyrm.Well), contentAlignment = Alignment.Center) {
-        IosIcon(glyph, Wyrm.Mute, size = 15.dp, semibold = true)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Box(Modifier.size(26.dp).clip(wyrmRounded(8.dp)).background(wyrmScopedPalette.well), contentAlignment = Alignment.Center) {
+        IosIcon(glyph, wyrmScopedPalette.mute, size = 15.dp, semibold = true)
     }
 }
 
 /** `WyrmFoodWell`: three pellets in a well. */
 @Composable
 fun IosFoodWell() {
-    Canvas(Modifier.size(26.dp).clip(wyrmRounded(8.dp)).background(Wyrm.Well)) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Canvas(Modifier.size(26.dp).clip(wyrmRounded(8.dp)).background(wyrmScopedPalette.well)) {
         val r = size.minDimension * 0.115f
-        drawCircle(Wyrm.Live, r, Offset(size.width * 0.32f, size.height * 0.38f))
-        drawCircle(Wyrm.Link, r * 0.82f, Offset(size.width * 0.68f, size.height * 0.34f))
+        drawCircle(wyrmScopedPalette.live, r, Offset(size.width * 0.32f, size.height * 0.38f))
+        drawCircle(wyrmScopedPalette.link, r * 0.82f, Offset(size.width * 0.68f, size.height * 0.34f))
         drawCircle(Color(0xFFD38B5D), r * 1.08f, Offset(size.width * 0.55f, size.height * 0.69f))
     }
 }
@@ -245,26 +260,30 @@ fun IosFoodWell() {
 /** `WyrmMetric`: tracked label over a 17 bold value. */
 @Composable
 fun RowScope.IosMetric(label: String, value: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         Modifier.weight(1f).padding(horizontal = 18.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp,
-            letterSpacing = 0.8.sp, color = Wyrm.Quiet)
-        Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Wyrm.Ink)
+            letterSpacing = 0.8.sp, color = wyrmScopedPalette.quiet)
+        Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = wyrmScopedPalette.ink)
     }
 }
 
 /** `WyrmEmptyPanel`: a centred title and note. */
 @Composable
 fun IosEmptyPanel(title: String, note: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         Modifier.fillMaxWidth().padding(vertical = 28.dp, horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = Wyrm.Ink)
-        Text(note, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, textAlign = TextAlign.Center)
+        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = wyrmScopedPalette.ink)
+        Text(note, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, textAlign = TextAlign.Center)
     }
 }
 
@@ -278,24 +297,26 @@ fun IosDetailChrome(
     onAction: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(Modifier.background(Wyrm.Paper).padding(top = insetTop)) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Column(Modifier.background(wyrmScopedPalette.paper).padding(top = insetTop)) {
         Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 18.dp)) {
             Row(
                 Modifier.align(Alignment.CenterStart).clickable(onClick = onBack),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Link, size = 16.dp, semibold = true)
-                Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.Link)
+                IosIcon(IosGlyph.CHEVRON_LEFT, wyrmScopedPalette.link, size = 16.dp, semibold = true)
+                Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = wyrmScopedPalette.link)
             }
-            Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Wyrm.Ink,
+            Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = wyrmScopedPalette.ink,
                 modifier = Modifier.align(Alignment.Center))
             if (actionTitle.isNotEmpty()) {
                 Text(actionTitle, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-                    color = Wyrm.Link, modifier = Modifier.align(Alignment.CenterEnd).clickable { onAction?.invoke() })
+                    color = wyrmScopedPalette.link, modifier = Modifier.align(Alignment.CenterEnd).clickable { onAction?.invoke() })
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         content()
     }
 }

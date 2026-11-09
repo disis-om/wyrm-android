@@ -210,7 +210,7 @@ object DropWatch {
 
     private suspend fun coroutineProbe(): Triple<String, String, String> {
         val apiHost = runCatching { Uri.parse(BuildConfig.WYRM_API_URL).host }.getOrNull()
-            ?: "wyrm-api.77-245-76-86.sslip.io"
+            ?: "wyrm-api.165-99-223-123.sslip.io"
         val apiPort = runCatching { Uri.parse(BuildConfig.WYRM_API_URL).port }.getOrNull()?.takeIf { it > 0 } ?: 443
         val internet = scope.async(Dispatchers.IO) { probe("1.1.1.1", 443) }
         val api = scope.async(Dispatchers.IO) { probe(apiHost, apiPort) }

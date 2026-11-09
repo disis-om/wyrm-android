@@ -127,9 +127,15 @@ static void process_android_event(twindow* window, const SDL_Event* event) {
       int width = 0;
       int height = 0;
       SDL_GetWindowSizeInPixels(window->handle, &width, &height);
+      bool changed = window->size[0] != width || window->size[1] != height;
       window->size[0] = width;
       window->size[1] = height;
-      window->_refresh = true;
+      /* SDL may echo a resize for the swapchain we just recreated. A
+         duplicate size must not trigger another healthy swapchain rebuild.
+         Explicit refresh requests and lost-surface recovery remain pending. */
+      if (changed || (env->ctx &&
+          (env->ctx->surface_lost || !env->ctx->swapchain_ok)))
+        window->_refresh = true;
       break;
     }
     case SDL_EVENT_KEY_DOWN:
@@ -199,6 +205,17 @@ static void process_android_event(twindow* window, const SDL_Event* event) {
 #endif
       if (env->ms)
         env->ms->dwheel += event->wheel.y;
+#ifdef WYRM_DESKTOP
+      {
+        /* The first wheel steps of a run, to see what a wheel or touchpad
+           sends (OM, 2026-11-05: zoom too strong). */
+        static int logged;
+        if (logged < 40) {
+          logged++;
+          SDL_Log("Wyrm wheel: %.3f", event->wheel.y);
+        }
+      }
+#endif
       break;
     default:
       break;
@@ -332,6 +349,7 @@ twindow* twindow_create(tenv* env, trender_func render_func,
 
 static void apply_pending_window_change(twindow* window) {
 #ifdef WYRM_SDL_JNI
+  if (window->_closed) return; /* never recreate graphics after Quit */
   /* A lost device cannot be rebuilt from here (tcontext_device_lost). */
   if (window->env->ctx && window->env->ctx->device_lost) {
     window->_refresh = false;
@@ -421,9 +439,38 @@ static void apply_pending_window_change(twindow* window) {
   }
 }
 
+#ifdef WYRM_DESKTOP
+/* Direct presentation (2026-11-05, desktop_bridge.c): the shell asked the
+   engine to present to the game canvas (a match) or back to the hidden
+   window (anything else). The Vulkan surface and swapchain move between
+   frames; the SDL window, ImGui and input stay as they are. A canvas that
+   cannot take a surface falls back to the hidden window. */
+static void desktop_apply_target(twindow* window) {
+  void* want = wyrm_desktop_target_wanted();
+  if (want == wyrm_desktop_target_hwnd()) return;
+  tcontext* ctx = window->env->ctx;
+  if (!ctx || ctx->device_lost) {
+    wyrm_desktop_target_set_active(want);
+    return;
+  }
+  wyrm_desktop_target_set_active(want);
+  bool ok = tcontext_recreate_surface(ctx, window, window->env->config.vsync);
+  if (!ok && want) {
+    SDL_Log("Wyrm direct: the game canvas refused a surface; back to readback");
+    wyrm_desktop_target_set_active(NULL);
+    ok = tcontext_recreate_surface(ctx, window, window->env->config.vsync);
+  }
+  SDL_Log("Wyrm direct: presenting %s (%s)",
+          wyrm_desktop_direct() ? "straight to the screen" : "through readback",
+          ok ? "ok" : "failed");
+  if (ok) window->_resize_func(window->env);
+}
+#endif
+
 void twindow_poll_input(twindow* window) {
 #ifdef WYRM_DESKTOP
   wyrm_desktop_apply_size(window->handle);
+  desktop_apply_target(window);
 #endif
 #ifdef WYRM_SDL_JNI
   SDL_Event event;
@@ -434,6 +481,17 @@ void twindow_poll_input(twindow* window) {
 #endif
   apply_pending_window_change(window);
 }
+#ifdef WYRM_SDL_JNI
+/* Late input latching (2026-10-23): the touches that came in while the frame
+ * waited for its image. Window changes only queue here (process_android_event
+ * marks them); the next twindow_poll_input applies them, after this frame's
+ * acquired image has been presented. */
+void twindow_pump_events(twindow* window) {
+  SDL_Event event;
+  while (SDL_PollEvent(&event))
+    process_android_event(window, &event);
+}
+#endif
 void twindow_wait_input(twindow* window) {
 #ifdef WYRM_SDL_JNI
   SDL_Event event;
@@ -443,6 +501,9 @@ void twindow_wait_input(twindow* window) {
     process_android_event(window, &event);
 #else
   glfwWaitEvents();
+#endif
+#ifdef WYRM_DESKTOP
+  desktop_apply_target(window);
 #endif
   apply_pending_window_change(window);
 }

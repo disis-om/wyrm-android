@@ -10,6 +10,9 @@
 #ifdef WYRM_SDL_JNI
 /* main.c: one background pass; false while the app is in front. */
 bool wyrm_background_tick(tenv* env);
+/* main.c: wait for the frame's image before reading the touches (a match
+   that was drawn last frame). */
+bool wyrm_late_latch(tenv* env);
 #endif
 
 int tentry(int argc, char** argv, size_t usr_size) {
@@ -104,10 +107,31 @@ int tentry(int argc, char** argv, size_t usr_size) {
       twindow_poll_input(env.wnd);
     } else {
       twindow_wait_input(env.wnd);
+      /* Quit must end even when the swapchain never recovers. Otherwise
+         SDLActivity's bounded join expires and destroys SDL's live mutexes. */
+      if (twindow_closed(env.wnd)) {
+        tinput(&env); /* preserve the normal quit/settings-save path */
+        break;
+      }
       continue;
     }
+#ifdef WYRM_SDL_JNI
+    if (twindow_closed(env.wnd)) {
+      tinput(&env);
+      break;
+    }
+    /* Late input latching (OM, 2026-10-23, players' "input lag"): in a
+       match, wait for the display's next image first (FIFO blocks here),
+       then take the touches that arrived meanwhile, so the frame shows the
+       finger as it is now, not as it was before the wait. Window changes
+       stay queued until the next poll, after this image is presented. */
+    if (env.ctx->swapchain_ok && wyrm_late_latch(&env) &&
+        tcontext_acquire(env.ctx))
+      twindow_pump_events(env.wnd);
+#endif
 
     tinput(&env);
+    if (!env.config.running) break;
     trender(&env);
 #ifdef WYRM_SDL_JNI
     if (!startup_ready_reported && env.ctx->last_present_succeeded) {

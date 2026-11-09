@@ -21,7 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,10 +55,12 @@ fun PlayerScreen(
     onOpenFollowers: () -> Unit,
     onOpenFollowing: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
@@ -71,7 +73,7 @@ fun PlayerScreen(
                     text = "‹ Back",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onBack)
@@ -82,12 +84,12 @@ fun PlayerScreen(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -112,7 +114,7 @@ fun PlayerScreen(
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.Bold,
                         fontSize = 24.sp,
-                        color = if (player.isDeleted) Wyrm.Quiet else Wyrm.Ink,
+                        color = if (player.isDeleted) wyrmScopedPalette.quiet else wyrmScopedPalette.ink,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -121,7 +123,7 @@ fun PlayerScreen(
                             text = player.handle,
                             fontFamily = Wyrm.Body,
                             fontSize = 14.5.sp,
-                            color = Wyrm.Quiet,
+                            color = wyrmScopedPalette.quiet,
                             modifier = Modifier.padding(top = 2.dp),
                         )
                     }
@@ -130,7 +132,7 @@ fun PlayerScreen(
                             text = "Follows you",
                             fontFamily = Wyrm.Body,
                             fontSize = 12.5.sp,
-                            color = Wyrm.Live,
+                            color = wyrmScopedPalette.live,
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
@@ -143,7 +145,7 @@ fun PlayerScreen(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.5.sp,
                     letterSpacing = 0.92.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 8.dp),
                 )
                 Text(
@@ -151,13 +153,13 @@ fun PlayerScreen(
                     fontFamily = Wyrm.Body,
                     fontSize = 14.5.sp,
                     lineHeight = 21.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier
                         .padding(horizontal = 16.dp)
                         .fillMaxWidth()
                         .clip(wyrmRounded(14.dp))
-                        .background(Wyrm.Card)
-                        .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
+                        .background(wyrmScopedPalette.card)
+                        .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp))
                         .padding(14.dp),
                 )
             }
@@ -190,7 +192,7 @@ fun PlayerScreen(
                         text = "A direct thread opens once you follow each other.",
                         fontFamily = Wyrm.Body,
                         fontSize = 12.5.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
                     )
                 }
@@ -200,7 +202,7 @@ fun PlayerScreen(
                     text = error,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
-                    color = Wyrm.Badge,
+                    color = wyrmScopedPalette.badge,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
                 )
             }
@@ -210,15 +212,15 @@ fun PlayerScreen(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.5.sp,
                 letterSpacing = 0.92.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 8.dp),
             )
             Column(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
                     .clip(wyrmRounded(14.dp))
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp)),
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp)),
             ) {
                 PaperRecord("Highest score", player.highestScore.toString(), first = true)
                 PaperRecord("Total kills", player.kills.toString())
@@ -231,8 +233,10 @@ fun PlayerScreen(
 
 @Composable
 private fun PaperRecord(label: String, value: String, first: Boolean = false, onClick: (() -> Unit)? = null) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
-        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -241,10 +245,10 @@ private fun PaperRecord(label: String, value: String, first: Boolean = false, on
                 .padding(horizontal = 14.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text = label, fontFamily = Wyrm.Body, fontSize = 13.5.sp, color = Wyrm.Quiet, modifier = Modifier.width(132.dp))
-            Text(text = value, fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
+            Text(text = label, fontFamily = Wyrm.Body, fontSize = 13.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.width(132.dp))
+            Text(text = value, fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink, modifier = Modifier.weight(1f))
             if (onClick != null) {
-                Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = Wyrm.Chevron)
+                Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = wyrmScopedPalette.chevron)
             }
         }
     }
@@ -259,10 +263,12 @@ private fun PaperRecord(label: String, value: String, first: Boolean = false, on
  */
 @Composable
 fun LoadingScreen(title: String, insetTop: Dp, insetBottom: Dp, onBack: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Box(
             modifier = Modifier
@@ -275,7 +281,7 @@ fun LoadingScreen(title: String, insetTop: Dp, insetBottom: Dp, onBack: () -> Un
                 text = "‹ Back",
                 fontFamily = Wyrm.Body,
                 fontSize = 16.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .clickable(onClick = onBack)
@@ -286,16 +292,16 @@ fun LoadingScreen(title: String, insetTop: Dp, insetBottom: Dp, onBack: () -> Un
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         Text(
             text = "Loading…",
             fontFamily = Wyrm.Body,
             fontSize = 14.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.padding(20.dp),
         )
     }
@@ -322,16 +328,18 @@ fun ConnectionsScreen(
     onOpenPlayer: (String) -> Unit,
     onToggleFollow: (ApiPlayer) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val followers = kind != "following"
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
         ) {
@@ -340,7 +348,7 @@ fun ConnectionsScreen(
                     text = "‹ $backLabel",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onBack)
@@ -351,7 +359,7 @@ fun ConnectionsScreen(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
@@ -361,7 +369,7 @@ fun ConnectionsScreen(
                 onSelect = { onKindChange(if (it == 0) "followers" else "following") },
             )
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         when {
             loading && players.isEmpty() -> Note("Loading…")
             players.isEmpty() -> Note("Nobody here yet.")
@@ -392,6 +400,8 @@ private fun ConnectionRow(
     onOpen: () -> Unit,
     onToggleFollow: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val best = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(player.highestScore)
     Column {
         if (!first) SettingsHairline()
@@ -416,7 +426,7 @@ private fun ConnectionRow(
                     text = if (player.isDeleted) "Deleted player" else player.displayName,
                     fontFamily = Wyrm.Body,
                     fontSize = 15.sp,
-                    color = if (player.isDeleted) Wyrm.Quiet else Wyrm.Ink,
+                    color = if (player.isDeleted) wyrmScopedPalette.quiet else wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -427,7 +437,7 @@ private fun ConnectionRow(
                     ).joinToString(" · "),
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -441,13 +451,15 @@ private fun ConnectionRow(
 
 @Composable
 private fun FollowChip(following: Boolean, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .height(32.dp)
             .clip(wyrmRounded(9.dp))
             .then(
-                if (following) Modifier.border(1.dp, Wyrm.Rule, wyrmRounded(9.dp))
-                else Modifier.background(Wyrm.Ink)
+                if (following) Modifier.border(1.dp, wyrmScopedPalette.rule, wyrmRounded(9.dp))
+                else Modifier.background(wyrmScopedPalette.ink)
             )
             .clickable(onClick = onClick)
             .padding(horizontal = if (following) 13.dp else 15.dp),
@@ -458,7 +470,7 @@ private fun FollowChip(following: Boolean, onClick: () -> Unit) {
             fontFamily = Wyrm.Body,
             fontWeight = if (following) FontWeight.Normal else FontWeight.SemiBold,
             fontSize = 13.sp,
-            color = if (following) Wyrm.Mute else Wyrm.OnInk,
+            color = if (following) wyrmScopedPalette.mute else wyrmScopedPalette.onInk,
         )
     }
 }

@@ -1,4 +1,7 @@
 #include "ui_overlay.h"
+#include "original_art.h"
+#include "sheet_text.h"
+#include "minimap_art.h"
 #include "ai_mode.h"
 
 #include "arena_theme.h"
@@ -129,7 +132,7 @@ bool ui_overlay_leaderboard_hit(tenv* env, float x, float y) {
   if (!env || env->usr->gdata.curr_screen != PLAYING ||
       (env->usr->gdata.conn != CONNECTED &&
        env->usr->gdata.conn != AI_CONNECTED) ||
-      !env->usr->gdata.data.gotlb)
+      !env->usr->gdata.data.gotlb || ai_mode_is_editor())
     return false;
   if (x < leaderboard_hit[0] || y < leaderboard_hit[1] ||
       x > leaderboard_hit[0] + leaderboard_hit[2] ||
@@ -185,6 +188,29 @@ static ImVec2 measure_scaled(ImFont* font, const char* text, float scale) {
   return size;
 }
 
+/* Wyrm HUD type from the original sheet (OM, 2026-11-01): printable ASCII
+   in its glyphs, anything else in Wyrm's font. The leaderboard is the
+   thin set, as the original's; the stats set their own. */
+static int hud_sheet_font = SHEET_THIN;
+static void hud_text(ImDrawList* draw, ImFont* font, float size, ImVec2 pos,
+                     ImU32 colour, const char* text) {
+  if (sheet_ok(text))
+    sheet_layer(draw, text, size, pos, colour, hud_sheet_font, 0);
+  else
+    ImDrawList_AddText_FontPtr(draw, font, size, pos, colour, text, NULL, 0,
+                               NULL);
+}
+static float hud_measure(ImFont* font, const char* text) {
+  return sheet_ok(text) ? sheet_width(text, font->LegacySize, hud_sheet_font)
+                        : measure(font, text);
+}
+static ImVec2 hud_measure_scaled(ImFont* font, const char* text, float scale,
+                                 int sheet_font) {
+  ImVec2 size = measure_scaled(font, text, scale);
+  if (sheet_ok(text)) size.x = sheet_width(text, font->LegacySize * scale, sheet_font);
+  return size;
+}
+
 /**
  * Draws a name, shortened until it fits.
  *
@@ -221,82 +247,35 @@ static void draw_stat_row(tenv* env, ImDrawList* draw, float right, float y,
 
   float scale = usr->usrs.hud_stats_scale;
   alpha *= usr->usrs.hud_stats_opacity;
-  ImVec2 value_size = measure_scaled(display, value, scale);
+  /* The original's sheet (OM, 2026-11-01): values in its stats' Black,
+     labels in the thin set. */
+  ImVec2 value_size = hud_measure_scaled(display, value, scale, SHEET_BLACK);
 
-  ImDrawList_AddText_FontPtr(draw, display, display->LegacySize * scale,
-                             (ImVec2){right - value_size.x, y},
-                             android_team_stats_colour(ARENA_THEME_INK, alpha), value,
-                             NULL, 0, NULL);
+  hud_sheet_font = SHEET_BLACK;
+  hud_text(draw, display, display->LegacySize * scale,
+           (ImVec2){right - value_size.x, y},
+           android_team_stats_colour(ARENA_THEME_INK, alpha), value);
 
-  ImVec2 label_size = measure_scaled(body, label, scale);
-  ImDrawList_AddText_FontPtr(
-      draw, body, body->LegacySize * scale,
-      (ImVec2){right - value_size.x - 10.0f * scale - label_size.x,
-               y + (value_size.y - label_size.y) * 0.72f},
-      android_team_stats_colour(ARENA_THEME_QUIET, 0.92f * alpha), label, NULL, 0,
-      NULL);
+  ImVec2 label_size = hud_measure_scaled(body, label, scale, SHEET_THIN);
+  hud_sheet_font = SHEET_THIN;
+  hud_text(draw, body, body->LegacySize * scale,
+           (ImVec2){right - value_size.x - 10.0f * scale - label_size.x,
+                    y + (value_size.y - label_size.y) * 0.72f},
+           android_team_stats_colour(ARENA_THEME_QUIET, 0.92f * alpha), label);
 }
 
 /* ---- Near Original (OM, 2026-10-02): slither's own HUD, Main.as ---- */
 
 static float original_lb_fade = 0.0f;
 
-static ImVec2 original_text_size(ImFont* font, float size, const char* text) {
-  ImVec2 out;
-  igPushFont(font, size);
-  igCalcTextSize(&out, text, NULL, false, -1);
-  igPopFont();
-  return out;
+static renderer* original_board_renderer;
+static ImVec2 original_text_size(ImFont* font,float size,const char* text) {
+  (void)font; return (ImVec2){original_width(text,size),size};
 }
-
-/*
- * One leaderboard string as the original draws it (Main.as drawText and the
- * glyph sheets, 26865-27030). The glyphs were cut at 52 px with
- * DropShadowFilter(0, 90, black, 1, 7, 7, strength 24) = a solid black outline
- * about 6 px wide, then DropShadowFilter(3, 90, black, 0.75, 8, 8) = a soft
- * shadow 3 px below. The board draws that outlined glyph, tinted with the
- * snake's colour, at `alpha`, and the bare face again ADDITIVELY at the same
- * alpha (highscore_add_batch). Over the face the sum is bg(1 - a) + 2ca, so the
- * face is drawn here in twice its colour; that is why it reads on any floor.
- */
-static void original_text(ImDrawList* draw, ImFont* font, float size,
-                          ImVec2 pos, vec3s colour, float alpha,
-                          const char* text) {
-  if (alpha <= 0.004f) return;
-  float f = size / 52.0f;
-  float outline = 6.0f * f;
-  float drop = 3.0f * f;
-  /* Stamps overlap about three deep: each is weaker so the pile reads as alpha. */
-  float stamp = 1.0f - powf(1.0f - (alpha > 0.999f ? 0.999f : alpha), 1.0f / 3.0f);
-  ImU32 shadow = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, stamp * 0.75f * 0.45f});
-  ImU32 black = igColorConvertFloat4ToU32((ImVec4){0, 0, 0, stamp});
-  for (int i = 0; i < 8; ++i) {
-    float a = 6.2831853f * (i + 0.5f) / 8.0f;
-    float spread = outline + 4.0f * f;
-    ImDrawList_AddText_FontPtr(
-        draw, font, size,
-        (ImVec2){pos.x + cosf(a) * spread, pos.y + drop + sinf(a) * spread},
-        shadow, text, NULL, 0, NULL);
-  }
-  for (int i = 0; i < 12; ++i) {
-    float a = 6.2831853f * i / 12.0f;
-    ImDrawList_AddText_FontPtr(
-        draw, font, size,
-        (ImVec2){pos.x + cosf(a) * outline, pos.y + sinf(a) * outline},
-        black, text, NULL, 0, NULL);
-  }
-  for (int i = 0; i < 6; ++i) {
-    float a = 6.2831853f * (i + 0.5f) / 6.0f;
-    ImDrawList_AddText_FontPtr(
-        draw, font, size,
-        (ImVec2){pos.x + cosf(a) * outline * 0.5f, pos.y + sinf(a) * outline * 0.5f},
-        black, text, NULL, 0, NULL);
-  }
-  float r = colour.x * 2.0f, g = colour.y * 2.0f, b = colour.z * 2.0f;
-  ImU32 face = igColorConvertFloat4ToU32((ImVec4){r > 1.0f ? 1.0f : r,
-                                                  g > 1.0f ? 1.0f : g,
-                                                  b > 1.0f ? 1.0f : b, alpha});
-  ImDrawList_AddText_FontPtr(draw, font, size, pos, face, text, NULL, 0, NULL);
+static void original_text(ImDrawList* draw,ImFont* font,float size,ImVec2 pos,
+    vec3s colour,float alpha,const char* text) {
+  (void)draw; (void)font;
+  original_board_text(original_board_renderer,text,size,pos.x,pos.y,colour,alpha);
 }
 
 /*
@@ -339,7 +318,7 @@ static const struct {
 };
 
 static vec3s original_minimap_floor(int floor) {
-  const char* id = BACKGROUNDS[background_clamp(floor)].id;
+  const char* id = (*background_at(background_clamp(floor))).id;
   int count = (int)(sizeof(ORIGINAL_MINIMAP_FLOOR) / sizeof(ORIGINAL_MINIMAP_FLOOR[0]));
   for (int i = 0; i < count; ++i)
     if (strcmp(ORIGINAL_MINIMAP_FLOOR[i].id, id) == 0)
@@ -402,7 +381,70 @@ static void original_wedge(ImDrawList* draw, ImVec2 c, float r, float a0,
  * (rows of 14u, text 11u in Nunito Bold, each in that snake's colour with a
  * black outline; no title). Wyrm's stats and bearing are not drawn.
  */
+/* Near Original's stats (OM, 2026-11-08): what AIR shows at the bottom
+   while playing (Main.as 15456-15567, 12860-12890), in its own baked
+   letters: your length big in the middle with "length" under it, your kills
+   on the right with "boops", and "rank: N of M" on the left. Positions in
+   AIR's stage units from the screen's middle (u = short side / 480). */
+static float original_stats_fade;
+static float original_boops_x;
+
+static void original_stats_text(renderer* r, bool add, const char* text, float size,
+                                 float x, float y, vec3s colour, float alpha,
+                                 float shadow, int align) {
+  if (align == 1) x -= original_width(text, size) * 0.5f;
+  else if (align == 2) x -= original_width(text, size);
+  spr_renderer* batch = add ? r->original_hud_add : r->original_hud;
+  if (shadow > 0) original_glyph_run(batch, text, size, x, y, colour, shadow, 2, 1e9f);
+  original_glyph_run(batch, text, size, x, y, colour, alpha, 0, 1e9f);
+}
+
+static void draw_original_stats(tenv* env, float W, float H, float u, bool portrait) {
+  game_data* g = &env->usr->gdata;
+  renderer* r = env->usr->r;
+  if (!r || g->data.snake_id < 0 || g->data.rank <= 0 || g->data.slither_count <= 0) {
+    original_stats_fade = 0.0f;
+    return;
+  }
+  float vfr = g->data.vfr;
+  if (!(vfr > 0.0f) || vfr > 4.0f) vfr = 1.0f;
+  original_stats_fade = fminf(1.0f, original_stats_fade + vfr * 0.01f);
+  float fade = original_stats_fade;
+  float mww2 = W * 0.5f / u, mhh2 = H * 0.5f / u;
+  float wdxo = roundf(0.057f * (W < H ? W : H) / u);
+  float cx = W * 0.5f, cy = H * 0.5f;
+  vec3s white = {{1, 1, 1}};
+  char text[64];
+
+  /* Your length, 29 bold, shadowed, centred; "length" under it. */
+  snprintf(text, sizeof(text), "%d", g->data.score);
+  float number_y = cy + (mhh2 - 65 + 16 - 21) * u;
+  original_stats_text(r, false, text, 29 * u, cx, number_y, white, 0.99f * fade, 0.99f * fade, 1);
+  original_stats_text(r, true, "length", 12 * u, cx, cy + (mhh2 - 34) * u,
+                      (vec3s){{0x50 / 255.0f, 0x5F / 255.0f, 1.0f}}, 0.85f * fade, 0, 1);
+
+  /* Your kills on the right, "boops" under them. */
+  snprintf(text, sizeof(text), "%d", g->data.kills);
+  float right = mww2 - wdxo - (portrait ? 30 : 120);
+  float kw = original_width(text, 29 * u) / u;
+  float want = right - kw * 0.5f;
+  if (original_boops_x == 0.0f) original_boops_x = want;
+  original_boops_x += (want - original_boops_x) * fminf(1.0f, 0.1f * vfr);
+  original_stats_text(r, false, text, 29 * u, cx + (right - kw * 0.5f) * u, number_y, white,
+                      0.99f * fade, 0.99f * fade, 1);
+  original_stats_text(r, true, "boops", 12 * u, cx + original_boops_x * u, cy + (mhh2 - 34) * u,
+                      (vec3s){{1.0f, 0x60 / 255.0f, 0x60 / 255.0f}}, 0.66f * fade, 0, 1);
+
+  /* rank: N of M, on the left (colour bytes as Main.as writes them). */
+  snprintf(text, sizeof(text), "\x02\x0c\x7e\x0crank: \x01%d \x02\x3c\x3c\x3cof %d",
+           g->data.rank, g->data.slither_count);
+  float left = wdxo + (portrait ? 10 : 100);
+  original_stats_text(r, true, text, 12 * u, cx + (left - mww2) * u, cy + (mhh2 - 34) * u,
+                      white, fade, 0, 0);
+}
+
 static void draw_original_hud(tenv* env, ImDrawList* draw) {
+  original_board_renderer = env->usr->r;
   tuser_data* usr = env->usr;
   game_data* gdata = &usr->gdata;
   user_settings* usrs = &usr->usrs;
@@ -441,6 +483,14 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
   ImVec2 c = {ox + side * 0.5f * k, oy + (side * 0.5f + 23.0f) * k};
   float R = r * k;
 
+  /* The original's own bitmap for this floor and its "server N" line
+     (OM, 2026-11-01), at the bitmap's alpha 0.7 (game/minimap_art.h). */
+  float art = (float)mmsz / (2.0f * MINIMAP_ART_R);
+  bool baked = minimap_art_draw(draw, usrs->arena_background, c, k * art, 0.7f);
+  if (baked) {
+    int baked_server = android_home_near_original_server();
+    if (baked_server > 0) minimap_art_server(draw, baked_server, c, k * art, k, 0.7f);
+  } else {
   /* The bitmap's shadow (0.5) under the bitmap's own alpha (0.7). */
   original_disc_shadow(draw, c, R, 3.0f * k, 6.0f * k, 0.5f * 0.7f);
   /* The disc: the floor, blurred (see ORIGINAL_MINIMAP_FLOOR), with the top-left
@@ -476,6 +526,7 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
     ImDrawList_AddText_FontPtr(
         draw, bold, size, at,
         igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.75f * 0.7f}), label, NULL, 0, NULL);
+  }
   }
 
   /* The map: one rect per run of set cells in a row. */
@@ -527,8 +578,12 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
   }
 
   android_voice_publish_hud(c.x - R, c.y - R, R * 2.0f);
-  android_team_draw_minimap(env, c.x - R, c.y - R, R * 2.0f);
+  /* Your mark is at the full radius here; the team draws at 0.9 of the
+     radius it is given, so it is given R / 0.9 (2026-10-23). */
+  android_team_draw_minimap(env, c.x - R / 0.9f, c.y - R / 0.9f,
+                            R * 2.0f / 0.9f);
   android_team_set_chat_centre(usrs->hud_chat_x * W, usrs->hud_chat_y * H);
+  draw_original_stats(env, W, H, u, portrait);
 
   /* ---- leaderboard ---- */
   if (!gdata->data.gotlb) {
@@ -554,15 +609,7 @@ static void draw_original_hud(tenv* env, ImDrawList* draw) {
     if (cv < 0 || cv >= NUM_COLOR_GROUPS) cv = 0;
     vec3s colour = gdata->cg_colors[cv];
     float y = ly + (5.0f + 14.0f * row_y) * u;
-    /* Your own row (OM, 2026-10-05): a faint plate behind it and the rank and
-       name nudged right, so you see at once where you are. */
-    float me_x = mine ? 6.0f * u : 0.0f;
-    if (mine)
-      ImDrawList_AddRectFilled(
-          draw, (ImVec2){lx - 6.0f * u, y - 1.5f * u},
-          (ImVec2){lx + 247.0f * u, y + size + 2.5f * u},
-          igColorConvertFloat4ToU32((ImVec4){1, 1, 1, 0.14f * original_lb_fade}),
-          6.0f * u, 0);
+    float me_x = 0;
     char rank[8];
     snprintf(rank, sizeof(rank), "#%d", row + 1);
     original_text(draw, bold, size, (ImVec2){lx + me_x, y}, colour, alpha, rank);
@@ -636,7 +683,7 @@ static bool wyrm_floor_mean(tenv* env, vec3s* out) {
   tuser_data* usr = env->usr;
   if (usr->r->global.bg_opacity <= 0.0f || usr->r->global.bg_color[0] < 0.5f)
     return false;
-  const char* id = BACKGROUNDS[background_clamp(usr->usrs.arena_background)].id;
+  const char* id = (*background_at(background_clamp(usr->usrs.arena_background))).id;
   int count = (int)(sizeof(WYRM_FLOOR_MEAN) / sizeof(WYRM_FLOOR_MEAN[0]));
   for (int i = 0; i < count; ++i)
     if (strcmp(WYRM_FLOOR_MEAN[i].id, id) == 0) {
@@ -645,25 +692,6 @@ static bool wyrm_floor_mean(tenv* env, vec3s* out) {
       return true;
     }
   return false;
-}
-
-/* A light floor (mean luma 0.30 or more) gets the slate plate. */
-static bool wyrm_floor_light(tenv* env) {
-  vec3s mean;
-  return wyrm_floor_mean(env, &mean) && wyrm_luma(mean) >= 0.30f;
-}
-
-/* A snake's colour, lifted toward white until it reads over the halo. */
-static ImU32 wyrm_snake_ink(vec3s c, float alpha) {
-  float l = wyrm_luma(c);
-  const float target = 0.62f;
-  if (l < target) {
-    float t = (target - l) / (1.0f - l + 0.0001f);
-    c.x += (1.0f - c.x) * t;
-    c.y += (1.0f - c.y) * t;
-    c.z += (1.0f - c.z) * t;
-  }
-  return igColorConvertFloat4ToU32((ImVec4){c.x, c.y, c.z, alpha});
 }
 
 /* Snake names on any floor (OM, 2026-10-18): the floor's mean luma, once a
@@ -709,6 +737,10 @@ static void wyrm_halo_text(ImDrawList* draw, ImFont* font, float size,
                            ImVec2 pos, ImU32 colour, float alpha,
                            const char* text) {
   if (alpha <= 0.004f || !text || !text[0]) return;
+  if (sheet_ok(text)) {
+    hud_text(draw, font, size, pos, colour, text);
+    return;
+  }
   float soft = size * 0.16f;
   if (soft < 2.0f) soft = 2.0f;
   float tight = size * 0.07f;
@@ -717,10 +749,9 @@ static void wyrm_halo_text(ImDrawList* draw, ImFont* font, float size,
       (ImVec4){WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, alpha * 0.10f});
   for (int i = 0; i < 8; ++i) {
     float a = 6.2831853f * (i + 0.5f) / 8.0f;
-    ImDrawList_AddText_FontPtr(
-        draw, font, size,
-        (ImVec2){pos.x + cosf(a) * soft, pos.y + sinf(a) * soft + soft * 0.35f},
-        shadow, text, NULL, 0, NULL);
+    hud_text(draw, font, size,
+             (ImVec2){pos.x + cosf(a) * soft, pos.y + sinf(a) * soft + soft * 0.35f},
+             shadow, text);
   }
   /* The outline stamps overlap about two deep. */
   float stamp = 1.0f - sqrtf(1.0f - 0.72f * alpha);
@@ -728,59 +759,10 @@ static void wyrm_halo_text(ImDrawList* draw, ImFont* font, float size,
       (ImVec4){WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, stamp});
   for (int i = 0; i < 8; ++i) {
     float a = 6.2831853f * i / 8.0f;
-    ImDrawList_AddText_FontPtr(
-        draw, font, size,
-        (ImVec2){pos.x + cosf(a) * tight, pos.y + sinf(a) * tight}, ink, text,
-        NULL, 0, NULL);
+    hud_text(draw, font, size,
+             (ImVec2){pos.x + cosf(a) * tight, pos.y + sinf(a) * tight}, ink, text);
   }
-  ImDrawList_AddText_FontPtr(draw, font, size, pos, colour, text, NULL, 0, NULL);
-}
-
-/* A name in the halo, shortened with "..." until it fits. */
-static void wyrm_halo_fitted(ImDrawList* draw, ImFont* font, ImVec2 pos,
-                             ImU32 colour, float alpha, const char* text,
-                             float max_width) {
-  if (measure(font, text) <= max_width) {
-    wyrm_halo_text(draw, font, font->LegacySize, pos, colour, alpha, text);
-    return;
-  }
-  char shortened[MAX_NICKNAME_LEN + 8];
-  int length = (int)strlen(text);
-  if (length > (int)sizeof(shortened) - 5) length = (int)sizeof(shortened) - 5;
-  while (length > 1) {
-    snprintf(shortened, sizeof(shortened), "%.*s...", --length, text);
-    if (measure(font, shortened) <= max_width) break;
-  }
-  wyrm_halo_text(draw, font, font->LegacySize, pos, colour, alpha, shortened);
-}
-
-/* A leaderboard name (OM, 2026-10-13): one line, shortened to fit; when the
-   row has room for two (the HEIGHT slider), a name too long for one line
-   folds onto the second instead, cut only between letters (UTF-8 aware). */
-static void wyrm_halo_name_rows(ImDrawList* draw, ImFont* font, ImVec2 pos,
-                                ImU32 colour, float alpha, const char* text,
-                                float max_width, int lines, float line_step) {
-  if (lines < 2 || !text || measure(font, text) <= max_width) {
-    wyrm_halo_fitted(draw, font, pos, colour, alpha, text, max_width);
-    return;
-  }
-  char first[MAX_NICKNAME_LEN + 8];
-  int length = (int)strlen(text);
-  int cut = 0;
-  for (int i = 1; i <= length && i < (int)sizeof(first) - 1; ++i) {
-    if (i < length && (((unsigned char)text[i]) & 0xC0) == 0x80) continue;
-    snprintf(first, sizeof(first), "%.*s", i, text);
-    if (measure(font, first) > max_width) break;
-    cut = i;
-  }
-  if (cut <= 0 || cut >= length) {
-    wyrm_halo_fitted(draw, font, pos, colour, alpha, text, max_width);
-    return;
-  }
-  snprintf(first, sizeof(first), "%.*s", cut, text);
-  wyrm_halo_text(draw, font, font->LegacySize, pos, colour, alpha, first);
-  wyrm_halo_fitted(draw, font, (ImVec2){pos.x, pos.y + line_step}, colour,
-                   alpha, text + cut, max_width);
+  hud_text(draw, font, size, pos, colour, text);
 }
 
 /*
@@ -796,6 +778,10 @@ static void wyrm_draw_minimap(tenv* env, ImDrawList* draw, float left,
   game_data* gdata = &env->usr->gdata;
   float R = diameter * 0.5f;
   ImVec2 c = {left + R, top + R};
+  /* The original's own disc for this floor (OM, 2026-11-01): the floor
+     blurred into it, so it reads on every floor (game/minimap_art.h). */
+  if (!minimap_art_draw(draw, env->usr->usrs.arena_background, c,
+                        R / MINIMAP_ART_R, 0.7f)) {
   original_disc_shadow(draw, c, R + 1.5f, 2.0f, 5.0f, 0.30f);
 
   vec3s slate = {{0.085f, 0.095f, 0.120f}};
@@ -818,6 +804,7 @@ static void wyrm_draw_minimap(tenv* env, ImDrawList* draw, float left,
   ImDrawList_AddLine(draw, (ImVec2){c.x - R * 0.92f, c.y}, (ImVec2){c.x + R * 0.92f, c.y}, faint, 1.0f);
   ImDrawList_AddLine(draw, (ImVec2){c.x, c.y - R * 0.92f}, (ImVec2){c.x, c.y + R * 0.92f}, faint, 1.0f);
   ImDrawList_AddCircle(draw, c, R * 0.45f, faint, 48, 1.0f);
+  }
 
   /* The cells (OM, 2026-10-09: snakes glide across the map instead of
      jumping). A cell's eased value (mm_data_follow, 0-255) is its opacity,
@@ -921,6 +908,22 @@ void ui_overlay(tenv* env) {
                           usrs->laser_color[0], usrs->laser_color[1],
                           usrs->laser_color[2], usrs->laser_color[3] * a,
                           usrs->laser_thickness, usrs->hotkeys[HOTKEY_ASSIST].active);
+        /* A direct match (2026-11-05) is a native window Compose cannot draw
+           over: the engine draws the line, head to the newest pointer, on
+           the shell's same conditions (pointer over the focused game; Assist
+           or "Front laser in Normal mode"). */
+        if (wyrm_desktop_direct() &&
+            wyrm_desktop_laser_wanted(usrs->hotkeys[HOTKEY_ASSIST].active)) {
+          ImDrawList_AddLine(
+              igGetForegroundDrawList_ViewportPtr(igGetMainViewport()),
+              (ImVec2){mww2 + (hx - gdata->data.view_xx) * gdata->data.gsc,
+                       mhh2 + (hy - gdata->data.view_yy) * gdata->data.gsc},
+              (ImVec2){env->ms->pos[0], env->ms->pos[1]},
+              igColorConvertFloat4ToU32(
+                  (ImVec4){usrs->laser_color[0], usrs->laser_color[1],
+                           usrs->laser_color[2], usrs->laser_color[3] * a}),
+              usrs->laser_thickness);
+        }
 #else
         ImDrawList_AddLine(
             igGetWindowDrawList(),
@@ -948,6 +951,16 @@ void ui_overlay(tenv* env) {
           android_home_joystick_laser_on() && a > 0.01f) {
         float lx = cosf(me->ehang);
         float ly = sinf(me->ehang);
+        /* Classic: the finger's way, as the arrow's laser (OM, 2026-11-01). */
+        float aim_x = 0, aim_y = 0;
+        bool classic = mobile_controls_steering_mode(env) == MOBILE_STEERING_CLASSIC;
+        bool contact = mobile_controls_classic_aim(env, &aim_x, &aim_y);
+        float head_x = mww2+(hx-gdata->data.view_xx)*gdata->data.gsc;
+        float head_y = mhh2+(hy-gdata->data.view_yy)*gdata->data.gsc;
+        float distance = hypotf(aim_x-head_x, aim_y-head_y);
+        if (classic && contact && distance > .001f) {
+          lx = (aim_x-head_x)/distance; ly = (aim_y-head_y)/distance;
+        }
         float shortest = ctx->size[0] < ctx->size[1] ? (float)ctx->size[0]
                                                      : (float)ctx->size[1];
         float reach = android_home_joystick_laser_length() * shortest;
@@ -955,9 +968,9 @@ void ui_overlay(tenv* env) {
         float front = 14.5f * me->sc * gdata->data.gsc;
         ImVec2 from = {mww2 + (hx - gdata->data.view_xx) * gdata->data.gsc + lx * front,
                        mhh2 + (hy - gdata->data.view_yy) * gdata->data.gsc + ly * front};
-        ImDrawList_AddLine(
+        if (!classic || (contact && distance > front)) ImDrawList_AddLine(
             igGetWindowDrawList(), from,
-            (ImVec2){from.x + lx * reach, from.y + ly * reach},
+            classic ? (ImVec2){aim_x, aim_y} : (ImVec2){from.x + lx * reach, from.y + ly * reach},
             igColorConvertFloat4ToU32(
                 (ImVec4){usrs->laser_color[0], usrs->laser_color[1],
                          usrs->laser_color[2], usrs->laser_color[3] * a}),
@@ -998,7 +1011,10 @@ void ui_overlay(tenv* env) {
     snprintf(rank_text, sizeof(rank_text), "%d / %d", gdata->data.rank,
              gdata->data.slither_count);
     snprintf(score_text, sizeof(score_text), "%d", gdata->data.score);
-    snprintf(ping_text, sizeof(ping_text), "%d ms", gdata->data.ping);
+    /* NTL's "ao(ro)": the 1 s average, then the 10 s worst (2026-11-07,
+       Wyrm iOS/Scripts/engine_ping_peak_2026_11_07.py). */
+    snprintf(ping_text, sizeof(ping_text), "%d(%d)", gdata->data.ping,
+             gdata->data.ping_peak > gdata->data.ping ? gdata->data.ping_peak : gdata->data.ping);
     snprintf(fps_text, sizeof(fps_text), "%d FPS", gdata->data.fps);
     snprintf(time_text, sizeof(time_text), "%02d:%02d:%02d", hours, minutes,
              seconds);
@@ -1038,180 +1054,76 @@ void ui_overlay(tenv* env) {
       }
     }
 
-    /* The leaderboard setting now scales every piece of leaderboard type,
-       including its title, ranks and hint — not only the names. */
-    ImFont* label_font = usr->imgui_data.regular_font[usrs->lb_font_size];
-    ImFont* name_font = usr->imgui_data.regular_font_bold[usrs->lb_font_size];
-    ImFont* rank_font = usr->imgui_data.regular_font[usrs->lb_font_size];
-    ImFont* score_font = usr->imgui_data.regular_font_bold[usrs->lb_font_size];
-
     leaderboard_hit[2] = leaderboard_hit[3] = 0.0f;
-    /* Near Original: slither's own map and board instead (draw_original_hud). */
-    bool original_hud = android_home_near_original();
+    bool original_hud = android_home_near_original() && (!ai_mode_is_editor() || ai_mode_editor_bare());
     if (gdata->data.gotlb && !original_hud) {
-      /* Five rows are the quiet default. The remaining five live behind a
-         clipped, eased reveal; protocol storage remains the same ten rows. */
       float target = leaderboard_expanded ? 1.0f : 0.0f;
       float step = 0.12f * GLM_MAX(gdata->data.vfr, 0.25f);
-      if (leaderboard_expand < target)
-        leaderboard_expand = GLM_MIN(target, leaderboard_expand + step);
-      else if (leaderboard_expand > target)
-        leaderboard_expand = GLM_MAX(target, leaderboard_expand - step);
-      float reveal = leaderboard_expand * leaderboard_expand *
-                     (3.0f - 2.0f * leaderboard_expand);
-
-      ImVec2 rank_size, score_size, name_size, title_size, position_size,
-          hint_size;
-      igPushFont(rank_font, rank_font->LegacySize);
-      igCalcTextSize(&rank_size, "10", NULL, false, -1);
-      igPopFont();
-      igPushFont(score_font, score_font->LegacySize);
-      igCalcTextSize(&score_size, "999999", NULL, false, -1);
-      igPopFont();
-      igPushFont(name_font, name_font->LegacySize);
-      char widest[MAX_NICKNAME_LEN + 1] = {0};
-      memset(widest, (int)'n', 14);
-      igCalcTextSize(&name_size, widest, NULL, false, -1);
-      igPopFont();
-      igPushFont(label_font, label_font->LegacySize);
-      igCalcTextSize(&title_size, "Wyrm Leaderboard", NULL, false, -1);
-      igCalcTextSize(&position_size, "Your position  999 / 999", NULL, false,
-                     -1);
-      igCalcTextSize(&hint_size, "Tap on leaderboard to expand", NULL, false,
-                     -1);
-      igPopFont();
-
-      /* HEIGHT (OM, 2026-10-13): taller rows; two lines a name from 1.75. */
-      float lb_height = android_team_lb_height();
-      int name_lines = lb_height >= 1.75f ? 2 : 1;
-      float row_height = (score_size.y + 7.0f) * lb_height;
-      float board_width = GLM_MAX(
-          position_size.x, GLM_MAX(hint_size.x,
-                                   rank_size.x + 10.0f + name_size.x + 12.0f +
-                                       score_size.x));
-      /* WIDTH (OM, 2026-10-13): the name column grows or shrinks with it. */
-      board_width = GLM_MAX(rank_size.x + 10.0f + score_size.x + 60.0f,
-                            board_width * android_team_lb_width());
-      float board_height = title_size.y + 8.0f +
-                           row_height * (5.0f + 5.0f * reveal) + 8.0f +
-                           GLM_MAX(position_size.y, score_size.y) + 4.0f +
-                           hint_size.y;
-      ImVec2 board_min = hud_top_left(env, usrs->hud_leaderboard_x,
-                                      usrs->hud_leaderboard_y, board_width,
-                                      board_height, edge);
-      board_min = hud_clamp_top_left(env, board_min, board_width, board_height,
-                                     edge);
-      ImVec2 board_max = {board_min.x + board_width, board_min.y};
-
-      /* A slate plate only where the floor is light (OM, 2026-10-02). */
-      if (wyrm_floor_light(env)) {
-        ImVec2 plate_min = {board_min.x - 12.0f, board_min.y - 10.0f};
-        ImVec2 plate_max = {board_max.x + 12.0f, board_min.y + board_height + 10.0f};
-        ImDrawList_AddRectFilled(draw, (ImVec2){plate_min.x, plate_min.y + 3.0f},
-                                 (ImVec2){plate_max.x, plate_max.y + 3.0f},
-                                 hud_colour(0, 0, 0, 0.14f), HUD_PANEL_ROUNDING, 0);
-        ImDrawList_AddRectFilled(draw, plate_min, plate_max,
-                                 hud_colour(WYRM_HALO.x + 0.02f, WYRM_HALO.y + 0.025f,
-                                            WYRM_HALO.z + 0.03f, 0.50f),
-                                 HUD_PANEL_ROUNDING, 0);
-        ImDrawList_AddRect(draw, plate_min, plate_max, hud_colour(1, 1, 1, 0.10f),
-                           HUD_PANEL_ROUNDING, 0, 1.0f);
-      }
-
-      wyrm_halo_text(draw, label_font, label_font->LegacySize, board_min,
-                     arena_theme_overlay_text(0.92f), 0.92f, "Leaderboard");
-      float row_y = board_min.y + title_size.y + 8.0f;
-      float rows_bottom = row_y + row_height * (5.0f + 5.0f * reveal);
-      ImDrawList_PushClipRect(draw, (ImVec2){0, row_y},
-                                  (ImVec2){ctx->size[0], rows_bottom}, true);
-      for (int row = 0; row < NUM_LEADERBOARD_ENTRIES; row++) {
-        bool mine = gdata->data.lb_pos == (row + 1);
-        float alpha = mine ? 1.0f : 0.86f;
-
-        /* Your own row (OM, 2026-10-05: so you see at once where you are): the
-           ink pill, lifted with a Wyrm-green tint and edge, and your name
-           nudged right. */
-        float me_shift = mine ? 8.0f : 0.0f;
-        if (mine) {
-          ImVec2 pill_min = {board_min.x - 6.0f, row_y - 1.0f};
-          ImVec2 pill_max = {board_max.x + 6.0f, row_y + row_height - 1.0f};
-          ImDrawList_AddRectFilled(
-              draw, pill_min, pill_max,
-              hud_colour(WYRM_HALO.x, WYRM_HALO.y, WYRM_HALO.z, 0.42f),
-              row_height * 0.5f, 0);
-          ImDrawList_AddRectFilled(draw, pill_min, pill_max,
-                                   hud_colour(0.247f, 0.933f, 0.588f, 0.16f),
-                                   row_height * 0.5f, 0);
-          ImDrawList_AddRect(draw, pill_min, pill_max,
-                             hud_colour(0.247f, 0.933f, 0.588f, 0.55f),
-                             row_height * 0.5f, 0, 1.5f);
-        }
-
-        char rank_text[8];
-        snprintf(rank_text, sizeof(rank_text), "%d", row + 1);
-        ImVec2 measured;
-        igPushFont(rank_font, rank_font->LegacySize);
-        igCalcTextSize(&measured, rank_text, NULL, false, -1);
-        igPopFont();
-        wyrm_halo_text(draw, rank_font, rank_font->LegacySize,
-                       (ImVec2){board_min.x + rank_size.x - measured.x, row_y + 2.0f},
-                       arena_theme_overlay_text(mine ? 1.0f : 0.78f),
-                       mine ? 1.0f : 0.78f, rank_text);
-
-        /* Whose snake this is: the name and the score in its own colour
-           (OM, 2026-10-02: no dot), lifted until it reads. */
-        int lb_cv = gdata->data.lb.entries[row].cv;
-        if (lb_cv < 0 || lb_cv >= NUM_COLOR_GROUPS) lb_cv = 0;
-        ImU32 snake_ink = wyrm_snake_ink(gdata->cg_colors[lb_cv], alpha);
-
-        char score_text_row[16];
-        snprintf(score_text_row, sizeof(score_text_row), "%d",
-                 gdata->data.lb.entries[row].score);
-        float score_width = measure(score_font, score_text_row);
-
-        /* The name gets whatever is left after the score has taken its width,
-           and is shortened to fit rather than allowed to run over it. */
-        float name_x = board_min.x + rank_size.x + 10.0f + me_shift;
-        wyrm_halo_name_rows(draw, name_font, (ImVec2){name_x, row_y + 3.0f},
-                            snake_ink, alpha, gdata->data.lb.entries[row].nickname,
-                            board_max.x - score_width - 10.0f - name_x,
-                            name_lines, name_font->LegacySize * 1.02f);
-
-        measured.x = score_width;
-        wyrm_halo_text(draw, score_font, score_font->LegacySize,
-                       (ImVec2){board_max.x - measured.x, row_y}, snake_ink,
-                       alpha, score_text_row);
-        row_y += row_height;
+      if (leaderboard_expand < target) leaderboard_expand = GLM_MIN(target,leaderboard_expand+step);
+      else if (leaderboard_expand > target) leaderboard_expand = GLM_MAX(target,leaderboard_expand-step);
+      float reveal = ai_mode_is_editor() ? 1.0f : leaderboard_expand*leaderboard_expand*(3-2*leaderboard_expand);
+      float u = fminf(ctx->size[0],ctx->size[1])/480.0f;
+      float sx = u*android_team_lb_width(), sy = u*android_team_lb_height();
+      float em = 11.0f*u*usrs->ext.lb_size;
+      float size = em/SHEET_EM; /* sheet em is exactly 11u at SIZE=1 */
+      float row_height = 14.0f*sy, board_width = 241.0f*sx;
+      float header = size+8*u, footer = 2*(size+4*u);
+      /* Leave room for the baked outline below the last row. Bold's
+         largest bottom extent is 84/52 em, including descenders. */
+      float row_tail = fmaxf(0, em*(84.0f/52.0f)-9*sy);
+      float board_height = header+row_height*(5+5*reveal)+row_tail+footer;
+      ImFont* font = usr->imgui_data.regular_font_bold[1];
+      ImVec2 at = hud_top_left(env,usrs->hud_leaderboard_x,usrs->hud_leaderboard_y,
+                              board_width,board_height,edge);
+      at = hud_clamp_top_left(env,at,board_width,board_height,edge);
+      hud_sheet_font = SHEET_THIN;
+      /* OM keeps title/footer/5-10 toggle; the rows themselves have no plate. */
+      wyrm_halo_text(draw,font,size,at,arena_theme_overlay_text(.92f),.92f,"Leaderboard");
+      float row_top = at.y+header, bottom = row_top+row_height*(5+5*reveal)+row_tail;
+      ImDrawList_PushClipRect(draw,(ImVec2){0,row_top},(ImVec2){ctx->size[0],bottom},true);
+      int shown = 0;
+      for (int row=0; row<NUM_LEADERBOARD_ENTRIES; ++row) {
+        int score = gdata->data.lb.entries[row].score;
+        const char* name = gdata->data.lb.entries[row].nickname;
+        if (score <= 0 && !name[0]) continue;
+        float alpha = gdata->data.lb_pos == row+1 ? 1.0f :
+            .9f*(.2f+.8f*powf(1.0f-(row+1)/10.0f,.66f));
+        int cv = gdata->data.lb.entries[row].cv;
+        if (cv < 0 || cv >= NUM_COLOR_GROUPS) cv = 0;
+        vec3s c = gdata->cg_colors[cv];
+        ImU32 ink = hud_colour(c.r,c.g,c.b,alpha);
+        float y = row_top+(5+14*shown++)*sy-size*SHEET_DROP;
+        char rank[8], points[16];
+        snprintf(rank,sizeof(rank),"#%d",row+1);
+        snprintf(points,sizeof(points),"%d",score);
+        wyrm_halo_text(draw,font,size,(ImVec2){at.x,y},ink,alpha,rank);
+        /* Keep the first glyph's baked outline to the left of its pen;
+           the 165u name limit clips the right edge only. */
+        ImDrawList_PushClipRect(draw,(ImVec2){0,row_top},
+            (ImVec2){at.x+(28+165)*sx,bottom},true);
+        wyrm_halo_text(draw,font,size,(ImVec2){at.x+28*sx,y},ink,alpha,name);
+        ImDrawList_PopClipRect(draw);
+        float pw = sheet_ok(points) ? sheet_width(points,size,SHEET_THIN) : measure(font,points)*size/font->LegacySize;
+        wyrm_halo_text(draw,font,size,(ImVec2){at.x+241*sx-pw,y},ink,alpha,points);
       }
       ImDrawList_PopClipRect(draw);
-
-      float footer_y = rows_bottom + 8.0f;
-      wyrm_halo_text(draw, label_font, label_font->LegacySize,
-                     (ImVec2){board_min.x, footer_y},
-                     arena_theme_overlay_text(0.92f), 0.92f, "Your position");
-      float rank_width = measure(score_font, rank_text);
-      wyrm_halo_text(draw, score_font, score_font->LegacySize,
-                     (ImVec2){board_max.x - rank_width, footer_y},
-                     arena_theme_overlay_text(1.0f), 1.0f, rank_text);
-      footer_y += GLM_MAX(position_size.y, score_size.y) + 4.0f;
-      const char* hint = leaderboard_expanded
-                             ? "Tap on leaderboard to show 5"
-                             : "Tap on leaderboard to expand";
-      wyrm_halo_text(draw, label_font, label_font->LegacySize,
-                     (ImVec2){board_min.x, footer_y},
-                     arena_theme_overlay_text(0.66f), 0.66f, hint);
-      board_max.y = footer_y + hint_size.y;
-      leaderboard_hit[0] = board_min.x - 10.0f;
-      leaderboard_hit[1] = board_min.y - 8.0f;
-      leaderboard_hit[2] = board_width + 20.0f;
-      leaderboard_hit[3] = board_max.y - board_min.y + 16.0f;
+      float fy = bottom+4*u;
+      wyrm_halo_text(draw,font,size,(ImVec2){at.x,fy},arena_theme_overlay_text(.92f),.92f,"Your position");
+      float rw = sheet_ok(rank_text) ? sheet_width(rank_text,size,SHEET_THIN) : measure(font,rank_text)*size/font->LegacySize;
+      wyrm_halo_text(draw,font,size,(ImVec2){at.x+board_width-rw,fy},arena_theme_overlay_text(1),1,rank_text);
+      fy += size+4*u;
+      const char* hint = leaderboard_expanded ? "Tap on leaderboard to show 5" : "Tap on leaderboard to expand";
+      wyrm_halo_text(draw,font,size,(ImVec2){at.x,fy},arena_theme_overlay_text(.66f),.66f,hint);
+      leaderboard_hit[0]=at.x-10; leaderboard_hit[1]=at.y-8;
+      leaderboard_hit[2]=board_width+20; leaderboard_hit[3]=board_height+16;
     }
 
     /* ---- what you are doing, directly under the leaderboard ---- */
     /* Not in the background-size editor: only the map and the board there.
        Not in Near Original either: the original has no stats. */
     if (!ai_mode_editor_bare() && !original_hud) {
-      const char* labels[] = {"SCORE", "KILLS", "RANK", "TIME", "PING", "FPS"};
+      /* The unit on the label only (OM, 2026-11-01): "PING(ms)  64". */
+      const char* labels[] = {"SCORE", "KILLS", "RANK", "TIME", "PING(ms)", "FPS"};
       const char* values[] = {score_text, kills_text, rank_text,
                               time_text,  ping_text,  fps_text};
       ImFont* stats_label_font =
@@ -1220,18 +1132,18 @@ void ui_overlay(tenv* env) {
           usr->imgui_data.regular_font_bold[usrs->stats_font_size];
       float stats_scale = usrs->hud_stats_scale;
       float stats_alpha = usrs->hud_stats_opacity;
-      ImVec2 sample = measure_scaled(value_font, "000000", stats_scale);
-      ImVec2 caption_size = measure_scaled(stats_label_font, user_settings_arena(usrs),
-                                           stats_scale);
+      ImVec2 sample = hud_measure_scaled(value_font, "000000", stats_scale, SHEET_BLACK);
+      ImVec2 caption_size = hud_measure_scaled(stats_label_font, user_settings_arena(usrs),
+                                               stats_scale, SHEET_THIN);
 
       /* Measured from the widest row that is actually there rather than from a
          guessed sample: "245 / 378" and "60 FPS" are both wider than the six
          digits this used to reserve, and overflowed the panel they sit in. */
       float widest = caption_size.x;
       for (int i = 0; i < 6; ++i) {
-        float row = measure_scaled(stats_label_font, labels[i], stats_scale).x +
+        float row = hud_measure_scaled(stats_label_font, labels[i], stats_scale, SHEET_THIN).x +
                     12.0f * stats_scale +
-                    measure_scaled(value_font, values[i], stats_scale).x;
+                    hud_measure_scaled(value_font, values[i], stats_scale, SHEET_BLACK).x;
         if (row > widest) widest = row;
       }
 
@@ -1246,13 +1158,11 @@ void ui_overlay(tenv* env) {
          OPACITY. */
       draw_hud_paper(draw, min, max, stats_alpha * android_team_stats_panel());
 
-      ImDrawList_AddText_FontPtr(draw, stats_label_font,
-                                 stats_label_font->LegacySize * stats_scale,
-                                 (ImVec2){min.x + pad, min.y + pad * 0.7f},
-                                 android_team_stats_colour(ARENA_THEME_QUIET,
-                                                           0.78f * stats_alpha),
-                                 user_settings_arena(usrs), NULL, 0,
-                                 NULL);
+      hud_sheet_font = SHEET_THIN;
+      hud_text(draw, stats_label_font, stats_label_font->LegacySize * stats_scale,
+               (ImVec2){min.x + pad, min.y + pad * 0.7f},
+               android_team_stats_colour(ARENA_THEME_QUIET, 0.78f * stats_alpha),
+               user_settings_arena(usrs));
       float rule_y = min.y + pad * 0.7f + caption_size.y + 5.0f;
       ImDrawList_AddLine(draw, (ImVec2){min.x + pad, rule_y},
                          (ImVec2){max.x - pad, rule_y},
@@ -1264,6 +1174,7 @@ void ui_overlay(tenv* env) {
         draw_stat_row(env, draw, max.x - pad, y, labels[i], values[i], 0.88f);
         y += row_height;
       }
+      hud_sheet_font = SHEET_THIN;
 
       /* Phase 3 H (OM, 2026-10-01): when Auto has stepped the frame rate down
          (heat, Battery Saver / Low Power Mode), a small chip under the stats

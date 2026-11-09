@@ -93,9 +93,20 @@ static const background_def BACKGROUNDS[] = {
 
 enum { NUM_BACKGROUNDS = (int)(sizeof(BACKGROUNDS) / sizeof(BACKGROUNDS[0])) };
 
+/* Gallery floors (OM, 2026-11-08, game/wyrm_extras.c): index 200 is the
+   player's own photo while the app has given one. */
+#define BACKGROUND_CUSTOM 200
+extern background_def wyrm_custom_floor;
+extern int wyrm_custom_floor_generation;
+
 /** Any stored value that is no longer in the table falls back to Wyrm's own. */
 static inline int background_clamp(int index) {
+  if (index == BACKGROUND_CUSTOM && wyrm_custom_floor.path) return index;
   return (index >= 0 && index < NUM_BACKGROUNDS) ? index : BACKGROUND_WYRM;
+}
+static inline const background_def* background_at(int index) {
+  index = background_clamp(index);
+  return index == BACKGROUND_CUSTOM ? &wyrm_custom_floor : &BACKGROUNDS[index];
 }
 
 #endif

@@ -13,12 +13,15 @@ typedef struct spr_renderer {
   VkPipeline pipeline;
   tdbuffer* instance_buffer;
   spr_instance* instances;
+  int capacity;
   int max_instances;
   int num_instances;
 } spr_renderer;
 
 spr_renderer* spr_renderer_create(tcontext* ctx, int max_instances,
                                   VkPipelineLayout layout, VkRenderPass pass);
+spr_renderer* spr_renderer_create_original(tcontext* ctx, int capacity,
+    VkPipelineLayout layout, VkRenderPass pass, bool additive);
 void spr_renderer_push(spr_renderer* r, const spr_instance* instance);
 void spr_renderer_render(spr_renderer* r, tcontext* ctx);
 void spr_renderer_destroy(spr_renderer* r, tcontext* ctx);

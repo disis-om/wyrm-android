@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -115,6 +115,8 @@ fun SettingsButtonsScreen(
 
 @Composable
 internal fun ButtonLine(button: Hotkey, onChange: (Hotkey) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -126,7 +128,7 @@ internal fun ButtonLine(button: Hotkey, onChange: (Hotkey) -> Unit) {
             text = button.name,
             fontFamily = Wyrm.Body,
             fontSize = 15.5.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.weight(1f),
         )
         if (button.fixedMode) {
@@ -146,12 +148,14 @@ internal fun ButtonLine(button: Hotkey, onChange: (Hotkey) -> Unit) {
 
 @Composable
 private fun FixedTapBadge() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .width(116.dp)
             .height(38.dp)
-            .background(Wyrm.Track, wyrmRounded(10.dp))
-            .border(1.dp, Wyrm.Rule, wyrmRounded(10.dp)),
+            .background(wyrmScopedPalette.track, wyrmRounded(10.dp))
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(10.dp)),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -159,7 +163,7 @@ private fun FixedTapBadge() {
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
     }
 }

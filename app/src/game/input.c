@@ -378,7 +378,7 @@ static void input_with_policy(tenv* env, bool team_protected,
 #endif
                mobile_controls_boost_down(env) ||
                mobile_hotkeys_down(env, MOBILE_HOTKEY_BOOST) ||
-               gdata->bot.output.accel);
+               (usrs->hotkeys[HOTKEY_BOT].active && gdata->bot.output.accel));
 
     if (gdata->data.md != gdata->data.wmd &&
         gdata->data.ctm - gdata->data.last_accel_mtm > ARENA_BOOST_MS) {

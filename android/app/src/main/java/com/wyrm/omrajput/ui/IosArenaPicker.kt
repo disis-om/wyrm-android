@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,7 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -79,6 +81,8 @@ private fun Arena.iosTitle(): String = if (id < 0) "Custom arena" else "Arena ${
  */
 @Composable
 fun ArenaCountryBadge(country: String, modifier: Modifier = Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     if (country.length != 2) return
     val url = ArenaDirectory.flagUrl(country)
     var image by remember(url) { mutableStateOf(AvatarImages.peek(url)) }
@@ -89,8 +93,8 @@ fun ArenaCountryBadge(country: String, modifier: Modifier = Modifier) {
             Modifier
                 .size(width = 20.dp, height = 14.dp)
                 .clip(shape)
-                .background(Wyrm.Track)
-                .border(0.5.dp, Wyrm.Ink.copy(alpha = 0.14f), shape),
+                .background(wyrmScopedPalette.track)
+                .border(0.5.dp, wyrmScopedPalette.ink, shape),
         ) {
             image?.let {
                 Image(it, contentDescription = country, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -98,7 +102,7 @@ fun ArenaCountryBadge(country: String, modifier: Modifier = Modifier) {
         }
         Spacer(Modifier.width(5.dp))
         Text(country, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp,
-            letterSpacing = 0.6.sp, color = Wyrm.Quiet)
+            letterSpacing = 0.6.sp, color = wyrmScopedPalette.quiet)
     }
 }
 
@@ -123,11 +127,22 @@ fun IosArenaPicker(
     onClose: () -> Unit,
     onSelect: (String) -> Unit,
     onSaveCustom: (String) -> Unit,
+    /** The arena monitor (wyrmarenas) per "ip:port": minimap, top 10, players. */
+    monitor: Map<String, com.wyrm.omrajput.data.ArenaLive> = emptyMap(),
+    /** Picker style (OM, 2026-10-30): 0 Classic (the list), 1 Details (cards). */
+    style: Int = 0,
+    onStyle: (Int) -> Unit = {},
+    /** Saved arenas removed together (OM, 2026-11-07: long press, select, delete). */
+    onRemoveSaved: (List<String>) -> Unit = {},
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var search by remember { mutableStateOf("") }
     var showAll by remember { mutableStateOf(false) }
     var showSaved by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
+    /* Saved arenas picked by a long press; non-empty = selection mode. */
+    var savedPicked by remember { mutableStateOf(setOf<String>()) }
     var customAddress by remember { mutableStateOf("") }
     var addressError by remember { mutableStateOf(false) }
     val customLatencies = remember { mutableStateMapOf<String, Int>() }
@@ -145,7 +160,20 @@ fun IosArenaPicker(
 
     fun latency(arena: Arena): Int? = if (arena.id < 0) customLatencies[arena.endpoint] else state.pings[arena.endpoint]
 
-    val live = state.arenas
+    /* Every arena NTL lists (OM, 2026-11-07): the monitor (/v1/arena/status)
+       is slither's arenas plus the ones NTL knows, custom arenas included.
+       Those missing from slither's directory join the list in both styles,
+       so search finds them and a tap plays them, saved or not. Not pinged
+       here (custom servers have no /ptc); their players come from the feed. */
+    val directoryEndpoints = remember(state.arenas) { state.arenas.mapTo(HashSet()) { it.endpoint.lowercase() } }
+    val extra = remember(monitor, directoryEndpoints) {
+        monitor.values.asSequence()
+            .filter { it.endpoint.isNotEmpty() && it.endpoint.lowercase() !in directoryEndpoints }
+            .distinctBy { it.endpoint.lowercase() }
+            .mapNotNull { live -> customArena(live.endpoint)?.copy(players = live.players ?: 0, id = if (live.custom) -1 else (live.code ?: -1)) }
+            .toList()
+    }
+    val live = state.arenas + extra
     val filtered = live.filter(::matches).sortedWith(
         compareBy<Arena> { a -> state.pings[a.endpoint]?.takeIf { it > 0 } ?: Int.MAX_VALUE }.thenBy { it.iosCode() },
     )
@@ -166,12 +194,12 @@ fun IosArenaPicker(
     val high = positive.maxOrNull()
 
     fun latencyText(arena: Arena): String {
-        val value = latency(arena) ?: return "—"
+        val value = latency(arena) ?: return if (arena.players > 0) "${arena.players} playing" else "—"
         return if (value > 0) "${value}ms" else "Unavailable"
     }
 
     fun latencyColour(arena: Arena): Color {
-        val value = latency(arena) ?: return Wyrm.Quiet
+        val value = latency(arena) ?: return wyrmScopedPalette.quiet
         if (value <= 0) return Color(0.75f, 0.25f, 0.22f)
         val lo = low ?: value
         val hi = high ?: value
@@ -194,14 +222,15 @@ fun IosArenaPicker(
 
     @Composable
     fun ArenaRow(arena: Arena, tag: String? = null) {
+ val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
         val chosen = selection == arena.endpoint
         val shape = wyrmRounded(15.dp)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(shape)
-                .background(Wyrm.Card.copy(alpha = 0.9f))
-                .border(if (chosen) 2.dp else 1.dp, if (chosen) Wyrm.Ink else Wyrm.Rule, shape)
+                .background(wyrmScopedPalette.card.copy(alpha = 0.9f))
+                .border(if (chosen) 2.dp else 1.dp, if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.rule, shape)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                     onSelect(arena.endpoint)
                 }
@@ -210,7 +239,7 @@ fun IosArenaPicker(
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(arena.iosTitle(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+                    Text(arena.iosTitle(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = wyrmScopedPalette.ink)
                     if (arena.id >= 0) ArenaCountryBadge(ArenaDirectory.countryOf(arena.address), Modifier.padding(start = 8.dp))
                     if (tag != null) {
                         Spacer(Modifier.width(8.dp))
@@ -219,19 +248,85 @@ fun IosArenaPicker(
                             fontFamily = Wyrm.Body,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
-                            color = Wyrm.Live,
+                            color = wyrmScopedPalette.live,
                             modifier = Modifier
                                 .clip(WyrmCapsule)
-                                .background(Wyrm.Live.copy(alpha = 0.12f))
+                                .background(wyrmScopedPalette.live.copy(alpha = 0.12f))
                                 .padding(horizontal = 7.dp, vertical = 2.dp),
                         )
                     }
                 }
-                Text(arena.endpoint, fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet)
+                Text(arena.endpoint, fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = wyrmScopedPalette.quiet)
             }
             Text(latencyText(arena), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = latencyColour(arena))
         }
     }
+
+    /* Details (OM, 2026-10-30): one card per arena with its live minimap, the
+       top 10, its IPv4 address and players, from the arena monitor. Arenas
+       come from slither's directory only; the monitor adds to them. */
+    @Composable
+    fun ArenaDetailCard(arena: Arena, tag: String? = null) {
+ val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+        val chosen = selection == arena.endpoint
+        val live = monitor[arena.endpoint]
+        val shape = wyrmRounded(20.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .background(wyrmScopedPalette.card.copy(alpha = 0.95f))
+                .border(if (chosen) 2.dp else 1.dp, if (chosen) wyrmScopedPalette.live else wyrmScopedPalette.rule, shape),
+        ) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.Canvas(Modifier.size(104.dp)) { drawArenaMinimap(live?.minimap) }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(arena.iosTitle(), fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = wyrmScopedPalette.ink)
+                        if (arena.id >= 0) ArenaCountryBadge(ArenaDirectory.countryOf(arena.address).ifBlank { live?.country.orEmpty() }, Modifier.padding(start = 8.dp))
+                    }
+                    if (tag != null) Text(tag, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = wyrmScopedPalette.live,
+                        modifier = Modifier.clip(WyrmCapsule).background(wyrmScopedPalette.live.copy(alpha = 0.12f)).padding(horizontal = 7.dp, vertical = 2.dp))
+                    Text(arena.endpoint, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp, color = wyrmScopedPalette.mute,
+                        modifier = Modifier.clip(wyrmRounded(8.dp)).background(wyrmScopedPalette.well).padding(horizontal = 7.dp, vertical = 3.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("%,d".format(live?.players ?: arena.players), fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = wyrmScopedPalette.ink)
+                        Text(" playing", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet)
+                        Spacer(Modifier.weight(1f))
+                        Text(latencyText(arena), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = latencyColour(arena))
+                    }
+                    Box(
+                        Modifier.height(34.dp).clip(WyrmCapsule).background(if (chosen) wyrmScopedPalette.live else wyrmScopedPalette.ink)
+                            .clickable { onSelect(arena.endpoint) }.padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(if (chosen) "Selected" else "Choose", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = if (chosen) Color.White else wyrmScopedPalette.onInk) }
+                }
+            }
+            val top = live?.top.orEmpty()
+            Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
+            if (top.isEmpty()) {
+                Text("The live board is not watched for this arena yet.", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(14.dp))
+            } else Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Text("TOP 10", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 0.8.sp, color = wyrmScopedPalette.quiet)
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    for (column in 0..1) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        for (i in column * 5 until minOf(top.size, column * 5 + 5)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${i + 1}", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.width(18.dp))
+                                Text(top[i].first.ifBlank { "—" }, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = wyrmScopedPalette.ink,
+                                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Text("%,d".format(top[i].second), fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp, color = wyrmScopedPalette.ink)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun PickRow(arena: Arena, tag: String? = null) = if (style == 1) ArenaDetailCard(arena, tag) else ArenaRow(arena, tag)
 
     @Composable
     fun SectionLabel(text: String) {
@@ -241,40 +336,57 @@ fun IosArenaPicker(
             fontWeight = FontWeight.Bold,
             fontSize = 10.sp,
             letterSpacing = 0.8.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 3.dp),
         )
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper)
+            .background(wyrmScopedPalette.paper)
             .padding(top = insetTop),
     ) {
         Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("LIVE DIRECTORY", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = Wyrm.Live)
-                Text("Pick a server", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 27.sp, color = Wyrm.Ink)
+                Text("LIVE DIRECTORY", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp, color = wyrmScopedPalette.live)
+                Text("Pick a server", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 27.sp, color = wyrmScopedPalette.ink)
             }
-            Box(
+            // "Add IP" (OM, 2026-11-07: a bare + confused players): opens a popup.
+            Row(
                 modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(Wyrm.Card)
-                    .clickable { showAdd = !showAdd },
-                contentAlignment = Alignment.Center,
-            ) { IosIcon(IosGlyph.PLUS, Wyrm.Ink, size = 19.dp, semibold = true) }
+                    .height(36.dp)
+                    .clip(WyrmCapsule)
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, WyrmCapsule)
+                    .clickable {
+                        addressError = false
+                        showAdd = true
+                    }
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IosIcon(IosGlyph.PLUS, wyrmScopedPalette.ink, size = 15.dp, semibold = true)
+                Spacer(Modifier.width(5.dp))
+                Text("Add IP", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = wyrmScopedPalette.ink)
+            }
             Spacer(Modifier.width(8.dp))
             Text(
                 "Close",
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 modifier = Modifier.clickable(onClick = onClose).padding(vertical = 8.dp, horizontal = 4.dp),
             )
         }
+        PaperSegmented(
+            options = listOf("Classic", "Details"),
+            selected = style,
+            onSelect = onStyle,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp).fillMaxWidth(),
+        )
         // Search.
         Row(
             modifier = Modifier
@@ -282,12 +394,12 @@ fun IosArenaPicker(
                 .fillMaxWidth()
                 .height(44.dp)
                 .clip(wyrmRounded(13.dp))
-                .background(Wyrm.Card.copy(alpha = 0.82f))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(13.dp))
+                .background(wyrmScopedPalette.card.copy(alpha = 0.82f))
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(13.dp))
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IosIcon(IosGlyph.MAGNIFIER, Wyrm.Ink, size = 16.dp, semibold = true)
+            IosIcon(IosGlyph.MAGNIFIER, wyrmScopedPalette.ink, size = 16.dp, semibold = true)
             Spacer(Modifier.width(8.dp))
             PickerField(search, { search = it }, "Arena code or IP", KeyboardType.Uri, Modifier.weight(1f))
         }
@@ -296,50 +408,17 @@ fun IosArenaPicker(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + insetBottom),
             verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            if (showAdd) {
-                item(key = "add") {
-                    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(wyrmRounded(14.dp))
-                                .background(Wyrm.Card)
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            PickerField(customAddress, { customAddress = it }, "IP address:port", KeyboardType.Uri, Modifier.weight(1f))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "Save",
-                                fontFamily = Wyrm.Body,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Wyrm.Link,
-                                modifier = Modifier.clickable { saveCustom() },
-                            )
-                        }
-                        if (addressError) {
-                            Text(
-                                "Enter an IPv4 address or [IPv6] address and a port (1–65535).",
-                                fontFamily = Wyrm.Body,
-                                fontSize = 11.sp,
-                                color = Color(0xFFFF3B30),
-                            )
-                        }
-                    }
-                }
-            }
             best?.let { top ->
                 item(key = "best-label") { SectionLabel("BEST FOR YOU") }
-                item(key = "best-" + top.endpoint) { ArenaRow(top, tag = "Lowest ping") }
+                item(key = "best-" + top.endpoint) { WyrmHeroTheme { PickRow(top, tag = "Lowest ping") } }
             }
             if (recentRows.isNotEmpty()) {
                 item(key = "recent-label") { SectionLabel("RECENTLY JOINED") }
-                items(recentRows, key = { "recent-" + it.endpoint }) { ArenaRow(it) }
+                items(recentRows, key = { "recent-" + it.endpoint }) { PickRow(it) }
             }
             item(key = "arenas-label") { SectionLabel(if (search.isEmpty()) "ARENAS" else "SEARCH RESULTS") }
             val shown = if (showAll || search.isNotEmpty()) ranked else ranked.take(10)
-            items(shown, key = { it.endpoint }) { ArenaRow(it) }
+            items(shown, key = { it.endpoint }) { PickRow(it) }
             if (search.isEmpty() && ranked.size > 10) {
                 item(key = "see-all") {
                     Text(
@@ -347,7 +426,7 @@ fun IosArenaPicker(
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -363,22 +442,68 @@ fun IosArenaPicker(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(wyrmRounded(15.dp))
-                            .background(Wyrm.Card.copy(alpha = 0.9f))
+                            .background(wyrmScopedPalette.card.copy(alpha = 0.9f))
                             .padding(14.dp)
                             .animateContentSize(iosSpring(0.4f, 0.86f)),
                     ) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { showSaved = !showSaved },
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                    if (savedPicked.isEmpty()) showSaved = !showSaved
+                                },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(Modifier.weight(1f)) { SectionLabel("SAVED ARENAS · ${saved.size}") }
-                            IosIcon(IosGlyph.CHEVRON_RIGHT, Wyrm.Ink, size = 14.dp, semibold = true, modifier = Modifier.rotate(chevron))
+                            if (savedPicked.isEmpty()) {
+                                Box(Modifier.weight(1f)) { SectionLabel("SAVED ARENAS · ${saved.size}") }
+                                IosIcon(IosGlyph.CHEVRON_RIGHT, wyrmScopedPalette.ink, size = 14.dp, semibold = true, modifier = Modifier.rotate(chevron))
+                            } else {
+                                // Selection (OM, 2026-11-07): long press picks, tap adds or drops.
+                                Text("${savedPicked.size} selected", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                                    color = wyrmScopedPalette.ink, modifier = Modifier.weight(1f).padding(vertical = 6.dp))
+                                Text(
+                                    if (savedPicked.size == saved.size) "None" else "All",
+                                    fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = wyrmScopedPalette.link,
+                                    modifier = Modifier.clickable { savedPicked = if (savedPicked.size == saved.size) emptySet() else saved.toSet() }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                )
+                                Text(
+                                    "Cancel",
+                                    fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = wyrmScopedPalette.link,
+                                    modifier = Modifier.clickable { savedPicked = emptySet() }.padding(horizontal = 8.dp, vertical = 6.dp),
+                                )
+                                Text(
+                                    "Delete",
+                                    fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = wyrmScopedPalette.onInk,
+                                    modifier = Modifier.clip(WyrmCapsule).background(wyrmScopedPalette.badge)
+                                        .clickable {
+                                            onRemoveSaved(savedPicked.toList())
+                                            savedPicked = emptySet()
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                                )
+                            }
                         }
                         AnimatedVisibility(showSaved, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                             Column(Modifier.padding(top = 9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                                saved.mapNotNull(::customArena).forEach { ArenaRow(it) }
+                                if (savedPicked.isEmpty()) {
+                                    Text("Touch and hold an arena to select it.", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
+                                }
+                                saved.mapNotNull(::customArena).forEach { arena ->
+                                    SavedArenaRow(
+                                        arena = arena,
+                                        chosen = selection == arena.endpoint,
+                                        picking = savedPicked.isNotEmpty(),
+                                        picked = arena.endpoint in savedPicked,
+                                        latency = latencyText(arena),
+                                        latencyColour = latencyColour(arena),
+                                        onTap = {
+                                            if (savedPicked.isEmpty()) onSelect(arena.endpoint)
+                                            else savedPicked = if (arena.endpoint in savedPicked) savedPicked - arena.endpoint else savedPicked + arena.endpoint
+                                        },
+                                        onHold = { savedPicked = savedPicked + arena.endpoint },
+                                    )
+                                }
                             }
                         }
                     }
@@ -390,12 +515,92 @@ fun IosArenaPicker(
                         text = if (state.loading) "Loading the live directory…" else "No active arenas right now. Try refreshing or add a custom IP.",
                         fontFamily = Wyrm.Body,
                         fontSize = 12.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(20.dp),
                     )
                 }
             }
         }
+        }
+        // Add IP (OM, 2026-11-07): a popup over the page, lifted above the keyboard.
+        if (showAdd) {
+            StudioDialog("Add an arena", onDismiss = { showAdd = false }) {
+                val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                LaunchedEffect(Unit) { focus.requestFocus() }
+                Text(
+                    "Type the arena's IP and port, for example 141.164.36.225:446. It is saved under Saved arenas.",
+                    fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(wyrmRounded(13.dp))
+                        .background(wyrmScopedPalette.card)
+                        .border(1.dp, if (addressError) wyrmScopedPalette.badge else wyrmScopedPalette.rule, wyrmRounded(13.dp))
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PickerField(customAddress, { customAddress = it; addressError = false }, "IP address:port", KeyboardType.Uri,
+                        Modifier.weight(1f).focusRequester(focus), onDone = { saveCustom() })
+                }
+                if (addressError) {
+                    Text("Enter an IPv4 address or [IPv6] address and a port (1–65535).",
+                        fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.badge)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.weight(1f)) { PaperOutlineButton("Cancel") { showAdd = false } }
+                    Box(Modifier.weight(1f)) { PaperPrimaryButton("Save", enabled = customAddress.isNotBlank()) { saveCustom() } }
+                }
+            }
+        }
+    }
+}
+
+/** A saved arena: tap plays (or picks while selecting), touch and hold selects. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun SavedArenaRow(
+    arena: Arena,
+    chosen: Boolean,
+    picking: Boolean,
+    picked: Boolean,
+    latency: String,
+    latencyColour: Color,
+    onTap: () -> Unit,
+    onHold: () -> Unit,
+) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+    val shape = wyrmRounded(15.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (picked) wyrmScopedPalette.ink.copy(alpha = 0.08f) else wyrmScopedPalette.card.copy(alpha = 0.9f))
+            .border(if (chosen || picked) 2.dp else 1.dp, if (picked) wyrmScopedPalette.badge else if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.rule, shape)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onTap,
+                onLongClick = onHold,
+            )
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (picking) {
+            Box(
+                Modifier.size(22.dp).clip(CircleShape)
+                    .background(if (picked) wyrmScopedPalette.badge else Color.Transparent)
+                    .border(1.5.dp, if (picked) wyrmScopedPalette.badge else wyrmScopedPalette.quiet, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { if (picked) Text("✓", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White) }
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(arena.iosTitle(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = wyrmScopedPalette.ink)
+            Text(arena.endpoint, fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = wyrmScopedPalette.quiet)
+        }
+        Text(latency, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = latencyColour)
     }
 }
 
@@ -406,23 +611,28 @@ private fun PickerField(
     placeholder: String,
     keyboardType: KeyboardType,
     modifier: Modifier = Modifier,
+    onDone: (() -> Unit)? = null,
 ) {
-    val style = TextStyle(fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Ink)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val style = TextStyle(fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.ink)
     BasicTextField(
         value = value,
         onValueChange = onValue,
         singleLine = true,
         textStyle = style,
-        cursorBrush = SolidColor(Wyrm.Link),
+        cursorBrush = SolidColor(wyrmScopedPalette.link),
         keyboardOptions = KeyboardOptions(
             capitalization = KeyboardCapitalization.None,
             autoCorrectEnabled = false,
             keyboardType = keyboardType,
+            imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default,
         ),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onDone?.invoke() }),
         modifier = modifier,
         decorationBox = { inner ->
             Box(contentAlignment = Alignment.CenterStart) {
-                if (value.isEmpty()) Text(placeholder, style = style.copy(color = Wyrm.Quiet.copy(alpha = 0.7f)))
+                if (value.isEmpty()) Text(placeholder, style = style.copy(color = wyrmScopedPalette.quiet))
                 inner()
             }
         },

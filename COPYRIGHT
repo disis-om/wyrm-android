@@ -1,0 +1,34 @@
+Wyrm for Android
+Copyright (c) 2026 OM Rajput
+
+AUTHOR
+
+Wyrm is designed, engineered and maintained by OM Rajput. Everything original
+in this repository is his work and his copyright, including:
+
+- the Android app (Kotlin and Java): screens, design, animations and themes
+- the app's architecture and the way the app and the engine work together
+- accounts, settings sync, social, chat, Trails, alerts and presence
+- team mode, skins, skin studio, tags, accessories and looks
+- controls, modes, the on-screen keys, the layout editors and the play feel
+- the tools and scripts in this repository
+- every change and addition he made to the game engine (rendering, network,
+  input, features such as Eyes Back, and all later engine work)
+- the Wyrm name and the W logo
+
+LICENSE
+
+The game engine grew out of the open-source Vlither client by for-loop9, which
+is licensed under the GNU General Public License v3. This repository is
+therefore distributed under the GNU GPL v3 (see LICENSE). The original Vlither
+code remains the copyright of its authors. OM Rajput's changes and additions
+are copyright OM Rajput and are shared under the same license.
+
+NOT COVERED BY THIS NOTICE
+
+- Third-party libraries keep their own copyright and license: SDL, GLFW,
+  Dear ImGui and cimgui, cglm, stb, Vulkan Memory Allocator, mongoose,
+  Kyant AndroidLiquidGlass and the bundled fonts. See their folders and NOTICE.
+- NTL tag artwork belongs to the authors of the NTL mod.
+- Slither.io game assets, names and trademarks belong to their owners. Their
+  presence does not imply endorsement or affiliation.

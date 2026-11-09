@@ -70,6 +70,9 @@ void mobile_controls_look_ahead_offset(tenv* env, float* x, float* y);
 bool mobile_controls_boost_down(tenv* env);
 /* The steering actually in use: always the arrow upright (portrait play). */
 int mobile_controls_steering_mode(tenv* env);
+/* Classic steering (OM, 2026-11-01): while a steering finger is down, the
+   mean steering contact in screen pixels. False when no contact is down. */
+bool mobile_controls_classic_aim(tenv* env, float* dx, float* dy);
 void mobile_controls_draw_gameplay(tenv* env);
 void mobile_controls_begin_editor(tenv* env);
 void mobile_controls_finish_editor(tenv* env, bool save);

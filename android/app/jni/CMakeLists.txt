@@ -29,6 +29,9 @@ target_compile_definitions(main PRIVATE
     CIMGUI_NO_EXPORT
     CGLM_FORCE_DEPTH_ZERO_TO_ONE
     MG_ENABLE_IPV6=1
+    # Arena text (OM, 2026-11-07): 32-bit ImWchar, so names past U+FFFF
+    # (maths letters) can be drawn. C and C++ must agree on it.
+    IMGUI_USE_WCHAR32
     WYRM_SDL_JNI=1)
 target_include_directories(main PRIVATE
     "${WYRM_ROOT}/app/src"
@@ -48,7 +51,13 @@ find_library(ANDROID_LIB android REQUIRED)
 find_library(LOG_LIB log REQUIRED)
 find_library(VULKAN_LIB vulkan REQUIRED)
 
+# Android Frame Pacing (Swappy), from the androidx.games:games-frame-pacing
+# AAR through Prefab (build.gradle). Static, built for c++_shared like Wyrm.
+# Used by thermite/src/graphics/tswappy.c (OM, 2026-11-05).
+find_package(games-frame-pacing REQUIRED CONFIG)
+
 target_link_libraries(main PRIVATE
+    games-frame-pacing::swappy_static
     SDL3::SDL3
     ${ANDROID_LIB}
     ${LOG_LIB}

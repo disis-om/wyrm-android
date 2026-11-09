@@ -221,7 +221,7 @@ public class WyrmMessagingService extends FirebaseMessagingService {
     }
 
     private static String channelFor(String kind) {
-        if ("dm".equals(kind) || "invite".equals(kind) || "voice_invite".equals(kind)) {
+        if ("dm".equals(kind) || "mention".equals(kind) || "invite".equals(kind) || "voice_invite".equals(kind)) {
             return CHANNEL_MESSAGES;
         }
         if ("follow".equals(kind) || "achievement".equals(kind) || "rank".equals(kind)

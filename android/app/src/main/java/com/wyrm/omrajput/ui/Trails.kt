@@ -51,7 +51,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -196,6 +196,10 @@ object TrailsStore {
     private var pendingVideoRetry: (() -> Unit)? = null
     private var pendingShareSkin: Boolean? = null
     val comments = mutableStateMapOf<String, List<TrailComment>>()
+    /* Threads (Instagram's way, 2026-10-30): a top comment's replies, loaded
+       when its "View replies" opens, keyed by the top comment's id. */
+    val replies = mutableStateMapOf<String, List<TrailComment>>()
+    val openThreads = androidx.compose.runtime.mutableStateListOf<String>()
     var toast by mutableStateOf("")
     private var cursor: String? = null
     private val liking = mutableSetOf<String>()
@@ -627,13 +631,47 @@ object TrailsStore {
         scope.launch { runCatching { repo.trailComments(id) }.getOrNull()?.let { comments[id] = it.comments } }
     }
 
-    fun reply(id: String, body: String, done: (Boolean) -> Unit) {
+    fun loadReplies(id: String, commentId: String) {
+        val repo = repository ?: return
+        if (commentId !in openThreads) openThreads += commentId
+        scope.launch { runCatching { repo.trailCommentReplies(id, commentId) }.getOrNull()?.let { replies[commentId] = it.comments } }
+    }
+
+    fun hideReplies(commentId: String) { openThreads.remove(commentId) }
+
+    /** A comment, or with [answering] a reply in that comment's thread. */
+    fun reply(id: String, body: String, answering: TrailComment? = null, done: (Boolean) -> Unit) {
         val repo = repository ?: return done(false)
         scope.launch {
             try {
-                val posted = repo.replyToTrail(id, body)
-                comments[id] = (comments[id].orEmpty()) + posted.comment
+                val posted = repo.replyToTrail(id, body, answering?.id)
+                val root = posted.comment.parentId
+                if (root.isNotBlank()) {
+                    replies[root] = replies[root].orEmpty() + posted.comment
+                    if (root !in openThreads) openThreads += root
+                    comments[id] = comments[id].orEmpty().map { if (it.id == root) it.copy(replyCount = it.replyCount + 1) else it }
+                } else {
+                    comments[id] = (comments[id].orEmpty()) + posted.comment
+                }
                 patch(id) { it.copy(commentCount = posted.commentCount) }
+                done(true)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (failure: Exception) {
+                toast = message(failure)
+                done(false)
+            }
+        }
+    }
+
+    /** Edits the player's own comment or reply (2026-10-30). */
+    fun editReply(id: String, comment: TrailComment, body: String, done: (Boolean) -> Unit) {
+        val repo = repository ?: return done(false)
+        scope.launch {
+            try {
+                val saved = repo.editTrailReply(id, comment.id, body)
+                comments[id] = comments[id].orEmpty().map { if (it.id == saved.id) saved.copy(replyCount = it.replyCount) else it }
+                if (comment.parentId.isNotBlank()) replies[comment.parentId] = replies[comment.parentId].orEmpty().map { if (it.id == saved.id) saved else it }
                 done(true)
             } catch (cancel: CancellationException) {
                 throw cancel
@@ -649,8 +687,13 @@ object TrailsStore {
         scope.launch {
             try {
                 repo.deleteTrailReply(id, commentId)
+                val top = comments[id].orEmpty().firstOrNull { it.id == commentId }
+                val root = replies.entries.firstOrNull { (_, list) -> list.any { it.id == commentId } }?.key
                 comments[id] = comments[id].orEmpty().filterNot { it.id == commentId }
-                patch(id) { it.copy(commentCount = max(0, it.commentCount - 1)) }
+                    .map { if (it.id == root) it.copy(replyCount = max(0, it.replyCount - 1)) else it }
+                if (root != null) replies[root] = replies[root].orEmpty().filterNot { it.id == commentId }
+                if (top != null) replies.remove(commentId)
+                patch(id) { it.copy(commentCount = max(0, it.commentCount - 1 - (top?.replyCount ?: 0))) }
             } catch (failure: Exception) {
                 if (failure is CancellationException) throw failure
                 toast = message(failure)
@@ -771,13 +814,15 @@ internal fun trailTime(raw: String): String = runCatching {
 /** A trail photo: its thumbnail at once, the full image when it lands; fitted, never stretched. */
 @Composable
 internal fun TrailImage(full: String, thumb: String, aspect: Float, modifier: Modifier = Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var image by remember(full) { mutableStateOf(TrailImages.peek(full) ?: TrailImages.peek(thumb)) }
     LaunchedEffect(full) {
         if (TrailImages.peek(full) != null) return@LaunchedEffect
         if (image == null) TrailImages.load(thumb)?.let { image = it }
         TrailImages.load(full)?.let { image = it }
     }
-    Box(modifier.fillMaxWidth().aspectRatio(aspect).background(Wyrm.Well), contentAlignment = Alignment.Center) {
+    Box(modifier.fillMaxWidth().aspectRatio(aspect).background(wyrmScopedPalette.well), contentAlignment = Alignment.Center) {
         image?.let { Image(it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
     }
 }
@@ -785,16 +830,18 @@ internal fun TrailImage(full: String, thumb: String, aspect: Float, modifier: Mo
 /** Wyrm's like: a bead that fills with the theme's live colour and pops. */
 @Composable
 internal fun TrailBead(liked: Boolean, count: Int, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val haptics = LocalHapticFeedback.current
     val pop = remember { Animatable(1f) }
     val fill = remember { Animatable(if (liked) 1f else 0f) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(liked) { fill.animateTo(if (liked) 1f else 0f, spring(0.55f, 600f)) }
-    val live = Wyrm.Live
+    val live = wyrmScopedPalette.live
     Row(
         Modifier
             .clip(CircleShape)
-            .background(if (liked) live.copy(alpha = 0.14f) else Wyrm.Well)
+            .background(if (liked) live.copy(alpha = 0.14f) else wyrmScopedPalette.well)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                 haptics.performHapticFeedback(if (liked) HapticFeedbackType.SegmentTick else HapticFeedbackType.LongPress)
                 if (!liked) scope.launch { pop.snapTo(1f); pop.animateTo(1.35f, tween(110)); pop.animateTo(1f, spring(0.45f, 500f)) }
@@ -805,7 +852,7 @@ internal fun TrailBead(liked: Boolean, count: Int, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        val ring = if (liked) live else Wyrm.Quiet
+        val ring = if (liked) live else wyrmScopedPalette.quiet
         Canvas(Modifier.size(17.dp).scale(pop.value)) {
             val r = size.minDimension / 2
             drawCircle(ring, r - 0.8.dp.toPx(), style = androidx.compose.ui.graphics.drawscope.Stroke(1.6.dp.toPx()))
@@ -819,37 +866,42 @@ internal fun TrailBead(liked: Boolean, count: Int, onClick: () -> Unit) {
         Text(
             if (count == 0) "Like" else "$count",
             fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-            color = if (liked) Wyrm.Ink else Wyrm.Mute,
+            color = if (liked) wyrmScopedPalette.ink else wyrmScopedPalette.mute,
         )
     }
 }
 
 @Composable
 private fun TrailRepliesPill(count: Int, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         Modifier
             .clip(CircleShape)
-            .background(Wyrm.Well)
+            .background(wyrmScopedPalette.well)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp)
             .height(34.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        IosIcon(IosGlyph.BUBBLES, Wyrm.Mute, size = 15.dp, semibold = true)
+        IosIcon(IosGlyph.BUBBLES, wyrmScopedPalette.mute, size = 15.dp, semibold = true)
         Text(if (count == 0) "Reply" else "$count", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold,
-            fontSize = 13.sp, color = Wyrm.Mute)
+            fontSize = 13.sp, color = wyrmScopedPalette.mute)
     }
 }
 
 /** "Try this skin" (OM, 2026-09-30): opens the Skin tab with the poster's look as a draft. */
 @Composable
 private fun TrailTrySkinPill(onClick: () -> Unit) {
+    WyrmHeroTheme(2) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val haptics = LocalHapticFeedback.current
     Row(
         Modifier
             .clip(CircleShape)
-            .background(Wyrm.Live.copy(alpha = 0.14f))
+            .background(wyrmScopedPalette.paper)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 onClick()
@@ -861,28 +913,32 @@ private fun TrailTrySkinPill(onClick: () -> Unit) {
     ) {
         androidx.compose.material3.Icon(
             androidx.compose.ui.res.painterResource(com.composables.icons.lucide.R.drawable.lucide_ic_shirt),
-            contentDescription = null, tint = Wyrm.Ink, modifier = Modifier.size(15.dp),
+            contentDescription = null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(15.dp),
         )
         Text("Try this skin", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp,
-            color = Wyrm.Ink, maxLines = 1)
+            color = wyrmScopedPalette.ink, maxLines = 1)
+    }
+
     }
 }
 
 /** A text trail: the words themselves, set large, with the live colour's trail mark. */
 @Composable
 private fun TrailTextBody(text: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         Modifier
             .padding(horizontal = 8.dp)
             .fillMaxWidth()
             .clip(wyrmRounded(16.dp))
-            .background(Wyrm.Well)
+            .background(wyrmScopedPalette.well)
             .padding(horizontal = 18.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.width(4.dp).height(if (text.length < 90) 34.dp else 26.dp).clip(CircleShape).background(Wyrm.Live))
+        Box(Modifier.width(4.dp).height(if (text.length < 90) 34.dp else 26.dp).clip(CircleShape).background(wyrmScopedPalette.live))
         Text(text, fontFamily = Wyrm.Display, fontSize = if (text.length < 90) 26.sp else 20.sp,
-            lineHeight = if (text.length < 90) 32.sp else 26.sp, color = Wyrm.Ink)
+            lineHeight = if (text.length < 90) 32.sp else 26.sp, color = wyrmScopedPalette.ink)
     }
 }
 
@@ -958,10 +1014,12 @@ private fun foodColours(image: ImageBitmap?): List<Color> {
 /** Upload progress as a snake of beads that fills with the live colour. */
 @Composable
 private fun TrailBeadProgress(progress: Float?) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val wave = rememberInfiniteTransition(label = "beads")
     val t by wave.animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(900, easing = LinearEasing)), label = "wave")
-    val live = Wyrm.Live
-    val well = Wyrm.Well
+    val live = wyrmScopedPalette.live
+    val well = wyrmScopedPalette.well
     Canvas(Modifier.fillMaxWidth().height(20.dp)) {
         val count = 18
         val gap = size.width / count
@@ -981,6 +1039,8 @@ private fun TrailBeadProgress(progress: Float?) {
 /** The trail being posted: breathing and swaying while it uploads, or offering a retry. */
 @Composable
 private fun TrailPendingCard() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val phase = TrailsStore.posting
     val progress = when (phase) {
         is TrailPostPhase.Uploading -> phase.progress
@@ -1015,25 +1075,25 @@ private fun TrailPendingCard() {
             }
             .fillMaxWidth()
             .clip(wyrmRounded(20.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(20.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(20.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(58.dp).clip(wyrmRounded(12.dp)).background(Wyrm.Well), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(58.dp).clip(wyrmRounded(12.dp)).background(wyrmScopedPalette.well), contentAlignment = Alignment.Center) {
                 val image = TrailsStore.pendingImage
                 if (image != null) {
                     Image(remember(image) { image.asImageBitmap() }, null, contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.85f })
                 } else {
-                    Text("“", fontFamily = Wyrm.Display, fontSize = 30.sp, color = Wyrm.Live)
+                    Text("“", fontFamily = Wyrm.Display, fontSize = 30.sp, color = wyrmScopedPalette.live)
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = Wyrm.Ink)
+                Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = wyrmScopedPalette.ink)
                 Text(TrailsStore.pendingCaption.ifBlank { "Photo" }, fontFamily = Wyrm.Body, fontSize = 12.5.sp,
-                    color = Wyrm.Mute, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    color = wyrmScopedPalette.mute, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (phase is TrailPostPhase.Failed) {
@@ -1058,6 +1118,8 @@ internal fun TrailCard(
     /** "Try this skin": shown only when the poster shared their skin. */
     onTrySkin: (() -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
@@ -1068,11 +1130,11 @@ internal fun TrailCard(
     var cardSize by remember { mutableStateOf(IntSize.Zero) }
     val burst = remember { Animatable(0f) }
     val fade = remember { Animatable(1f) }
-    val live = Wyrm.Live
+    val live = wyrmScopedPalette.live
 
     fun scatter() {
         val url = trail.thumbUrl ?: trail.photo?.url
-        food = foodColours(url?.let { TrailImages.peek(it) }).ifEmpty { listOf(live, Wyrm.Link, Wyrm.Badge, Wyrm.Ink) }
+        food = foodColours(url?.let { TrailImages.peek(it) }).ifEmpty { listOf(live, wyrmScopedPalette.link, wyrmScopedPalette.badge, wyrmScopedPalette.ink) }
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         dying = true
         scope.launch {
@@ -1092,8 +1154,8 @@ internal fun TrailCard(
                 }
                 .fillMaxWidth()
                 .clip(wyrmRounded(22.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(22.dp)),
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(22.dp)),
         ) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 10.dp),
@@ -1107,9 +1169,9 @@ internal fun TrailCard(
                     WyrmAvatar(trail.author.avatarUrl, trail.author.avatarKey, trail.author.initials, 34.dp)
                     Column {
                         Text(trail.author.name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-                            color = Wyrm.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            color = wyrmScopedPalette.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(listOf(trail.author.handle, trailTime(trail.createdAt)).filter { it.isNotBlank() }.joinToString(" · "),
-                            fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet, maxLines = 1)
+                            fontFamily = Wyrm.Body, fontSize = 11.sp, color = wyrmScopedPalette.quiet, maxLines = 1)
                     }
                 }
                 // The "⋯": a real icon on a 40 dp target, centred on the author row (OM, 2026-10-01).
@@ -1117,14 +1179,14 @@ internal fun TrailCard(
                 val morePressed by moreTouch.collectIsPressedAsState()
                 Box(
                     Modifier.size(40.dp).clip(CircleShape)
-                        .background(if (morePressed || menu) Wyrm.Well else Color.Transparent)
+                        .background(if (morePressed || menu) wyrmScopedPalette.well else Color.Transparent)
                         .clickable(interactionSource = moreTouch, indication = null) {
                             haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
                             menu = true
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(painterResource(LucideR.drawable.lucide_ic_ellipsis), contentDescription = "More", tint = Wyrm.Mute,
+                    Icon(painterResource(LucideR.drawable.lucide_ic_ellipsis), contentDescription = "More", tint = wyrmScopedPalette.mute,
                         modifier = Modifier.size(20.dp))
                 }
             }
@@ -1169,7 +1231,7 @@ internal fun TrailCard(
             if (trail.caption.isNotBlank() && trail.photo != null) {
                 Text(
                     trail.caption,
-                    fontFamily = Wyrm.Body, fontSize = 14.5.sp, lineHeight = 21.sp, color = Wyrm.Ink,
+                    fontFamily = Wyrm.Body, fontSize = 14.5.sp, lineHeight = 21.sp, color = wyrmScopedPalette.ink,
                     maxLines = if (expanded) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
                 )
@@ -1235,34 +1297,38 @@ internal fun TrailCard(
 
 @Composable
 private fun TrailPlaceholder() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val pulse = rememberInfiniteTransition(label = "placeholder")
     val a by pulse.animateFloat(1f, 0.55f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "a")
     Column(
         Modifier.padding(horizontal = 14.dp).fillMaxWidth().graphicsLayer { alpha = a }
-            .clip(wyrmRounded(22.dp)).background(Wyrm.Card).border(1.dp, Wyrm.Rule, wyrmRounded(22.dp)).padding(14.dp),
+            .clip(wyrmRounded(22.dp)).background(wyrmScopedPalette.card).border(1.dp, wyrmScopedPalette.rule, wyrmRounded(22.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(34.dp).clip(wyrmRounded(10.dp)).background(Wyrm.Well))
+            Box(Modifier.size(34.dp).clip(wyrmRounded(10.dp)).background(wyrmScopedPalette.well))
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.width(120.dp).height(10.dp).clip(CircleShape).background(Wyrm.Well))
-                Box(Modifier.width(70.dp).height(8.dp).clip(CircleShape).background(Wyrm.Well))
+                Box(Modifier.width(120.dp).height(10.dp).clip(CircleShape).background(wyrmScopedPalette.well))
+                Box(Modifier.width(70.dp).height(8.dp).clip(CircleShape).background(wyrmScopedPalette.well))
             }
         }
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(wyrmRounded(16.dp)).background(Wyrm.Well))
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(wyrmRounded(16.dp)).background(wyrmScopedPalette.well))
     }
 }
 
 @Composable
 internal fun TrailToast(modifier: Modifier = Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val text = TrailsStore.toast
     LaunchedEffect(text) {
         if (text.isNotEmpty()) { delay(2000); if (TrailsStore.toast == text) TrailsStore.toast = "" }
     }
     AnimatedVisibility(text.isNotEmpty(), modifier = modifier, enter = fadeIn() + scaleIn(initialScale = 0.9f), exit = fadeOut()) {
         Text(
-            text, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Wyrm.OnInk,
-            modifier = Modifier.clip(CircleShape).background(Wyrm.Ink).padding(horizontal = 16.dp, vertical = 10.dp),
+            text, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = wyrmScopedPalette.onInk,
+            modifier = Modifier.clip(CircleShape).background(wyrmScopedPalette.ink).padding(horizontal = 16.dp, vertical = 10.dp),
         )
     }
 }
@@ -1270,20 +1336,22 @@ internal fun TrailToast(modifier: Modifier = Modifier) {
 /** The one way to post: top right once there are trails, in the middle while there are none. */
 @Composable
 private fun TrailNewButton(large: Boolean, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         Modifier
             .shadow(if (large) 16.dp else 8.dp, CircleShape, clip = false)
             .clip(CircleShape)
-            .background(Wyrm.Ink)
+            .background(wyrmScopedPalette.ink)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(horizontal = if (large) 22.dp else 14.dp)
             .height(if (large) 50.dp else 34.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(if (large) 8.dp else 6.dp),
     ) {
-        Text("+", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = if (large) 18.sp else 15.sp, color = Wyrm.OnInk)
+        Text("+", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = if (large) 18.sp else 15.sp, color = wyrmScopedPalette.onInk)
         Text(if (large) "Leave a trail" else "New", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold,
-            fontSize = if (large) 15.sp else 13.sp, color = Wyrm.OnInk)
+            fontSize = if (large) 15.sp else 13.sp, color = wyrmScopedPalette.onInk)
     }
 }
 
@@ -1299,12 +1367,16 @@ fun TrailsFeedScreen(
     onOpen: (String) -> Unit,
     onAuthor: (String) -> Unit,
     onTrySkin: (Trail) -> Unit = {},
+    /** Kept by the overlay: Back from a trail's replies lands on that trail (OM, 2026-10-31). */
+    place: ListPlace? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val desktop = LocalCentredDialogs.current
     LaunchedEffect(Unit) { if (!TrailsStore.loaded) TrailsStore.refresh() else TrailsStore.checkNew() }
     // A quiet look for newer trails every minute while the feed is open (OM, 2026-10-17).
     LaunchedEffect(Unit) { while (true) { delay(60_000); TrailsStore.checkNew() } }
-    val list = rememberLazyListState()
+    val list = rememberPlacedListState(place)
     val feedScope = rememberCoroutineScope()
     LaunchedEffect(list) {
         snapshotFlow {
@@ -1344,7 +1416,7 @@ fun TrailsFeedScreen(
     }
     val hasTrails = TrailsStore.trails.isNotEmpty() || TrailsStore.pendingActive
     var pulling by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
+    Box(Modifier.fillMaxSize().background(wyrmScopedPalette.paper)) {
         Column(Modifier.fillMaxSize().padding(top = insetTop)) {
             Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 16.dp)) {
                 // A tab of its own (OM, 2026-10-04): no Back there.
@@ -1353,15 +1425,15 @@ fun TrailsFeedScreen(
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Link, size = 16.dp, semibold = true)
-                    Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.Link)
+                    IosIcon(IosGlyph.CHEVRON_LEFT, wyrmScopedPalette.link, size = 16.dp, semibold = true)
+                    Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = wyrmScopedPalette.link)
                 }
                 Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Wyrm.Ink)
+                    Text("Trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = wyrmScopedPalette.ink)
                     // Saved trails on screen while the fresh ones load (not during a pull: that has its own).
                     if (TrailsStore.loading && TrailsStore.trails.isNotEmpty() && !pulling) {
-                        CircularProgressIndicator(color = Wyrm.Quiet, strokeWidth = 1.8.dp, modifier = Modifier.size(14.dp))
+                        CircularProgressIndicator(color = wyrmScopedPalette.quiet, strokeWidth = 1.8.dp, modifier = Modifier.size(14.dp))
                     }
                 }
                 val shown by androidx.compose.animation.core.animateFloatAsState(
@@ -1375,15 +1447,15 @@ fun TrailsFeedScreen(
                     }) { TrailNewButton(large = false, onClick = onNew) }
                 }
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
             IosRefreshable(pulling, { pulling = true; TrailsStore.refresh { pulling = false } }, Modifier.weight(1f)) {
                 LazyColumn(state = list, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     item(key = "header") {
                         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp)) {
                             Text("THE WYRM COMMUNITY", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp,
-                                letterSpacing = 1.15.sp, color = Wyrm.Quiet)
-                            Text("Trails", fontFamily = Wyrm.Display, fontSize = 34.sp, color = Wyrm.Ink)
-                            Text("Show off your skins, kills and best moments.", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Mute)
+                                letterSpacing = 1.15.sp, color = wyrmScopedPalette.quiet)
+                            Text("Trails", fontFamily = Wyrm.Display, fontSize = 34.sp, color = wyrmScopedPalette.ink)
+                            Text("Show off your skins, kills and best moments.", fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.mute)
                         }
                     }
                     when {
@@ -1403,7 +1475,7 @@ fun TrailsFeedScreen(
                             }
                             if (TrailsStore.loadingMore) item(key = "more") {
                                 Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(color = Wyrm.Quiet, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                                    CircularProgressIndicator(color = wyrmScopedPalette.quiet, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                                 }
                             }
                             if (TrailsStore.moreFailed) item(key = "more-failed") {
@@ -1417,7 +1489,7 @@ fun TrailsFeedScreen(
                         }
                     }
                     if (TrailsStore.error.isNotEmpty() && TrailsStore.trails.isEmpty()) item(key = "error") {
-                        Text(TrailsStore.error, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge,
+                        Text(TrailsStore.error, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.badge,
                             modifier = Modifier.padding(horizontal = 20.dp))
                     }
                     item(key = "foot") { Spacer(Modifier.height(40.dp + insetBottom + LocalRootTabClearance.current)) }
@@ -1438,28 +1510,32 @@ fun TrailsFeedScreen(
 /** The very first open: what is happening, above the card shapes. */
 @Composable
 private fun TrailsLoading() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(color = Wyrm.Quiet, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+        CircularProgressIndicator(color = wyrmScopedPalette.quiet, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
-        Text("Loading trails…", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Quiet)
+        Text("Loading trails…", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet)
     }
 }
 
 /** The next page did not come: say so, and let the reader try again (OM, 2026-10-17). */
 @Composable
 private fun TrailsMoreFailed(onRetry: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Couldn't load more trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Mute)
+        Text("Couldn't load more trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = wyrmScopedPalette.mute)
         Row(
-            Modifier.clip(CircleShape).border(1.dp, Wyrm.Rule, CircleShape).background(Wyrm.Card)
+            Modifier.clip(CircleShape).border(1.dp, wyrmScopedPalette.rule, CircleShape).background(wyrmScopedPalette.card)
                 .clickable(onClick = onRetry).padding(horizontal = 16.dp).height(34.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            IosIcon(IosGlyph.ARROW_CLOCKWISE, Wyrm.Ink, size = 14.dp, semibold = true)
-            Text("Try again", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Ink)
+            IosIcon(IosGlyph.ARROW_CLOCKWISE, wyrmScopedPalette.ink, size = 14.dp, semibold = true)
+            Text("Try again", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = wyrmScopedPalette.ink)
         }
     }
 }
@@ -1467,16 +1543,18 @@ private fun TrailsMoreFailed(onRetry: () -> Unit) {
 /** The end of the feed, Instagram's "You're all caught up" (OM, 2026-10-17). */
 @Composable
 private fun TrailsCaughtUp(showTop: Boolean, onTop: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.size(44.dp).clip(CircleShape).border(1.5.dp, Wyrm.Live, CircleShape), contentAlignment = Alignment.Center) {
-            IosIcon(IosGlyph.CHECKMARK, Wyrm.Live, size = 20.dp, semibold = true)
+        Box(Modifier.size(44.dp).clip(CircleShape).border(1.5.dp, wyrmScopedPalette.live, CircleShape), contentAlignment = Alignment.Center) {
+            IosIcon(IosGlyph.CHECKMARK, wyrmScopedPalette.live, size = 20.dp, semibold = true)
         }
         Spacer(Modifier.height(2.dp))
-        Text("You're all caught up", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+        Text("You're all caught up", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = wyrmScopedPalette.ink)
         Text("You've seen every trail. New ones show up at the top.", fontFamily = Wyrm.Body, fontSize = 12.5.sp,
-            color = Wyrm.Mute, textAlign = TextAlign.Center)
-        if (showTop) Text("Back to top", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Link,
+            color = wyrmScopedPalette.mute, textAlign = TextAlign.Center)
+        if (showTop) Text("Back to top", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = wyrmScopedPalette.link,
             modifier = Modifier.padding(top = 4.dp).clip(CircleShape).clickable(onClick = onTop)
                 .padding(horizontal = 10.dp, vertical = 6.dp))
     }
@@ -1485,39 +1563,43 @@ private fun TrailsCaughtUp(showTop: Boolean, onTop: () -> Unit) {
 /** "N new trails": newer ones wait here, the list never jumps by itself (Instagram's New posts button). */
 @Composable
 private fun TrailFreshPill(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var last by remember { mutableStateOf(count) }
     if (count > 0) last = count
     AnimatedVisibility(count > 0, modifier = modifier,
         enter = fadeIn(tween(220)) + androidx.compose.animation.slideInVertically(spring(0.75f, 420f)) { -it },
         exit = fadeOut(tween(160)) + androidx.compose.animation.slideOutVertically(tween(180)) { -it }) {
         Row(
-            Modifier.shadow(10.dp, CircleShape, clip = false).clip(CircleShape).background(Wyrm.Ink)
+            Modifier.shadow(10.dp, CircleShape, clip = false).clip(CircleShape).background(wyrmScopedPalette.ink)
                 .clickable(onClick = onClick).padding(horizontal = 16.dp).height(36.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            IosIcon(IosGlyph.ARROW_UP, Wyrm.OnInk, size = 13.dp, semibold = true)
+            IosIcon(IosGlyph.ARROW_UP, wyrmScopedPalette.onInk, size = 13.dp, semibold = true)
             Text(if (last == 1) "1 new trail" else if (last >= 10) "New trails" else "$last new trails",
-                fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.OnInk)
+                fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = wyrmScopedPalette.onInk)
         }
     }
 }
 
 @Composable
 private fun TrailsEmpty(onNew: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
-        Modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(wyrmRounded(22.dp)).background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(22.dp)).padding(22.dp),
+        Modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(wyrmRounded(22.dp)).background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(22.dp)).padding(22.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Canvas(Modifier.size(width = 42.dp, height = 18.dp)) {
             val r = size.height / 2.4f
-            for (i in 0 until 5) drawCircle(Wyrm.Live.copy(alpha = 0.4f + i * 0.15f), r, Offset(r + i * r * 1.5f, size.height / 2))
+            for (i in 0 until 5) drawCircle(wyrmScopedPalette.live.copy(alpha = 0.4f + i * 0.15f), r, Offset(r + i * r * 1.5f, size.height / 2))
         }
-        Text("No trails yet", fontFamily = Wyrm.Display, fontSize = 22.sp, color = Wyrm.Ink)
+        Text("No trails yet", fontFamily = Wyrm.Display, fontSize = 22.sp, color = wyrmScopedPalette.ink)
         Text("Be the first to leave one. Share a skin, a big run or a moment from the arena.", fontFamily = Wyrm.Body,
-            fontSize = 13.sp, color = Wyrm.Mute, textAlign = TextAlign.Center)
+            fontSize = 13.sp, color = wyrmScopedPalette.mute, textAlign = TextAlign.Center)
         Spacer(Modifier.height(4.dp))
         TrailNewButton(large = true, onClick = onNew)
     }
@@ -1535,14 +1617,27 @@ fun TrailDetailScreen(
     onAuthor: (String) -> Unit,
     onTrySkin: (Trail) -> Unit = {},
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     LaunchedEffect(trailId) {
         if (TrailsStore.trail(trailId) == null) TrailsStore.reload(trailId)
         TrailsStore.loadComments(trailId)
     }
     var draft by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var answering by remember { mutableStateOf<TrailComment?>(null) }
+    var editing by remember { mutableStateOf<TrailComment?>(null) }
     val trail = TrailsStore.trail(trailId)
     val replies = TrailsStore.comments[trailId].orEmpty()
+    @Composable
+    fun Comment(reply: TrailComment, nested: Boolean) {
+        TrailReplyRow(reply, isAuthor = reply.author.playerId == trail?.author?.playerId,
+            canDelete = reply.mine || trail?.mine == true, insetBottom = insetBottom, nested = nested,
+            onAuthor = { onAuthor(reply.author.playerId) },
+            onReply = { editing = null; answering = reply },
+            onEdit = if (reply.mine) ({ answering = null; editing = reply; draft = reply.body }) else null,
+            onDelete = { TrailsStore.deleteReply(trailId, reply.id) })
+    }
     Box(Modifier.fillMaxSize()) {
         IosPageChrome("Trail", insetTop, onBack) {
             val backdrop = rememberLayerBackdrop()
@@ -1565,23 +1660,53 @@ fun TrailDetailScreen(
                         if (replies.isEmpty()) {
                             item(key = "none") {
                                 Text("No replies yet. Be the first to say something.", fontFamily = Wyrm.Body, fontSize = 12.5.sp,
-                                    color = Wyrm.Quiet, modifier = Modifier.padding(horizontal = 20.dp))
+                                    color = wyrmScopedPalette.quiet, modifier = Modifier.padding(horizontal = 20.dp))
                             }
                         } else {
-                            items(replies, key = { it.id }) { reply ->
-                                TrailReplyRow(reply, isAuthor = reply.author.playerId == trail?.author?.playerId,
-                                    canDelete = reply.mine || trail?.mine == true, insetBottom = insetBottom,
-                                    onAuthor = { onAuthor(reply.author.playerId) },
-                                    onDelete = { TrailsStore.deleteReply(trailId, reply.id) })
+                            replies.forEach { reply ->
+                                item(key = reply.id) { Comment(reply, nested = false) }
+                                val open = reply.id in TrailsStore.openThreads
+                                if (open) TrailsStore.replies[reply.id].orEmpty().forEach { child ->
+                                    item(key = child.id) { Comment(child, nested = true) }
+                                }
+                                if (reply.replyCount > 0) item(key = "thread-" + reply.id) {
+                                    // Instagram's "——  View 3 replies" under a comment.
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                                if (open) TrailsStore.hideReplies(reply.id) else TrailsStore.loadReplies(trailId, reply.id)
+                                            }
+                                            .padding(start = 58.dp, top = 2.dp, bottom = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(Modifier.width(24.dp).height(1.dp).background(wyrmScopedPalette.quiet))
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(if (open) "Hide replies" else "View ${reply.replyCount} ${if (reply.replyCount == 1) "reply" else "replies"}",
+                                            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
+                                    }
+                                }
                             }
                         }
                         item(key = "foot") { Spacer(Modifier.height(24.dp)) }
                     }
                 }
+                (editing ?: answering)?.let { target ->
+                    Row(
+                        Modifier.fillMaxWidth().background(wyrmScopedPalette.card).padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(if (editing != null) "Editing your reply" else "Replying to @${target.author.handle.removePrefix("@").ifBlank { target.author.name }}",
+                            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.weight(1f))
+                        Box(Modifier.size(36.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            if (editing != null) draft = ""
+                            editing = null; answering = null
+                        }, contentAlignment = Alignment.Center) { IosIcon(IosGlyph.XMARK, wyrmScopedPalette.quiet, size = 14.dp, semibold = true) }
+                    }
+                }
                 IosChatComposer(
                     text = draft,
                     onText = { draft = it.take(300) },
-                    placeholder = "Reply to this trail",
+                    placeholder = answering?.let { "Reply to @${it.author.handle.removePrefix("@").ifBlank { it.author.name }}" } ?: "Reply to this trail",
                     limit = 300,
                     sending = sending,
                     bottomInset = if (imeUp) 0.dp else insetBottom,
@@ -1590,7 +1715,12 @@ fun TrailDetailScreen(
                     val body = draft.trim()
                     if (body.isNotEmpty() && !sending) {
                         sending = true
-                        TrailsStore.reply(trailId, body) { ok -> if (ok) draft = ""; sending = false }
+                        val edit = editing
+                        if (edit != null) {
+                            TrailsStore.editReply(trailId, edit, body) { ok -> if (ok) { draft = ""; editing = null }; sending = false }
+                        } else {
+                            TrailsStore.reply(trailId, body, answering) { ok -> if (ok) { draft = ""; answering = null }; sending = false }
+                        }
                     }
                 }
             }
@@ -1607,34 +1737,58 @@ private fun TrailReplyRow(
     insetBottom: Dp,
     onAuthor: () -> Unit,
     onDelete: () -> Unit,
+    nested: Boolean = false,
+    onReply: () -> Unit = {},
+    onEdit: (() -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var menu by remember { mutableStateOf(false) }
+    val menuable = canDelete || onEdit != null
     Row(
         Modifier.fillMaxWidth()
-            .pointerInput(canDelete) { detectTapGestures(onLongPress = { if (canDelete) menu = true }) }
-            .padding(horizontal = 18.dp, vertical = 9.dp),
+            .pointerInput(menuable) { detectTapGestures(onLongPress = { if (menuable) menu = true }) }
+            .padding(start = if (nested) 58.dp else 18.dp, end = 18.dp, top = 9.dp, bottom = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onAuthor)) {
-            WyrmAvatar(reply.author.avatarUrl, reply.author.avatarKey, reply.author.initials, 30.dp)
+            WyrmAvatar(reply.author.avatarUrl, reply.author.avatarKey, reply.author.initials, if (nested) 24.dp else 30.dp)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(reply.author.name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Ink)
+                Text(reply.author.name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = wyrmScopedPalette.ink)
                 if (isAuthor) {
                     Text("AUTHOR", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 8.5.sp, letterSpacing = 0.8.sp,
-                        color = Wyrm.Live, modifier = Modifier.clip(CircleShape).background(Wyrm.Live.copy(alpha = 0.14f))
+                        color = wyrmScopedPalette.live, modifier = Modifier.clip(CircleShape).background(wyrmScopedPalette.live.copy(alpha = 0.14f))
                             .padding(horizontal = 6.dp, vertical = 2.dp))
                 }
-                Text(trailTime(reply.createdAt), fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet)
+                Text(trailTime(reply.createdAt), fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = wyrmScopedPalette.quiet)
             }
-            Text(reply.body, fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = Wyrm.Ink)
+            Text(
+                androidx.compose.ui.text.buildAnnotatedString {
+                    if (reply.replyToUsername.isNotBlank()) {
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = wyrmScopedPalette.link, fontWeight = FontWeight.SemiBold))
+                        append("@" + reply.replyToUsername + " ")
+                        pop()
+                    }
+                    append(reply.body)
+                },
+                fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = wyrmScopedPalette.ink,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Reply", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet,
+                    modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onReply))
+                if (reply.editedAt.isNotBlank()) Text("Edited", fontFamily = Wyrm.Body, fontSize = 11.sp, color = wyrmScopedPalette.quiet)
+            }
         }
     }
     if (menu) {
         WyrmMenuSheet(
-            title = "Your reply",
-            items = listOf(WyrmMenuItem("Delete reply", LucideR.drawable.lucide_ic_trash_2, destructive = true, onClick = onDelete)),
+            title = if (reply.mine) "Your reply" else "Reply",
+            items = listOfNotNull(
+                onEdit?.let { WyrmMenuItem("Edit reply", LucideR.drawable.lucide_ic_pencil, onClick = it) },
+                if (canDelete) WyrmMenuItem("Delete reply", LucideR.drawable.lucide_ic_trash_2, destructive = true, onClick = onDelete) else null,
+            ),
             insetBottom = insetBottom,
         ) { menu = false }
     }
@@ -1646,6 +1800,8 @@ private fun TrailReplyRow(
 @Composable
 /** [badge]: unread likes and replies on your trails (the badge trail, OM 2026-10-01). */
 internal fun TrailsTeaser(badge: Int = 0, onOpen: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     // Switched off (TRAILS_ENABLED): the same card, empty, and no feed fetch.
     LaunchedEffect(Unit) { if (com.wyrm.omrajput.data.TRAILS_ENABLED && !TrailsStore.loaded) TrailsStore.refresh() }
     val trails = if (com.wyrm.omrajput.data.TRAILS_ENABLED) TrailsStore.trails else emptyList()
@@ -1654,38 +1810,38 @@ internal fun TrailsTeaser(badge: Int = 0, onOpen: () -> Unit) {
             .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
             .fillMaxWidth()
             .clip(wyrmRounded(20.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(20.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(20.dp))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpen)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Trails", fontFamily = Wyrm.Display, fontSize = 24.sp, color = Wyrm.Ink)
+                Text("Trails", fontFamily = Wyrm.Display, fontSize = 24.sp, color = wyrmScopedPalette.ink)
                 Text(when {
                         badge > 0 -> "$badge new on your trails"
                         trails.isEmpty() -> "Show off your skins, kills and best moments."
                         else -> "New from the Wyrm community"
                     },
-                    fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = if (badge > 0) Wyrm.Badge else Wyrm.Mute)
+                    fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = if (badge > 0) wyrmScopedPalette.badge else wyrmScopedPalette.mute)
             }
             if (badge > 0) {
                 WyrmCountBadge(badge)
                 Spacer(Modifier.width(10.dp))
             }
-            IosIcon(IosGlyph.CHEVRON_RIGHT, Wyrm.Chevron, size = 13.dp, semibold = true)
+            IosIcon(IosGlyph.CHEVRON_RIGHT, wyrmScopedPalette.chevron, size = 13.dp, semibold = true)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (index in 0 until 4) {
-                Box(Modifier.weight(1f).aspectRatio(1f).clip(wyrmRounded(12.dp)).background(Wyrm.Well), contentAlignment = Alignment.Center) {
+                Box(Modifier.weight(1f).aspectRatio(1f).clip(wyrmRounded(12.dp)).background(wyrmScopedPalette.well), contentAlignment = Alignment.Center) {
                     val item = trails.getOrNull(index)
                     val thumb = item?.thumbUrl
                     when {
                         thumb != null -> TrailImage(thumb, thumb, 1f)
-                        item != null -> Text(item.caption, fontFamily = Wyrm.Display, fontSize = 11.sp, color = Wyrm.Ink,
+                        item != null -> Text(item.caption, fontFamily = Wyrm.Display, fontSize = 11.sp, color = wyrmScopedPalette.ink,
                             maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(6.dp))
-                        index == 0 -> Text("+", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Wyrm.Quiet)
+                        index == 0 -> Text("+", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = wyrmScopedPalette.quiet)
                     }
                 }
             }

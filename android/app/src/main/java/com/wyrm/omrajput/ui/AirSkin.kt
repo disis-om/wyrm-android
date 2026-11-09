@@ -20,12 +20,42 @@ object AirSkin {
     const val PLAIN_MARKER = 0xFE000000.toInt() // nsk 0, kmc_ts[9][0]
     const val RIM_MARKER = 0xFD000000.toInt()   // nsk 1, kmc_ts[29][0]
 
-    fun marker(kind: Int): Int = if (kind == 0) PLAIN_MARKER else RIM_MARKER
+    /**
+     * The client's six bead styles (OM, 2026-10-26; `nsks` 0..5): plain, rim,
+     * round fluffy, dragon scales, teardrop, egg. The alpha byte names it:
+     * 0xFE - style. Only this phone draws them; the arena gets the colour.
+     */
+    const val STYLE_COUNT = 6
+    val styleNames = listOf("Plain", "Rim", "Fluffy", "Scales", "Teardrop", "Egg")
+    /** `nsk_default_shine_a`: the white shine over a drawn style (2..5). */
+    val shineAlpha = floatArrayOf(0f, 0f, 0.8f, 0.8f, 0.7f, 0.55f)
+    /** A drawn style's picture is 2.5 beads wide round the bead's centre. */
+    const val STYLE_SPAN = 2.5f
 
-    fun kind(argb: Int): Int? = when ((argb ushr 24) and 0xFF) {
-        0xFE -> 0
-        0xFD -> 1
-        else -> null
+    fun marker(kind: Int): Int = (0xFE - kind.coerceIn(0, STYLE_COUNT - 1)) shl 24
+
+    fun kind(argb: Int): Int? {
+        val tag = (argb ushr 24) and 0xFF
+        return if (tag in 0xF9..0xFE) 0xFE - tag else null
+    }
+
+    /**
+     * Which styles may be added to [colours] (AIR `nsk_is_valid_type`): plain
+     * and rim go with every other bead; a drawn style (2..5) only on its own,
+     * one style for the whole snake. Returns, per style, whether it may be added,
+     * and whether the preset and Wyrm beads may be added.
+     */
+    fun allowed(colours: List<Int>): Pair<BooleanArray, Boolean> {
+        val drawn = colours.mapNotNull { kind(it) }.firstOrNull { it >= 2 }
+        val others = colours.any { (kind(it) ?: 0) < 2 }
+        val styles = BooleanArray(STYLE_COUNT) { style ->
+            when {
+                drawn != null -> style == drawn
+                style >= 2 -> !others
+                else -> true
+            }
+        }
+        return styles to (drawn == null)
     }
 
     /**
@@ -110,8 +140,10 @@ object AirSkin {
         val lo = c.min()
         val hi = c.max()
         val mid = c.sum() - lo - hi
-        if (mid + hi < 255) {
-            val lift = 1 + (255 - (mid + hi)) / 2
+        // nsk_min2c: 255 for plain and rim, 128 for the drawn styles.
+        val min2c = if ((kind(argb) ?: 0) >= 2) 128.0 else 255.0
+        if (mid + hi < min2c) {
+            val lift = 1 + (min2c - (mid + hi)) / 2
             for (i in 0..2) c[i] = minOf(255.0, c[i] + lift)
         }
         return (c[0].toInt() shl 16) or (c[1].toInt() shl 8) or c[2].toInt()

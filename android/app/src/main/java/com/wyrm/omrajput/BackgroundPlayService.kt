@@ -30,23 +30,36 @@ class BackgroundPlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        runCatching {
+        val inForeground = runCatching {
             ServiceCompat.startForeground(
                 this, NOTIFICATION_ID, notification(),
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
             )
-        }.onFailure { Log.w(TAG, "foreground refused", it) }
+        }.onFailure { Log.w(TAG, "foreground refused", it) }.isSuccess
+        // A stop() that came before this start was held back (see stop): the
+        // service is in the foreground now, so it may end.
+        synchronized(lock) {
+            pending = false
+            if (stopWanted || !inForeground) {
+                stopWanted = false
+                ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
         if (wakeLock == null) {
-            wakeLock = (getSystemService(Context.POWER_SERVICE) as? PowerManager)
+            wakeLock = runCatching { (getSystemService(Context.POWER_SERVICE) as? PowerManager)
                 ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Wyrm:background-play")
                 ?.apply { setReferenceCounted(false); acquire(MAX_HOLD_MS) }
+            }.onFailure { Log.w(TAG, "CPU lock unavailable", it) }.getOrNull()
         }
         if (wifiLock == null) {
             @Suppress("DEPRECATION")
-            wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
+            wifiLock = runCatching { (applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
                 ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Wyrm:background-play")
-                ?.apply { setReferenceCounted(false); runCatching { acquire() } }
+                ?.apply { setReferenceCounted(false); acquire() }
+            }.onFailure { Log.w(TAG, "Wi-Fi lock unavailable", it) }.getOrNull()
         }
         return START_NOT_STICKY
     }
@@ -93,18 +106,46 @@ class BackgroundPlayService : Service() {
         /** A wake lock always has an end: 6 hours. */
         private const val MAX_HOLD_MS = 6L * 60 * 60 * 1000
 
-        @JvmStatic
-        fun start(context: Context) {
-            runCatching {
-                val intent = Intent(context, BackgroundPlayService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
-                else context.startService(intent)
-            }.onFailure { Log.w(TAG, "could not start", it) }
-        }
+        private val lock = Any()
+        /** startForegroundService was called and onStartCommand has not run yet. */
+        private var pending = false
+        /** stop() arrived while [pending]: onStartCommand ends the service. */
+        private var stopWanted = false
 
         @JvmStatic
+        fun start(context: Context) {
+            synchronized(lock) {
+                stopWanted = false
+                if (pending) return
+                pending = true
+                runCatching {
+                    val intent = Intent(context, BackgroundPlayService::class.java)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+                    else context.startService(intent)
+                }.onFailure {
+                    pending = false
+                    Log.w(TAG, "could not start", it)
+                }
+            }
+        }
+
+        /*
+         * Stopping a service started with startForegroundService before it has
+         * called startForeground makes Android kill the app
+         * (ForegroundServiceDidNotStartInTimeException, 8.3.0 reports: back to
+         * Wyrm right after leaving it). So a stop that early only marks it;
+         * onStartCommand goes foreground first, then ends the service.
+         */
+        @JvmStatic
         fun stop(context: Context) {
-            runCatching { context.stopService(Intent(context, BackgroundPlayService::class.java)) }
+            synchronized(lock) {
+                if (pending) {
+                    stopWanted = true
+                    return
+                }
+                // Keep the stop and a competing new start in the same order.
+                runCatching { context.stopService(Intent(context, BackgroundPlayService::class.java)) }
+            }
         }
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.wyrm.omrajput.data.Setting
 
 private val BASIC_IDS = setOf(
+    "general.native_text_style",
     "general.snake_scores",
     "general.show_own_name",
     "general.minimap_size",
@@ -31,6 +32,8 @@ fun SettingsDisplayScreen(
     insetBottom: Dp,
     onBack: () -> Unit,
     onChange: (Setting, List<Float>) -> Unit,
+    /** Minimap icons (OM, 2026-11-07); Android passes MinimapIconsSection. */
+    minimapIcons: (@Composable () -> Unit)? = null,
 ) {
     val basic = BASIC_IDS.mapNotNull { settings.named(it) }
     val advancedRows = settings.filter { setting ->
@@ -54,6 +57,7 @@ fun SettingsDisplayScreen(
                 SettingTypedRow(setting = setting, first = index == 0, onChange = onChange)
             }
         }
+        minimapIcons?.invoke()
         // Look ahead (OM, 2026-10-05): moved off Controls. Same switch, both modes.
         SettingsSectionLabel("Camera")
         SettingsCard {
@@ -63,6 +67,14 @@ fun SettingsDisplayScreen(
                 on = PlayFeelStore.lookAhead,
                 first = true,
                 onToggle = { PlayFeelStore.applyLookAhead(it) },
+            ) }
+            // Auto zoom (OM, 2026-11-09): off keeps your own zoom.
+            Box(Modifier.settingAnchor("app.auto-zoom")) { SettingsBoolRow(
+                title = "Auto zoom",
+                detail = "The view zooms out as your snake grows. Turn it off to keep your own zoom.",
+                on = PlayFeelStore.autoZoom,
+                first = false,
+                onToggle = { PlayFeelStore.applyAutoZoom(it) },
             ) }
         }
         if (advancedRows.isNotEmpty()) {

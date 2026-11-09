@@ -12,7 +12,7 @@ bd_renderer* bd_renderer_create(tcontext* ctx, VkPipelineLayout layout,
       tcontext_create_shader(ctx, "app/res/shaders/bin/bdf.spv");
 
   vkCreateGraphicsPipelines(
-      ctx->device, NULL, 1,
+      ctx->device, VK_NULL_HANDLE, 1,
       &(VkGraphicsPipelineCreateInfo){
           .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
           .pNext = NULL,

@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +31,11 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** Settings › Privacy › Activity (OM, 2026-10-23); the same words on iOS. */
+internal const val ACTIVITY_SHARED_NOTE =
+    "When you are on Wyrm and which arena you play in are shown to your friends, " +
+        "on the Wyrm website and in the Wyrm Discord bot. This can't be turned off."
+
 /**
  * Spec page 15 — Settings › Privacy, and the same document from sign-in.
  *
@@ -43,10 +48,11 @@ fun PrivacyScreen(
     insetBottom: Dp,
     backLabel: String = "Back",
     onBack: () -> Unit,
-    /** Signed in from Settings: the activity switch shows (2026-10-09). */
+    /** Signed in from Settings: the activity line shows. */
     signedIn: Boolean = false,
-    shareActivity: Boolean = true,
-    onShareActivity: (Boolean) -> Unit = {},
+    /* Unused since 2026-10-23 (activity is always shared); kept for callers. */
+    @Suppress("UNUSED_PARAMETER") shareActivity: Boolean = true,
+    @Suppress("UNUSED_PARAMETER") onShareActivity: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val document by produceState(initialValue = emptyList<Block>(), context) {
@@ -60,18 +66,12 @@ fun PrivacyScreen(
         insetBottom = insetBottom,
         onBack = onBack,
     ) {
+        // Activity is always shared (OM, 2026-10-23): the website and the Wyrm
+        // Discord bot show it too, so the switch is gone.
         if (signedIn) {
             SettingsSectionLabel("Activity", top = 18.dp)
-            SettingsCard {
-                Box(Modifier.settingAnchor("app.share-activity")) {
-                    SettingsBoolRow(
-                        title = "Show my activity to friends",
-                        detail = "Friends who follow you back see when you are on Wyrm and which arena you play in. Off, you don't see theirs either.",
-                        on = shareActivity,
-                        first = true,
-                        onToggle = onShareActivity,
-                    )
-                }
+            Box(Modifier.settingAnchor("app.share-activity")) {
+                SettingsCaption(ACTIVITY_SHARED_NOTE)
             }
         }
         SettingsSectionLabel("What Wyrm keeps", top = 18.dp)
@@ -90,6 +90,8 @@ fun PrivacyScreen(
 
 @Composable
 private fun BlockView(block: Block) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     when (block) {
         is Block.Title -> {
             Spacer(Modifier.height(20.dp))
@@ -99,7 +101,7 @@ private fun BlockView(block: Block) {
                 fontWeight = FontWeight.Bold,
                 fontSize = 22.sp,
                 lineHeight = 28.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
             )
             Spacer(Modifier.height(6.dp))
         }
@@ -112,7 +114,7 @@ private fun BlockView(block: Block) {
                 fontWeight = FontWeight.Bold,
                 fontSize = if (block.level == 2) 17.sp else 14.sp,
                 letterSpacing = if (block.level == 2) 0.sp else 1.2.sp,
-                color = if (block.level == 2) Wyrm.Ink else Wyrm.Quiet,
+                color = if (block.level == 2) wyrmScopedPalette.ink else wyrmScopedPalette.quiet,
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -123,7 +125,7 @@ private fun BlockView(block: Block) {
                 fontFamily = Wyrm.Body,
                 fontSize = 14.sp,
                 lineHeight = 22.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
         }
@@ -135,7 +137,7 @@ private fun BlockView(block: Block) {
                     fontFamily = Wyrm.Body,
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
@@ -143,7 +145,7 @@ private fun BlockView(block: Block) {
                     fontFamily = Wyrm.Body,
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
-                    color = Wyrm.Mute,
+                    color = wyrmScopedPalette.mute,
                 )
             }
         }
@@ -157,7 +159,7 @@ private fun BlockView(block: Block) {
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -165,7 +167,7 @@ private fun BlockView(block: Block) {
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
                     lineHeight = 20.sp,
-                    color = Wyrm.Mute,
+                    color = wyrmScopedPalette.mute,
                 )
             }
         }

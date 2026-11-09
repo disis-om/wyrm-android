@@ -1,10 +1,12 @@
 #include "loop.h"
+#include "arena_theme.h"
 
 #include <SDL3/SDL.h>
 
 #include "../network/arena_persona.h"
 #include "../network/arena_taint.h"
 #include "../network/ntl_net.h"
+#include "../network/battledome.h"
 #include "../platform/android_home.h"
 #include "../network/server.h"
 #include "../network/arena_protocol.h"
@@ -40,10 +42,11 @@ static void draw_connecting(tenv* env) {
   const ImU32 rule = arena_theme_colour(ARENA_THEME_RULE, 1);
   const ImU32 faint = arena_theme_colour(ARENA_THEME_QUIET, 1);
 #else
-  const ImU32 paper = igColorConvertFloat4ToU32((ImVec4){0.969f, 0.965f, 0.953f, 1});
-  const ImU32 ink = igColorConvertFloat4ToU32((ImVec4){0.216f, 0.208f, 0.184f, 1});
-  const ImU32 rule = igColorConvertFloat4ToU32((ImVec4){0.216f, 0.208f, 0.184f, .08f});
-  const ImU32 faint = igColorConvertFloat4ToU32((ImVec4){0.471f, 0.467f, 0.455f, 1});
+  /* The player's theme on phones too (OM, 2026-11-01). */
+  const ImU32 paper = arena_theme_colour(ARENA_THEME_PAPER, 1);
+  const ImU32 ink = arena_theme_colour(ARENA_THEME_INK, 1);
+  const ImU32 rule = arena_theme_colour(ARENA_THEME_RULE, 1);
+  const ImU32 faint = arena_theme_colour(ARENA_THEME_QUIET, 1);
 #endif
 
   float shorter = ctx->size[0] < ctx->size[1] ? ctx->size[0] : ctx->size[1];
@@ -69,7 +72,7 @@ static void draw_connecting(tenv* env) {
 #ifdef WYRM_DESKTOP
   const ImU32 dim = arena_theme_colour(ARENA_THEME_INK, 0.20f);
 #else
-  const ImU32 dim = igColorConvertFloat4ToU32((ImVec4){0.216f, 0.208f, 0.184f, 0.20f});
+  const ImU32 dim = arena_theme_colour(ARENA_THEME_INK, 0.20f);
 #endif
   ImDrawList_AddText_FontPtr(draw, wordmark, wordmark->LegacySize,
                              (ImVec2){cx - wordmark_size.x * 0.5f, wordmark_y},
@@ -135,11 +138,18 @@ static bool draw_connecting_back_button(tcontext* ctx) {
   igPushStyleColor_Vec4(ImGuiCol_ButtonActive, track);
   igPushStyleColor_Vec4(ImGuiCol_Border, rule);
 #else
-  igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4){.216f, .208f, .184f, 1});
-  igPushStyleColor_Vec4(ImGuiCol_Button, (ImVec4){1, 1, 1, 1});
-  igPushStyleColor_Vec4(ImGuiCol_ButtonHovered, (ImVec4){.941f, .933f, .914f, 1});
-  igPushStyleColor_Vec4(ImGuiCol_ButtonActive, (ImVec4){.910f, .898f, .871f, 1});
-  igPushStyleColor_Vec4(ImGuiCol_Border, (ImVec4){.216f, .208f, .184f, .10f});
+  /* The player's theme on phones too (OM, 2026-11-01). */
+  ImVec4 card, well, track, ink, rule;
+  igColorConvertU32ToFloat4(&card, arena_theme_colour(ARENA_THEME_CARD, 1));
+  igColorConvertU32ToFloat4(&well, arena_theme_colour(ARENA_THEME_WELL, 1));
+  igColorConvertU32ToFloat4(&track, arena_theme_colour(ARENA_THEME_TRACK, 1));
+  igColorConvertU32ToFloat4(&ink, arena_theme_colour(ARENA_THEME_INK, 1));
+  igColorConvertU32ToFloat4(&rule, arena_theme_colour(ARENA_THEME_RULE, 1));
+  igPushStyleColor_Vec4(ImGuiCol_Text, ink);
+  igPushStyleColor_Vec4(ImGuiCol_Button, card);
+  igPushStyleColor_Vec4(ImGuiCol_ButtonHovered, well);
+  igPushStyleColor_Vec4(ImGuiCol_ButtonActive, track);
+  igPushStyleColor_Vec4(ImGuiCol_Border, rule);
 #endif
   bool pressed = igButton("Back to lobby", (ImVec2){160, 40});
   igPopStyleColor(5);
@@ -252,6 +262,7 @@ void game_loop(tenv* env) {
          This is a second socket on the same manager — the arena knows nothing
          about tags, so everyone else's arrive from somewhere else entirely. */
       ntl_net_tick(env);
+      battledome_tick(env);
       server_poll(env);
       oef(env);
       redraw(env);
@@ -315,6 +326,7 @@ void game_loop(tenv* env) {
     case DISCONNECTED:
       gdata->rejoin_at_ms = 0;
       ntl_net_close(env);
+      battledome_close(env);
       usr->r->global.bg_opacity = 0;
       usr->r->global.bd_opacity = 0;
       usr->r->global.minimap_opacity = 0;

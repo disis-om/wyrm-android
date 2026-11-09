@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +66,8 @@ internal fun IosTeamOverview(
     onForget: () -> Unit,
     onJoinArena: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var settingsOpen by remember { mutableStateOf(false) }
     var pickingTeam by remember { mutableStateOf(false) }
     val paused = com.wyrm.omrajput.data.TeamService.NTL_SERVICES_DISABLED
@@ -102,7 +104,7 @@ internal fun IosTeamOverview(
                     IosSectionLabel("Live roster")
                     IosPaperCard {
                         state.members.forEachIndexed { index, member ->
-                            if (index > 0) Box(Modifier.fillMaxWidth().padding(start = 35.dp).height(1.dp).background(Wyrm.RowRule))
+                            if (index > 0) Box(Modifier.fillMaxWidth().padding(start = 35.dp).height(1.dp).background(wyrmScopedPalette.rowRule))
                             RosterRow(member, sameArena = member.arena.equals(myArena, ignoreCase = true)) {
                                 if (member.playing) onJoinArena(member.arena)
                             }
@@ -126,11 +128,11 @@ internal fun IosTeamOverview(
                 .padding(top = insetTop + 8.dp, end = 14.dp)
                 .size(36.dp)
                 .clip(CircleShape)
-                .liquidGlass(backdrop = LocalPageBackdrop.current, shape = CircleShape, tint = Wyrm.Card.copy(alpha = 0.5f))
-                .border(1.dp, Wyrm.Rule, CircleShape)
+                .liquidGlass(backdrop = LocalPageBackdrop.current, shape = CircleShape, tint = wyrmScopedPalette.card.copy(alpha = 0.5f))
+                .border(1.dp, wyrmScopedPalette.rule, CircleShape)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { settingsOpen = true },
             contentAlignment = Alignment.Center,
-        ) { IosIcon(IosGlyph.GEAR, Wyrm.Ink, size = 18.dp) }
+        ) { IosIcon(IosGlyph.GEAR, wyrmScopedPalette.ink, size = 18.dp) }
 
         if (settingsOpen) {
             val actions = buildList {
@@ -174,6 +176,8 @@ private fun statusDetail(running: Boolean, hasTeams: Boolean, state: TeamState):
 /** Name, key owner and arena on the left; FPS, ping and leaderboard place on the right. */
 @Composable
 private fun RosterRow(member: TeamMember, sameArena: Boolean, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         Modifier
             .fillMaxWidth()
@@ -183,16 +187,16 @@ private fun RosterRow(member: TeamMember, sameArena: Boolean, onClick: () -> Uni
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(if (sameArena) Wyrm.Live else Wyrm.Quiet.copy(alpha = 0.3f)))
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (sameArena) wyrmScopedPalette.live else wyrmScopedPalette.quiet))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(member.name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = Wyrm.Ink,
+            Text(member.name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = wyrmScopedPalette.ink,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 listOfNotNull(
                     member.owner.takeIf { it.isNotBlank() }?.let { "Key $it" },
                     if (member.playing) member.arena else "In menu",
                 ).joinToString(" · "),
-                fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = wyrmScopedPalette.quiet, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -200,20 +204,22 @@ private fun RosterRow(member: TeamMember, sameArena: Boolean, onClick: () -> Uni
             member.ping?.let { Stat("$it ms") }
             if (member.rank > 0) Stat("LB #${member.rank}", strong = true)
         }
-        if (member.playing) IosIcon(IosGlyph.ARROW_UP_RIGHT, Wyrm.Quiet, size = 13.dp)
+        if (member.playing) IosIcon(IosGlyph.ARROW_UP_RIGHT, wyrmScopedPalette.quiet, size = 13.dp)
     }
 }
 
 @Composable
 private fun Stat(text: String, strong: Boolean = false) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text,
         fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, style = tnum,
         maxLines = 1, softWrap = false,
-        color = if (strong) Wyrm.OnInk else Wyrm.Ink,
+        color = if (strong) wyrmScopedPalette.onInk else wyrmScopedPalette.ink,
         modifier = Modifier
             .clip(CircleShape)
-            .background(if (strong) Wyrm.Ink else Wyrm.Well)
+            .background(if (strong) wyrmScopedPalette.ink else wyrmScopedPalette.well)
             .padding(horizontal = 7.dp, vertical = 4.dp),
     )
 }

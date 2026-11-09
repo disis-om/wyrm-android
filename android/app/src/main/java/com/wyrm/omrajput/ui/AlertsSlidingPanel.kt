@@ -37,6 +37,8 @@ fun AlertsSlidingPanel(
     behind: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val progress = remember { Animatable(if (expanded) 0f else 1f) }
 
     LaunchedEffect(expanded) {
@@ -69,7 +71,7 @@ fun AlertsSlidingPanel(
                     height = with(density) { height.toDp() },
                 )
                 .clip(sheetShape)
-                .background(Wyrm.Paper),
+                .background(wyrmScopedPalette.paper),
         ) {
             Box(
                 modifier = Modifier

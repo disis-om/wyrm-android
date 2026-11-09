@@ -85,7 +85,7 @@ object SkinCatalog {
         listOf(17, 17, 17, 17, 17, 39, 39, 39, 39, 39),
         listOf(7, 7, 7, 11, 11, 11),
         listOf(16, 16, 11, 11),
-        listOf(4, 4, 4, 4, 9, 9, 9, 9),
+        listOf(9, 9, 9, 9, 32, 32, 32, 32), // Main.as preset 65 (OM, 2026-11-08)
     )
     val accessories: List<SkinAccessoryAsset> = listOf(
         SkinAccessoryAsset(0, 1.8f, 0.6f),

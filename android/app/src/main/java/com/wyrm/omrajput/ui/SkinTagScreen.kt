@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -45,6 +45,8 @@ fun SkinTagScreen(
     onTagCodeChange: (String) -> Unit,
     onFetchTag: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val atlas by rememberTagAtlas()
     val chosen = settings.firstOrNull { it.id == "tags.index" }
     val selected = chosen?.number?.roundToInt() ?: -1
@@ -149,7 +151,7 @@ fun SkinTagScreen(
                 fontFamily = Wyrm.Body,
                 fontSize = 13.sp,
                 lineHeight = 19.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 modifier = Modifier.padding(14.dp),
             )
             val fieldShape = wyrmRounded(10.dp)
@@ -159,8 +161,8 @@ fun SkinTagScreen(
                     .fillMaxWidth()
                     .height(42.dp)
                     .clip(fieldShape)
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, fieldShape)
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, fieldShape)
                     .padding(horizontal = 13.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
@@ -171,9 +173,9 @@ fun SkinTagScreen(
                     textStyle = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                     ),
-                    cursorBrush = SolidColor(Wyrm.Ink),
+                    cursorBrush = SolidColor(wyrmScopedPalette.ink),
                     modifier = Modifier.fillMaxWidth(),
                     decorationBox = { inner ->
                         if (tagCode.isEmpty()) {
@@ -181,7 +183,7 @@ fun SkinTagScreen(
                                 text = "id password",
                                 fontFamily = Wyrm.Body,
                                 fontSize = 14.sp,
-                                color = Wyrm.TabIdle,
+                                color = wyrmScopedPalette.tabIdle,
                             )
                         }
                         inner()
@@ -195,7 +197,7 @@ fun SkinTagScreen(
                     .fillMaxWidth()
                     .height(42.dp)
                     .clip(wyrmRounded(11.dp))
-                    .background(Wyrm.Ink)
+                    .background(wyrmScopedPalette.ink)
                     .clickable { onFetchTag(tagCode) },
                 contentAlignment = Alignment.Center,
             ) {
@@ -204,7 +206,7 @@ fun SkinTagScreen(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    color = Wyrm.OnInk,
+                    color = wyrmScopedPalette.onInk,
                 )
             }
         }
@@ -219,15 +221,17 @@ internal fun TagPickCell(
     modifier: Modifier,
     onPick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(12.dp)
     Box(
         modifier = modifier
             .aspectRatio(1f)
             .clip(shape)
-            .background(if (index < 0) Wyrm.Paper else Wyrm.Ink)
+            .background(if (index < 0) wyrmScopedPalette.paper else wyrmScopedPalette.ink)
             .border(
                 if (selected) 2.dp else 1.dp,
-                if (selected) Wyrm.Ink else Wyrm.Rule,
+                if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule,
                 shape,
             )
             .clickable(onClick = onPick),
@@ -239,7 +243,7 @@ internal fun TagPickCell(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
             )
         } else if (atlas != null && index < TAG_ART.size) {
             Canvas(Modifier.fillMaxSize().padding(8.dp)) {

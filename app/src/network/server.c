@@ -116,12 +116,13 @@ bool server_connect(tenv* env) {
     return true;
   }
 
-  /* Two immediate polls, from the reference client. A TLS handshake needs poll cycles
-     before the game loop's own first poll comes round, and the connect
-     otherwise spends a frame doing nothing. */
+  /* Two immediate polls, from the reference client, so the connect starts in
+     this frame. 0 ms (OM, 2026-11-05: the frame rate must never wait on the
+     network): they only push what is ready; the socket is plain ws://, so
+     there is no TLS handshake to wait for. */
 #ifdef WYRM_SDL_JNI
-  mg_mgr_poll(&gdata->network_manager, 5);
-  mg_mgr_poll(&gdata->network_manager, 5);
+  mg_mgr_poll(&gdata->network_manager, 0);
+  mg_mgr_poll(&gdata->network_manager, 0);
 #endif
   return true;
 }
@@ -154,18 +155,16 @@ void server_poll(tenv* env) {
      reason was TLS, but the arena socket is plain `ws://` now (see
      server_connect), so there is no record to assemble. While the socket is
      still connecting, upgrading or answering the challenge (until the arena's
-     'a') the 5 ms stays exactly as it was, so entry is untouched; once 'a'
-     has come the poll only drains what is already there (0 ms), so a
-     frame that finds the socket empty no longer loses up to 5 ms, and ping
-     (counted in frame time) stops carrying that wait. No packet, timing or
-     keepalive changed. Rollback: set WYRM_NET_POLL_OPEN_MS to 5. */
-#ifndef WYRM_NET_POLL_OPEN_MS
-#define WYRM_NET_POLL_OPEN_MS 0
-#endif
+     'a') the 5 ms stayed; once 'a' had come the poll only drained what was
+     already there (0 ms).
+     2026-11-05 (OM: "FPS max hi rahege chahe ms kitne bhi ho"): 0 ms
+     always, entry included, as the reference client's own loop does on every
+     platform. The frame never sleeps in the network; a slow or far arena
+     (high ping) only means packets arrive later, never that a frame waits for
+     them. Packets are read the moment they are there, every frame, so entry
+     is not slower. No packet, timing or keepalive changed. */
   struct mg_connection* arena = gdata->connection;
-  int wait_ms = (arena && arena->is_websocket && gdata->arena_ready &&
-                 !gdata->closed)
-                    ? WYRM_NET_POLL_OPEN_MS : 5;
+  const int wait_ms = 0;
   Uint64 started = SDL_GetTicksNS();
   server_poll_drain(env, wait_ms);
   Uint64 ended = SDL_GetTicksNS();

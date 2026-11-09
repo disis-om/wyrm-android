@@ -23,7 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +60,8 @@ fun SkinPatternScreen(
     onWear: () -> Unit,
     embedded: Boolean = false,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val atlas by rememberSkinAtlas()
     val clipboard = LocalClipboardManager.current
 
@@ -79,7 +81,7 @@ fun SkinPatternScreen(
                     text = "${state.code.length} / $MAX_SKIN_CODE",
                     fontFamily = Wyrm.Body,
                     fontSize = 12.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
                 val fieldShape = wyrmRounded(10.dp)
@@ -88,8 +90,8 @@ fun SkinPatternScreen(
                         .fillMaxWidth()
                         .height(48.dp)
                         .clip(fieldShape)
-                        .background(Wyrm.Well)
-                        .border(1.dp, Wyrm.Rule, fieldShape)
+                        .background(wyrmScopedPalette.well)
+                        .border(1.dp, wyrmScopedPalette.rule, fieldShape)
                         .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
@@ -114,9 +116,9 @@ fun SkinPatternScreen(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 15.sp,
                             letterSpacing = 1.sp,
-                            color = Wyrm.Ink,
+                            color = wyrmScopedPalette.ink,
                         ),
-                        cursorBrush = SolidColor(Wyrm.Ink),
+                        cursorBrush = SolidColor(wyrmScopedPalette.ink),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Ascii,
                             imeAction = ImeAction.Done,
@@ -128,7 +130,7 @@ fun SkinPatternScreen(
                                     text = "Type a code, paste one, or tap colours",
                                     fontFamily = Wyrm.Body,
                                     fontSize = 13.sp,
-                                    color = Wyrm.TabIdle,
+                                    color = wyrmScopedPalette.tabIdle,
                                 )
                             }
                             inner()
@@ -228,7 +230,7 @@ fun SkinPatternScreen(
                                             Modifier
                                                 .fillMaxSize()
                                                 .clip(CircleShape)
-                                                .background(tables.colourOf(group) ?: Wyrm.Well),
+                                                .background(tables.colourOf(group) ?: wyrmScopedPalette.well),
                                         )
                                     }
                                 }
@@ -261,11 +263,13 @@ private fun PaperAction(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = modifier
             .height(38.dp)
             .clip(wyrmRounded(10.dp))
-            .border(1.dp, Wyrm.Rule, wyrmRounded(10.dp))
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(10.dp))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -273,7 +277,7 @@ private fun PaperAction(
             text = label,
             fontFamily = Wyrm.Body,
             fontSize = 14.sp,
-            color = if (enabled) Wyrm.Ink else Wyrm.TabIdle,
+            color = if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.tabIdle,
         )
     }
 }

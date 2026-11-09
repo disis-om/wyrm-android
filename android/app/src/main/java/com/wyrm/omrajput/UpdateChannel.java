@@ -36,6 +36,21 @@ public final class UpdateChannel {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(PREF_OFFERED_BETA, false);
     }
 
+    /*
+     * A required update (OM, 2026-10-30): the signed manifest says
+     * "mandatory", or this build is older than its "minimumVersionCode". The
+     * prompt then has no Later and cannot be closed; the player updates.
+     */
+    private static volatile boolean updateRequired;
+
+    public static boolean isUpdateRequired() {
+        return updateRequired;
+    }
+
+    static void setUpdateRequired(boolean required) {
+        updateRequired = required;
+    }
+
     static void setOfferedBeta(Context context, boolean beta) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putBoolean(PREF_OFFERED_BETA, beta).apply();

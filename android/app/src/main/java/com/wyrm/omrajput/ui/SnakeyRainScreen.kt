@@ -34,7 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -124,8 +124,10 @@ private fun RainSnakePreview(textures: SkinTextures?, character: RainCharacter?,
 /** Rain's link in one word, with a dot: Connected (green) or Disconnected (OM, 2026-10-14). */
 @Composable
 internal fun RainStatusLine(rain: SnakeyRain, modifier: Modifier = Modifier, ink: Color = Wyrm.Ink) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(if (rain.connected) Wyrm.Live else Wyrm.Quiet))
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (rain.connected) wyrmScopedPalette.live else wyrmScopedPalette.quiet))
         Spacer(Modifier.width(8.dp))
         Text(
             text = if (!rain.connected) "Disconnected" else if (rain.running) "Connected · ${rain.count} bots" else "Connected",
@@ -152,6 +154,8 @@ internal fun SnakeyRainScreen(
     onBack: () -> Unit,
     onArrange: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val textures by rememberSkinTextures()
     var tab by remember { mutableStateOf(RainTab.CHARACTERS) }
     var page by remember { mutableStateOf(RainPage()) }
@@ -162,19 +166,19 @@ internal fun SnakeyRainScreen(
     }
     val previewed = open ?: rain.characters.firstOrNull { it.enabled } ?: rain.characters.firstOrNull()
 
-    Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
+    Column(Modifier.fillMaxSize().background(wyrmScopedPalette.paper).padding(top = insetTop)) {
         Box(Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 14.dp)) {
             Text(
-                "‹ $backLabel", fontFamily = Wyrm.Body, fontSize = 16.sp, color = Wyrm.Link,
+                "‹ $backLabel", fontFamily = Wyrm.Body, fontSize = 16.sp, color = wyrmScopedPalette.link,
                 modifier = Modifier.align(Alignment.CenterStart).clickable(onClick = onBack).padding(horizontal = 6.dp, vertical = 8.dp),
             )
-            Text("Snakey Rain", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Wyrm.Ink,
+            Text("Snakey Rain", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = wyrmScopedPalette.ink,
                 modifier = Modifier.align(Alignment.Center))
         }
         Box(Modifier.fillMaxWidth().height(218.dp)) {
             RainSnakePreview(textures, previewed, Modifier.fillMaxSize())
         }
-        Box(Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         AnimatedContent(
             targetState = page,
             transitionSpec = {
@@ -232,6 +236,8 @@ internal fun SnakeyRainScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RainCharactersTab(rain: SnakeyRain, textures: SkinTextures?, onOpen: (String) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var selection by remember { mutableStateOf<Set<String>>(emptySet()) }
     val list = rain.characters
     selection = selection.filter { id -> list.any { it.id == id } }.toSet()
@@ -245,7 +251,7 @@ private fun RainCharactersTab(rain: SnakeyRain, textures: SkinTextures?, onOpen:
             Text(
                 "CHARACTERS · ${list.size}/${SnakeyRain.MAX_CHARACTERS}",
                 fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp,
-                letterSpacing = 0.92.sp, color = Wyrm.Quiet, modifier = Modifier.weight(1f),
+                letterSpacing = 0.92.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.weight(1f),
             )
             RoundIconButton(IosGlyph.PLUS, "Add a character", enabled = list.size < SnakeyRain.MAX_CHARACTERS) {
                 rain.add()?.let { onOpen(it.id) }
@@ -254,10 +260,10 @@ private fun RainCharactersTab(rain: SnakeyRain, textures: SkinTextures?, onOpen:
             RoundIconButton(IosGlyph.XMARK, "Cancel") { selection = emptySet() }
             Text(
                 "${selection.size} selected", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f).padding(start = 12.dp),
+                fontSize = 15.sp, color = wyrmScopedPalette.ink, modifier = Modifier.weight(1f).padding(start = 12.dp),
             )
             Text(
-                "Delete", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Wyrm.Badge,
+                "Delete", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = wyrmScopedPalette.badge,
                 modifier = Modifier
                     .clip(wyrmRounded(10.dp))
                     .clickable { rain.remove(selection); selection = emptySet() }
@@ -277,7 +283,7 @@ private fun RainCharactersTab(rain: SnakeyRain, textures: SkinTextures?, onOpen:
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = 62.dp)
-                    .background(if (picked) Wyrm.Hover else Color.Transparent)
+                    .background(if (picked) wyrmScopedPalette.hover else Color.Transparent)
                     .combinedClickable(
                         onClick = {
                             if (selection.isEmpty()) onOpen(c.id)
@@ -291,27 +297,27 @@ private fun RainCharactersTab(rain: SnakeyRain, textures: SkinTextures?, onOpen:
                 if (selection.isNotEmpty()) {
                     Box(
                         Modifier.size(22.dp).clip(CircleShape)
-                            .background(if (picked) Wyrm.Ink else Color.Transparent)
-                            .border(1.5.dp, if (picked) Wyrm.Ink else Wyrm.Chevron, CircleShape),
+                            .background(if (picked) wyrmScopedPalette.ink else Color.Transparent)
+                            .border(1.5.dp, if (picked) wyrmScopedPalette.ink else wyrmScopedPalette.chevron, CircleShape),
                         contentAlignment = Alignment.Center,
-                    ) { if (picked) IosIcon(IosGlyph.CHECKMARK, Wyrm.Paper, size = 12.dp, weight = 3.2f) }
+                    ) { if (picked) IosIcon(IosGlyph.CHECKMARK, wyrmScopedPalette.paper, size = 12.dp, weight = 3.2f) }
                     Spacer(Modifier.width(12.dp))
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
                         c.label.ifBlank { "Character" }, fontFamily = Wyrm.Body, fontSize = 15.5.sp,
-                        color = if (c.enabled) Wyrm.Ink else Wyrm.Quiet, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = if (c.enabled) wyrmScopedPalette.ink else wyrmScopedPalette.quiet, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         c.name.ifBlank { "No name" } + if (c.enabled) "" else " · off",
-                        fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
+                        fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp),
                     )
                 }
                 MiniSnake(textures, c.groups256(), Modifier.width(92.dp).height(26.dp), c.previewColors())
                 if (selection.isEmpty()) {
                     Spacer(Modifier.width(8.dp))
-                    Text("›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = Wyrm.Chevron)
+                    Text("›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = wyrmScopedPalette.chevron)
                 }
             }
         }
@@ -321,6 +327,8 @@ private fun RainCharactersTab(rain: SnakeyRain, textures: SkinTextures?, onOpen:
 
 @Composable
 private fun RoundIconButton(glyph: IosGlyph, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -328,10 +336,10 @@ private fun RoundIconButton(glyph: IosGlyph, label: String, enabled: Boolean = t
             .size(36.dp)
             .scale(pressScale(pressed, enabled))
             .clip(CircleShape)
-            .background(if (enabled) Wyrm.Ink else Wyrm.Ink.copy(alpha = 0.3f))
+            .background(if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.ink)
             .clickable(interaction, indication = null, enabled = enabled, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { IosIcon(glyph, Wyrm.OnInk, size = 16.dp, weight = 2.6f) }
+    ) { IosIcon(glyph, wyrmScopedPalette.onInk, size = 16.dp, weight = 2.6f) }
 }
 
 /** A labelled text field in a settings card, typed in place. */
@@ -346,13 +354,15 @@ private fun RainFieldRow(
     placeholder: String = "",
     onChange: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         if (!first) SettingsHairline()
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-            Text(title, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet)
+            Text(title, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
             val style = TextStyle(
                 fontFamily = if (monospace) androidx.compose.ui.text.font.FontFamily.Monospace else Wyrm.Body,
-                fontSize = 15.5.sp, color = if (enabled) Wyrm.Ink else Wyrm.Quiet,
+                fontSize = 15.5.sp, color = if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.quiet,
             )
             BasicTextField(
                 value = value,
@@ -360,7 +370,7 @@ private fun RainFieldRow(
                 enabled = enabled,
                 singleLine = true,
                 textStyle = style,
-                cursorBrush = SolidColor(Wyrm.Link),
+                cursorBrush = SolidColor(wyrmScopedPalette.link),
                 visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false,
@@ -369,7 +379,7 @@ private fun RainFieldRow(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 decorationBox = { inner ->
                     Box {
-                        if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, style = style.copy(color = Wyrm.Quiet.copy(alpha = 0.6f)))
+                        if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, style = style.copy(color = wyrmScopedPalette.quiet))
                         inner()
                     }
                 },
@@ -406,6 +416,8 @@ private fun RainCharacterPage(rain: SnakeyRain, c: RainCharacter, onEditor: (Rai
 /** The Skin tab's own pickers, writing to this character. */
 @Composable
 private fun RainEditorPage(rain: SnakeyRain, c: RainCharacter, editor: RainEditor, textures: SkinTextures?) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val context = LocalContext.current
     when (editor) {
         RainEditor.PATTERN -> {
@@ -429,11 +441,11 @@ private fun RainEditorPage(rain: SnakeyRain, c: RainCharacter, editor: RainEdito
                 ) {
                     Text(
                         "%02d".format(index + 1), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp,
-                        color = if (picked) Wyrm.Live else Wyrm.Quiet, modifier = Modifier.width(24.dp),
+                        color = if (picked) wyrmScopedPalette.live else wyrmScopedPalette.quiet, modifier = Modifier.width(24.dp),
                     )
                     MiniSnake(textures, groups, Modifier.weight(1f).height(38.dp))
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
             }
         }
         RainEditor.TAGS -> {
@@ -522,8 +534,10 @@ private fun rainSwatch(index: Int, fallback: Color): Color =
 
 @Composable
 private fun RainColourRows(rain: SnakeyRain) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val look = LocalRainLook.current
-    val ink = look?.ink ?: Wyrm.Ink
+    val ink = look?.ink ?: wyrmScopedPalette.ink
     RainCard {
         listOf("panelTextColour" to "TEXT AND BORDER", "panelFillColour" to "FILL").forEach { (key, title) ->
             val selected = rain.config.optInt(key).coerceIn(0, 8)
@@ -544,7 +558,9 @@ private fun RainColourRows(rain: SnakeyRain) {
 
 @Composable
 private fun RainPanelTabs(selected: Int, onSelect: (Int) -> Unit) {
-    val ink = LocalRainLook.current?.ink ?: Wyrm.Ink
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val ink = LocalRainLook.current?.ink ?: wyrmScopedPalette.ink
     Row(Modifier.fillMaxWidth().clip(CircleShape).background(ink.copy(alpha = 0.06f)).padding(3.dp)) {
         RainPanelTab.entries.forEachIndexed { index, tab ->
             Box(Modifier.weight(1f).height(36.dp).clip(CircleShape)
@@ -560,14 +576,16 @@ private fun RainPanelTabs(selected: Int, onSelect: (Int) -> Unit) {
 /** SettingsCard whose fill follows [LocalRainBack]; the edge stays. */
 @Composable
 private fun RainCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val back = LocalRainBack.current
     val look = LocalRainLook.current
     if (look == null && back >= 0.999f) { SettingsCard(content); return }
     val shape = wyrmRounded(14.dp)
     Column(
         Modifier.padding(horizontal = 16.dp).clip(shape)
-            .background((look?.fill ?: Wyrm.Card).copy(alpha = back))
-            .border(1.dp, (look?.ink ?: Wyrm.Ink).copy(alpha = 0.35f), shape),
+            .background((look?.fill ?: wyrmScopedPalette.card).copy(alpha = back))
+            .border(1.dp, (look?.ink ?: wyrmScopedPalette.ink).copy(alpha = 0.35f), shape),
         content = content,
     )
 }
@@ -632,8 +650,10 @@ private enum class RainPanelTab(val title: String) { CONTROLS("Controls"), MODES
 
 @Composable
 private fun RainStepButton(icon: Int, label: String, enabled: Boolean, onClick: () -> Unit) {
-    val ink = LocalRainLook.current?.ink ?: Wyrm.Ink
-    val fill = LocalRainLook.current?.fill ?: Wyrm.Paper
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val ink = LocalRainLook.current?.ink ?: wyrmScopedPalette.ink
+    val fill = LocalRainLook.current?.fill ?: wyrmScopedPalette.paper
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -649,8 +669,10 @@ private fun RainStepButton(icon: Int, label: String, enabled: Boolean, onClick: 
 /** A key as the arena draws its own: paper, an ink edge, ink and a green ring while it is on. */
 @Composable
 private fun RainKey(label: String, lit: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val ink = LocalRainLook.current?.ink ?: Wyrm.Ink
-    val fill = LocalRainLook.current?.fill ?: Wyrm.Paper
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val ink = LocalRainLook.current?.ink ?: wyrmScopedPalette.ink
+    val fill = LocalRainLook.current?.fill ?: wyrmScopedPalette.paper
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = wyrmRounded(14.dp)
@@ -663,7 +685,7 @@ private fun RainKey(label: String, lit: Boolean, modifier: Modifier = Modifier, 
             .padding(3.dp)
             .clip(shape)
             .background(fill.copy(alpha = back))
-            .border(if (lit || pressed) 2.5.dp else 1.5.dp, if (lit || pressed) Wyrm.Live else ink.copy(alpha = 0.6f), shape)
+            .border(if (lit || pressed) 2.5.dp else 1.5.dp, if (lit || pressed) wyrmScopedPalette.live else ink.copy(alpha = 0.6f), shape)
             .clickable(interaction, indication = null, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
@@ -687,6 +709,8 @@ private fun RainKeyRow(content: @Composable androidx.compose.foundation.layout.R
  */
 @Composable
 internal fun RainArenaPanel(rain: SnakeyRain, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     // Panel size scales the whole panel, type and keys too, not only its box (OM, 2026-10-14).
     val requested = rain.config.optDouble("panelSize", 1.0).toFloat().coerceIn(0.7f, 1.3f)
     val base = androidx.compose.ui.platform.LocalDensity.current
@@ -696,16 +720,18 @@ internal fun RainArenaPanel(rain: SnakeyRain, onClose: () -> Unit, modifier: Mod
             androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(base.density * scale, base.fontScale),
             LocalRainBack provides rain.config.optDouble("panelBack", 0.94).toFloat().coerceIn(0f, 1f),
             LocalRainLook provides RainPanelLook(
-                rainSwatch(rain.config.optInt("panelTextColour"), Wyrm.Ink),
-                rainSwatch(rain.config.optInt("panelFillColour"), Wyrm.Paper)) ,
+                rainSwatch(rain.config.optInt("panelTextColour"), wyrmScopedPalette.ink),
+                rainSwatch(rain.config.optInt("panelFillColour"), wyrmScopedPalette.paper)) ,
         ) { RainArenaPanelBody(rain, onClose) }
     }
 }
 
 @Composable
 private fun RainArenaPanelBody(rain: SnakeyRain, onClose: () -> Unit) {
-    val ink = LocalRainLook.current?.ink ?: Wyrm.Ink
-    val fill = LocalRainLook.current?.fill ?: Wyrm.Paper
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val ink = LocalRainLook.current?.ink ?: wyrmScopedPalette.ink
+    val fill = LocalRainLook.current?.fill ?: wyrmScopedPalette.paper
     var tab by remember { mutableIntStateOf(0) }
     val opacity = rain.config.optDouble("panelOpacity", 1.0).toFloat().coerceIn(0.3f, 1f)
     val back = rain.config.optDouble("panelBack", 0.94).toFloat().coerceIn(0f, 1f)

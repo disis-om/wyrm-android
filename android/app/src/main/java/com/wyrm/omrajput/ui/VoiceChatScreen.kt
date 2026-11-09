@@ -45,7 +45,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -156,7 +156,9 @@ fun VoiceChatScreen(
     onRetryOperation: () -> Unit,
     onVerify: () -> Unit = {},
 ) {
-    Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Box(Modifier.fillMaxSize().background(wyrmScopedPalette.paper)) {
         when (state.page) {
             VoicePage.DIRECTORY -> IosVoiceDirectory(
                 verified = state.verified,
@@ -178,7 +180,7 @@ fun VoiceChatScreen(
                 onCreate = onCreateRoom,
             )
             else -> {
-            Column(Modifier.fillMaxSize().background(Wyrm.Paper)) {
+            Column(Modifier.fillMaxSize().background(wyrmScopedPalette.paper)) {
                 Box(
                     Modifier
                         .fillMaxWidth()
@@ -194,8 +196,8 @@ fun VoiceChatScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
-                        IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Link, size = 15.dp, weight = 2.6f)
-                        Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.Link)
+                        IosIcon(IosGlyph.CHEVRON_LEFT, wyrmScopedPalette.link, size = 15.dp, weight = 2.6f)
+                        Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = wyrmScopedPalette.link)
                     }
                     Text(
                         text = when (state.page) {
@@ -207,11 +209,11 @@ fun VoiceChatScreen(
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 16.sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                         modifier = Modifier.align(Alignment.Center),
                     )
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
                 Box(Modifier.weight(1f).padding(bottom = insetBottom)) {
                 val push52 = with(androidx.compose.ui.platform.LocalDensity.current) { 52.dp.roundToPx() }
                 val pop38 = with(androidx.compose.ui.platform.LocalDensity.current) { 38.dp.roundToPx() }
@@ -272,6 +274,8 @@ fun VoiceChatScreen(
 
 @Composable
 private fun VerifiedVoice(onReturn: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val appear = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(Unit) { appear.animateTo(1f, tween(360, easing = FastOutSlowInEasing)) }
     Column(
@@ -284,9 +288,9 @@ private fun VerifiedVoice(onReturn: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
     ) {
-        IosIcon(IosGlyph.CHECKMARK_SEAL, Wyrm.Live, size = 70.dp)
-        Text("Voice profile verified", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 24.sp, color = Wyrm.Ink)
-        Text("You can now enter and create player voice rooms.", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet)
+        IosIcon(IosGlyph.CHECKMARK_SEAL, wyrmScopedPalette.live, size = 70.dp)
+        Text("Voice profile verified", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 24.sp, color = wyrmScopedPalette.ink)
+        Text("You can now enter and create player voice rooms.", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet)
         Box(Modifier.padding(top = 12.dp).widthIn(max = 300.dp)) { IosPrimaryAction("Return to rooms", onClick = onReturn) }
     }
 }
@@ -304,6 +308,8 @@ private fun PaperVoiceDirectory(
     onToggleGate: (VoiceRoom) -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var idleOpen by remember { mutableStateOf(false) }
     val mine = state.rooms.firstOrNull { it.mine }
     val publicRooms = state.rooms.filter { it.managedPublic }
@@ -312,12 +318,12 @@ private fun PaperVoiceDirectory(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
         ) {
@@ -326,7 +332,7 @@ private fun PaperVoiceDirectory(
                     text = "‹ $backLabel",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onBack)
@@ -337,14 +343,14 @@ private fun PaperVoiceDirectory(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center),
                 )
                 Text(
                     text = if (state.verified) "New" else "Verify",
                     fontFamily = Wyrm.Body,
                     fontSize = 15.5.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .clickable(onClick = onNew)
@@ -352,7 +358,7 @@ private fun PaperVoiceDirectory(
                 )
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         PullToRefreshBox(
             isRefreshing = state.loading,
             onRefresh = onRefresh,
@@ -371,7 +377,7 @@ private fun PaperVoiceDirectory(
                     text = state.error,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
-                    color = Wyrm.Badge,
+                    color = wyrmScopedPalette.badge,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp),
                 )
             }
@@ -397,7 +403,7 @@ private fun PaperVoiceDirectory(
                                     fontFamily = Wyrm.Body,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 15.sp,
-                                    color = Wyrm.Ink,
+                                    color = wyrmScopedPalette.ink,
                                 )
                                 Text(
                                     text = if (state.verified) {
@@ -407,7 +413,7 @@ private fun PaperVoiceDirectory(
                                     },
                                     fontFamily = Wyrm.Body,
                                     fontSize = 12.5.sp,
-                                    color = Wyrm.Quiet,
+                                    color = wyrmScopedPalette.quiet,
                                     modifier = Modifier.padding(top = 1.dp),
                                 )
                             }
@@ -468,6 +474,8 @@ private fun PaperVoiceDirectory(
 
 @Composable
 private fun PaperRoomRow(room: VoiceRoom, first: Boolean, onOpen: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column {
@@ -488,7 +496,7 @@ private fun PaperRoomRow(room: VoiceRoom, first: Boolean, onOpen: () -> Unit) {
                 ) {
                     WyrmMark(
                         size = 22.dp,
-                        ink = Wyrm.Mute.copy(alpha = 0.42f),
+                        ink = wyrmScopedPalette.mute,
                         unfilled = Color.Transparent,
                     )
                 }
@@ -501,7 +509,7 @@ private fun PaperRoomRow(room: VoiceRoom, first: Boolean, onOpen: () -> Unit) {
                     text = room.name,
                     fontFamily = Wyrm.Body,
                     fontSize = 15.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -509,7 +517,7 @@ private fun PaperRoomRow(room: VoiceRoom, first: Boolean, onOpen: () -> Unit) {
                     text = if (room.managedPublic) "Public · direct entry" else "by ${room.creator.displayName} · ${if (room.gate == "open") "open" else "key only"}",
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 1.dp),
@@ -520,7 +528,7 @@ private fun PaperRoomRow(room: VoiceRoom, first: Boolean, onOpen: () -> Unit) {
                     Modifier
                         .size(6.dp)
                         .clip(CircleShape)
-                        .background(Wyrm.Live),
+                        .background(wyrmScopedPalette.live),
                 )
                 Spacer(Modifier.width(7.dp))
             }
@@ -528,22 +536,24 @@ private fun PaperRoomRow(room: VoiceRoom, first: Boolean, onOpen: () -> Unit) {
                 text = "${room.activeCount} / ${room.capacity}",
                 fontFamily = Wyrm.Body,
                 fontSize = 14.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
             )
             Spacer(Modifier.width(6.dp))
-            Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = Wyrm.Chevron)
+            Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = wyrmScopedPalette.chevron)
         }
     }
 }
 
 @Composable
 private fun VoiceInitials(name: String, live: Boolean) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val initials = name.filter { it.isLetter() }.take(2).uppercase().ifBlank { name.take(1).uppercase() }
     Box(
         modifier = Modifier
             .size(34.dp)
             .clip(wyrmRounded(10.dp))
-            .background(if (live) Color(0xFFE6EFE8) else Wyrm.Well),
+            .background(if (live) Color(0xFFE6EFE8) else wyrmScopedPalette.well),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -551,7 +561,7 @@ private fun VoiceInitials(name: String, live: Boolean) {
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp,
-            color = if (live) Wyrm.Live else Wyrm.Mute,
+            color = if (live) wyrmScopedPalette.live else wyrmScopedPalette.mute,
         )
     }
 }
@@ -564,18 +574,20 @@ private fun PaperVoiceCreate(
     onCancel: () -> Unit,
     onCreate: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var name by remember { mutableStateOf("") }
     val ready = name.trim().length >= 3
     val bottom = keyboardRoom(insetBottom)
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
         ) {
@@ -584,7 +596,7 @@ private fun PaperVoiceCreate(
                     text = "Cancel",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onCancel)
@@ -595,7 +607,7 @@ private fun PaperVoiceCreate(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center),
                 )
                 Text(
@@ -603,7 +615,7 @@ private fun PaperVoiceCreate(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.5.sp,
-                    color = if (ready) Wyrm.Link else Wyrm.TabIdle,
+                    color = if (ready) wyrmScopedPalette.link else wyrmScopedPalette.tabIdle,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .clickable(enabled = ready, onClick = { onCreate(name.trim()) })
@@ -611,7 +623,7 @@ private fun PaperVoiceCreate(
                 )
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -625,8 +637,8 @@ private fun PaperVoiceCreate(
                             .fillMaxWidth()
                             .height(42.dp)
                             .clip(wyrmRounded(10.dp))
-                            .background(Wyrm.Card)
-                            .border(1.5.dp, if (name.isNotBlank()) Wyrm.Link else Wyrm.Rule, wyrmRounded(10.dp))
+                            .background(wyrmScopedPalette.card)
+                            .border(1.5.dp, if (name.isNotBlank()) wyrmScopedPalette.link else wyrmScopedPalette.rule, wyrmRounded(10.dp))
                             .padding(horizontal = 12.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
@@ -637,13 +649,13 @@ private fun PaperVoiceCreate(
                             textStyle = androidx.compose.ui.text.TextStyle(
                                 fontFamily = Wyrm.Body,
                                 fontSize = 15.sp,
-                                color = Wyrm.Ink,
+                                color = wyrmScopedPalette.ink,
                             ),
-                            cursorBrush = androidx.compose.ui.graphics.SolidColor(Wyrm.Ink),
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(wyrmScopedPalette.ink),
                             modifier = Modifier.fillMaxWidth(),
                             decorationBox = { inner ->
                                 if (name.isEmpty()) {
-                                    Text("Night squeeze", fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.TabIdle)
+                                    Text("Night squeeze", fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.tabIdle)
                                 }
                                 inner()
                             },
@@ -653,7 +665,7 @@ private fun PaperVoiceCreate(
                         text = "It stays in the public directory while the gate is open.",
                         fontFamily = Wyrm.Body,
                         fontSize = 12.5.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(top = 9.dp),
                     )
                 }
@@ -663,7 +675,7 @@ private fun PaperVoiceCreate(
                     text = state.error,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
-                    color = Wyrm.Badge,
+                    color = wyrmScopedPalette.badge,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
                 )
             }
@@ -686,17 +698,19 @@ private fun VerifyStage(
     error: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
     ) {
         Spacer(Modifier.height(24.dp))
-        Box(Modifier.size(92.dp).clip(CircleShape).background(Wyrm.Live.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
-            IosIcon(glyph, Wyrm.Live, size = 44.dp, weight = 1.2f)
+        Box(Modifier.size(92.dp).clip(CircleShape).background(wyrmScopedPalette.live.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+            IosIcon(glyph, wyrmScopedPalette.live, size = 44.dp, weight = 1.2f)
         }
-        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 24.sp, color = Wyrm.Ink, textAlign = TextAlign.Center)
-        Text(note, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 34.dp))
+        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 24.sp, color = wyrmScopedPalette.ink, textAlign = TextAlign.Center)
+        Text(note, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 34.dp))
         content()
         if (error.isNotEmpty()) {
             Text(error, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Color(0xFFFF3B30), modifier = Modifier.padding(horizontal = 24.dp))
@@ -707,11 +721,13 @@ private fun VerifyStage(
 
 @Composable
 private fun VerifyField(value: String, onValue: (String) -> Unit, placeholder: String, keyboardType: KeyboardType, code: Boolean) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val style = androidx.compose.ui.text.TextStyle(
         fontFamily = Wyrm.Body,
         fontWeight = if (code) FontWeight.Bold else FontWeight.Normal,
         fontSize = if (code) 24.sp else 15.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
         textAlign = if (code) TextAlign.Center else TextAlign.Start,
     )
     androidx.compose.foundation.text.BasicTextField(
@@ -719,19 +735,19 @@ private fun VerifyField(value: String, onValue: (String) -> Unit, placeholder: S
         onValueChange = onValue,
         singleLine = true,
         textStyle = style,
-        cursorBrush = androidx.compose.ui.graphics.SolidColor(Wyrm.Link),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(wyrmScopedPalette.link),
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType, autoCorrectEnabled = false),
         modifier = Modifier
             .padding(horizontal = 24.dp)
             .fillMaxWidth()
             .height(if (code) 56.dp else 52.dp)
             .clip(wyrmRounded(14.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp))
             .padding(horizontal = 15.dp),
         decorationBox = { inner ->
             Box(Modifier.fillMaxSize(), contentAlignment = if (code) Alignment.Center else Alignment.CenterStart) {
-                if (value.isEmpty()) Text(placeholder, style = style.copy(color = Wyrm.Quiet.copy(alpha = 0.6f)))
+                if (value.isEmpty()) Text(placeholder, style = style.copy(color = wyrmScopedPalette.quiet))
                 inner()
             }
         },
@@ -756,6 +772,8 @@ private fun VerifyEmail(state: VoiceScreenState, onSubmit: (String) -> Unit) {
 
 @Composable
 private fun VerifyCode(state: VoiceScreenState, onConfirm: (String) -> Unit, onResend: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var code by remember { mutableStateOf("") }
     var remaining by remember(state.resendAt) { mutableIntStateOf(secondsUntil(state.resendAt)) }
     LaunchedEffect(state.resendAt) {
@@ -776,7 +794,7 @@ private fun VerifyCode(state: VoiceScreenState, onConfirm: (String) -> Unit, onR
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 12.5.sp,
-            color = if (remaining > 0) Wyrm.Quiet else Wyrm.Link,
+            color = if (remaining > 0) wyrmScopedPalette.quiet else wyrmScopedPalette.link,
             modifier = Modifier.clickable(
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                 indication = null,
@@ -802,6 +820,8 @@ private fun RoomDetails(
     onUnban: (String) -> Unit,
     onOpenProfile: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val room = state.selectedRoom ?: return
     var code by remember(room.id) { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
@@ -824,10 +844,10 @@ private fun RoomDetails(
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             VoiceRoomArt(room, 88.dp)
             Spacer(Modifier.height(14.dp))
-            Text(room.name, fontFamily = Wyrm.Display, fontSize = 30.sp, lineHeight = 34.sp, color = Wyrm.Ink, textAlign = TextAlign.Center)
+            Text(room.name, fontFamily = Wyrm.Display, fontSize = 30.sp, lineHeight = 34.sp, color = wyrmScopedPalette.ink, textAlign = TextAlign.Center)
             Spacer(Modifier.height(6.dp))
             if (room.managedPublic) {
-                Text("Official Wyrm room", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+                Text("Official Wyrm room", fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet)
             } else {
                 Row(
                     Modifier.clip(CircleShape)
@@ -837,17 +857,17 @@ private fun RoomDetails(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     WyrmAvatar(room.creator.avatarUrl, room.creator.avatarKey, room.creator.displayName, 20.dp, corner = 10.dp)
-                    Text("by ${room.creator.displayName}", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Mute)
+                    Text("by ${room.creator.displayName}", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = wyrmScopedPalette.mute)
                 }
             }
             Spacer(Modifier.height(12.dp))
             Row(
-                Modifier.clip(CircleShape).background(if (room.active) Wyrm.Live.copy(alpha = 0.13f) else Wyrm.Well)
+                Modifier.clip(CircleShape).background(if (room.active) wyrmScopedPalette.live.copy(alpha = 0.13f) else wyrmScopedPalette.well)
                     .padding(horizontal = 12.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                VoiceLiveBars(if (room.active) Wyrm.Live else Wyrm.Quiet, playing = room.active, height = 11.dp)
+                VoiceLiveBars(if (room.active) wyrmScopedPalette.live else wyrmScopedPalette.quiet, playing = room.active, height = 11.dp)
                 Text(
                     when {
                         room.active -> "Live · ${room.activeCount} of ${room.capacity} inside" +
@@ -856,7 +876,7 @@ private fun RoomDetails(
                         else -> "Quiet · be the first one in"
                     },
                     fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp,
-                    color = if (room.active) Wyrm.Live else Wyrm.Mute,
+                    color = if (room.active) wyrmScopedPalette.live else wyrmScopedPalette.mute,
                 )
             }
         }
@@ -881,12 +901,12 @@ private fun RoomDetails(
         }
         Row(
             Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(56.dp).clip(CircleShape)
-                .background(if (canJoin) Wyrm.Live else Wyrm.Well)
+                .background(if (canJoin) wyrmScopedPalette.live else wyrmScopedPalette.well)
                 .clickable(enabled = canJoin, interactionSource = remember { MutableInteractionSource() }, indication = null) { join() },
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(painterResource(LucideR.drawable.lucide_ic_mic), null, Modifier.size(19.dp), tint = if (canJoin) Color.White else Wyrm.Quiet)
+            Icon(painterResource(LucideR.drawable.lucide_ic_mic), null, Modifier.size(19.dp), tint = if (canJoin) Color.White else wyrmScopedPalette.quiet)
             Spacer(Modifier.width(9.dp))
             Text(
                 when {
@@ -894,44 +914,44 @@ private fun RoomDetails(
                     room.mine -> if (room.active) "Join your room" else "Start your room"
                     else -> "Join room"
                 },
-                fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (canJoin) Color.White else Wyrm.Quiet,
+                fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (canJoin) Color.White else wyrmScopedPalette.quiet,
             )
         }
         Text(
             if (room.managedPublic) "You join muted. Tap the mic when you want to talk." else "You join muted. The creator can remove people.",
-            fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet, textAlign = TextAlign.Center,
+            fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp),
         )
         if (room.mine) {
             VoiceSectionTitle("Manage your room")
             Column(
-                Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(wyrmRounded(20.dp)).background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(20.dp)).padding(16.dp),
+                Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(wyrmRounded(20.dp)).background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(20.dp)).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text("Room code", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Wyrm.Quiet)
+                Text("Room code", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(state.roomPassword.ifBlank { "••••••••" }, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold, fontSize = 24.sp, letterSpacing = 3.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
+                        fontWeight = FontWeight.Bold, fontSize = 24.sp, letterSpacing = 3.sp, color = wyrmScopedPalette.ink, modifier = Modifier.weight(1f))
                     if (state.roomPassword.isNotBlank()) {
                         Icon(
                             painterResource(LucideR.drawable.lucide_ic_copy), "Copy room code",
                             Modifier.size(38.dp).clip(CircleShape).clickable { clipboard.setText(AnnotatedString(state.roomPassword)) }.padding(9.dp),
-                            tint = Wyrm.Ink,
+                            tint = wyrmScopedPalette.ink,
                         )
                         Spacer(Modifier.width(4.dp))
                     }
                     WyrmPill(if (state.roomPassword.isBlank()) "Show" else "New code", onClick = if (state.roomPassword.isBlank()) onReveal else onRegenerate)
                 }
                 Text("Share this code with friends. A new code keeps out anyone who had the old one.",
-                    fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+                    fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(if (room.gate == "open") "Open for entries" else "Closed", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp, color = Wyrm.Ink)
+                            fontSize = 14.sp, color = wyrmScopedPalette.ink)
                         Text(if (room.gate == "open") "People with the code can join." else "No one new can join until you open it.",
-                            fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                            fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
                     }
                     WyrmPill(if (room.gate == "open") "Close" else "Open", onClick = onToggleGate)
                 }
@@ -940,7 +960,7 @@ private fun RoomDetails(
                 VoiceSectionTitle("Removed for good", "${room.bans.size}")
                 room.bans.forEach { ban ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(ban.displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
+                        Text(ban.displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = wyrmScopedPalette.ink, modifier = Modifier.weight(1f))
                         WyrmPill("Let back in", onClick = { onUnban(ban.playerId) })
                     }
                 }
@@ -952,8 +972,8 @@ private fun RoomDetails(
             VoiceSectionTitle("Earlier calls")
             room.history.take(20).forEach { call ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(relativeTime(call.startedAt), fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
-                    Text("${call.peakParticipants} at most", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                    Text(relativeTime(call.startedAt), fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.ink, modifier = Modifier.weight(1f))
+                    Text("${call.peakParticipants} at most", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
                 }
             }
         }
@@ -990,6 +1010,8 @@ private fun CallRoom(
     onBan: (String) -> Unit,
     onOpenProfile: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var more by remember { mutableStateOf(false) }
     var chosen by remember { mutableStateOf<VoiceParticipant?>(null) }
     val connected = call.stage == VoiceConnectionStage.CONNECTED
@@ -997,17 +1019,17 @@ private fun CallRoom(
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    VoiceLiveBars(if (call.error.isBlank()) Wyrm.Live else Wyrm.Blood, playing = connected, height = 12.dp)
+                    VoiceLiveBars(if (call.error.isBlank()) wyrmScopedPalette.live else Wyrm.Blood, playing = connected, height = 12.dp)
                     Text(
                         if (call.error.isNotBlank()) call.stage.label else if (connected) "LIVE" else call.stage.label.uppercase(),
                         fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.2.sp,
-                        color = if (call.error.isBlank()) Wyrm.Live else Wyrm.Blood,
+                        color = if (call.error.isBlank()) wyrmScopedPalette.live else Wyrm.Blood,
                     )
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(call.roomName, fontFamily = Wyrm.Display, fontSize = 30.sp, lineHeight = 34.sp, color = Wyrm.Ink,
+                Text(call.roomName, fontFamily = Wyrm.Display, fontSize = 30.sp, lineHeight = 34.sp, color = wyrmScopedPalette.ink,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("${call.participants.size} of 10 in the room", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+                Text("${call.participants.size} of 10 in the room", fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet)
             }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
@@ -1028,15 +1050,15 @@ private fun CallRoom(
             AnimatedVisibility(more) {
                 Column(
                     Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp).fillMaxWidth().clip(wyrmRounded(18.dp))
-                        .background(Wyrm.Card).border(1.dp, Wyrm.Rule, wyrmRounded(18.dp)).padding(16.dp),
+                        .background(wyrmScopedPalette.card).border(1.dp, wyrmScopedPalette.rule, wyrmRounded(18.dp)).padding(16.dp),
                 ) {
-                    Text("Call volume", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Wyrm.Quiet)
+                    Text("Call volume", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
                     LiquidSlider(value = call.volume, onValueChange = onVolume)
                 }
             }
             Row(
                 Modifier.padding(start = 12.dp, end = 12.dp, bottom = 16.dp).fillMaxWidth().clip(wyrmRounded(30.dp))
-                    .background(Wyrm.Card).border(1.dp, Wyrm.Rule, wyrmRounded(30.dp)).padding(vertical = 14.dp),
+                    .background(wyrmScopedPalette.card).border(1.dp, wyrmScopedPalette.rule, wyrmRounded(30.dp)).padding(vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 val micOff = call.muted || call.interrupted
@@ -1060,14 +1082,14 @@ private fun CallRoom(
                 contentAlignment = Alignment.BottomCenter,
             ) {
                 Column(
-                    Modifier.padding(12.dp).fillMaxWidth().clip(wyrmRounded(24.dp)).background(Wyrm.Card)
-                        .border(1.dp, Wyrm.Rule, wyrmRounded(24.dp)).padding(vertical = 8.dp),
+                    Modifier.padding(12.dp).fillMaxWidth().clip(wyrmRounded(24.dp)).background(wyrmScopedPalette.card)
+                        .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(24.dp)).padding(vertical = 8.dp),
                 ) {
-                    Text(person.displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink,
+                    Text(person.displayName, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = wyrmScopedPalette.ink,
                         modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp))
                     listOf(
-                        Triple("View profile", Wyrm.Ink) { onOpenProfile(person.playerId) },
-                        Triple("Remove from call", Wyrm.Ink) { onKick(person.playerId) },
+                        Triple("View profile", wyrmScopedPalette.ink) { onOpenProfile(person.playerId) },
+                        Triple("Remove from call", wyrmScopedPalette.ink) { onKick(person.playerId) },
                         Triple("Remove for good", Wyrm.Blood) { onBan(person.playerId) },
                     ).forEach { (label, colour, action) ->
                         Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = colour,

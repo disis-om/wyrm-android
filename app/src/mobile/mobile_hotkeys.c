@@ -1,4 +1,5 @@
 #include "mobile_hotkeys.h"
+#include "../game/sheet_text.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -250,10 +251,29 @@ void mobile_hotkeys_draw_gameplay(tenv* env) {
     /* Dark type on a lit key, light type on a dim one. */
     /* Opacity belongs to the surface only. Keeping type and outline at full
        theme contrast means a nearly transparent key is still identifiable. */
-    ImU32 primary = color(1.0f, 1.0f, 1.0f, 1.0f);
+    /* LABEL OPACITY (OM, 2026-11-01): the label alone fades. */
+    float label_alpha =
+        action >= 0 && action < 20
+            ? clampf_local(env->usr->usrs.ext.key_label_opacity[action], 0.0f, 1.0f)
+            : 1.0f;
+    ImU32 primary = color(1.0f, 1.0f, 1.0f, label_alpha);
     /* The label takes the key's colour (OM, 2026-10-14). */
-    if (coloured) primary = color(kr, kg, kb, 1.0f);
+    if (coloured) primary = color(kr, kg, kb, label_alpha);
     ImFont* font = env->usr->imgui_data.body_font[FONT_SIZE_REGULAR];
+    /* The original's thin glyphs (OM, 2026-11-01). */
+    if (sheet_ok(function)) {
+      float text_size = font->LegacySize;
+      float text_w = sheet_width(function, text_size, SHEET_THIN);
+      float room = width - 16.0f;
+      if (text_w > room && text_w > 0.0f) {
+        text_size *= room / text_w;
+        text_w = room;
+      }
+      sheet_layer(draw, function, text_size,
+                  (ImVec2){cx - text_w * 0.5f, cy - text_size * 0.5f}, primary,
+                  SHEET_THIN, 0);
+      continue;
+    }
     igPushFont(font, font->LegacySize);
     ImVec2 size;
     igCalcTextSize(&size, function, NULL, false, -1);

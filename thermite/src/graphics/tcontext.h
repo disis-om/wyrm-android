@@ -60,6 +60,9 @@ typedef struct tcontext {
      every rotation and every resume and cannot go asking again each time. */
   bool supports_immediate;
   ivec2 size;
+  /* tcontext_acquire took this frame's image ahead of tcontext_begin (late
+     input latching, 2026-10-23): it must be drawn and presented this frame. */
+  bool acquired;
 } tcontext;
 
 VkShaderModule tcontext_create_shader(tcontext* context, const char* filename);
@@ -67,6 +70,7 @@ VkShaderModule tcontext_create_shader(tcontext* context, const char* filename);
 tcontext* tcontext_create(twindow* window, bool vsync, int fif);
 void tcontext_resize(tcontext* context, const ivec2 size, bool vsync);
 bool tcontext_recreate_surface(tcontext* context, twindow* window, bool vsync);
+bool tcontext_acquire(tcontext* context);
 bool tcontext_begin(tcontext* context);
 void tcontext_clear(tcontext* context, const vec4 clear_color);
 void tcontext_end(tcontext* context);

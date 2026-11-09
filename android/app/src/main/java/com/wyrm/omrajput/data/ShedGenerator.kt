@@ -611,16 +611,22 @@ object ShedGenerator {
         val want = r.count.coerceIn(1, 48)
         val pool = mutableListOf<ShedSkin>()
         val seen = HashSet<String>()
+        // Skins this phone has already shown: used only when the recipe has run out
+        // of new ones, so a shed always fills its batch (OM, 2026-10-31: after many
+        // sheds of one recipe the batch came back short).
+        val repeats = mutableListOf<ShedSkin>()
         var tried = 0
         var n = 0
         while (n < want * 80 && pool.size < want * 4) {
             tried++
             val s = makeSkin(r, mixSeed(r.seed, n))
             n++
-            if (s == null || s.key in seen || s.key in history) continue
+            if (s == null || s.key in seen) continue
             seen.add(s.key)
+            if (s.key in history) { if (repeats.size < want) repeats.add(s); continue }
             pool.add(s)
         }
+        if (pool.size < want) pool.addAll(repeats.take(want - pool.size))
         val sorted = pool.sortedWith(compareByDescending<ShedSkin> { it.score }.thenBy { unsigned(it.seed) })
         val out = mutableListOf<ShedSkin>()
         for (s in sorted) {

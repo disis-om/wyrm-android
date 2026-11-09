@@ -40,7 +40,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -112,6 +112,8 @@ private val SupportKind.icon: Int
  */
 @Composable
 internal fun CrashPromptHost(repository: WyrmRepository, insetBottom: Dp, insetTop: Dp) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var shown by remember { mutableStateOf<CrashRecord?>(null) }
     var last by remember { mutableStateOf<CrashRecord?>(null) }
     val prompt = CrashWatch.prompt
@@ -158,10 +160,10 @@ internal fun CrashPromptHost(repository: WyrmRepository, insetBottom: Dp, insetT
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
-                color = Wyrm.OnInk,
+                color = wyrmScopedPalette.onInk,
                 modifier = Modifier
                     .clip(WyrmCapsule)
-                    .background(Wyrm.Ink)
+                    .background(wyrmScopedPalette.ink)
                     .padding(horizontal = 16.dp, vertical = 11.dp),
             )
         }
@@ -182,6 +184,8 @@ private fun CrashPromptOverlay(
     insetBottom: Dp,
     onClosed: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val focus = LocalFocusManager.current
     val view = LocalView.current
     var note by remember { mutableStateOf("") }
@@ -216,7 +220,7 @@ private fun CrashPromptOverlay(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Wyrm.Ink.copy(alpha = 0.34f * appear))
+                .background(wyrmScopedPalette.ink.copy(alpha = 0.34f * appear))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.clearFocus(); if (centred && !busy) appeared = false },
         )
         Column(
@@ -236,8 +240,8 @@ private fun CrashPromptOverlay(
                 }
                 .shadow(30.dp, wyrmRounded(28.dp), ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
                 .clip(wyrmRounded(28.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(28.dp))
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(28.dp))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 .padding(20.dp),
         ) {
@@ -248,32 +252,32 @@ private fun CrashPromptOverlay(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     SupportCheckBadge(64.dp, 26.dp)
-                    Text("Thank you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 21.sp, color = Wyrm.Ink)
+                    Text("Thank you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 21.sp, color = wyrmScopedPalette.ink)
                     Text(
                         "The report is with the developer. You just made Wyrm a little better.",
-                        fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Mute, textAlign = TextAlign.Center,
+                        fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.mute, textAlign = TextAlign.Center,
                     )
                 }
                 return@Column
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(
-                    Modifier.size(50.dp).clip(wyrmRounded(15.dp)).background(Wyrm.Badge.copy(alpha = 0.12f)),
+                    Modifier.size(50.dp).clip(wyrmRounded(15.dp)).background(wyrmScopedPalette.badge.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(painterResource(LucideR.drawable.lucide_ic_bandage), null, tint = Wyrm.Badge, modifier = Modifier.size(21.dp))
+                    Icon(painterResource(LucideR.drawable.lucide_ic_bandage), null, tint = wyrmScopedPalette.badge, modifier = Modifier.size(21.dp))
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("CRASH DETECTED", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.sp,
-                        letterSpacing = 1.1.sp, color = Wyrm.Badge)
-                    Text("Wyrm ${record.appVersion} · build ${record.build}", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                        letterSpacing = 1.1.sp, color = wyrmScopedPalette.badge)
+                    Text("Wyrm ${record.appVersion} · build ${record.build}", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
                 }
             }
             Text("Wyrm closed unexpectedly", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 22.sp,
-                color = Wyrm.Ink, modifier = Modifier.padding(top = 16.dp))
+                color = wyrmScopedPalette.ink, modifier = Modifier.padding(top = 16.dp))
             Text(
                 "Send the crash report to the developer and we'll see exactly what went wrong. You're helping make Wyrm better for every player.",
-                fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.5.sp, color = Wyrm.Mute,
+                fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.5.sp, color = wyrmScopedPalette.mute,
                 modifier = Modifier.padding(top = 6.dp),
             )
             SupportLineField(
@@ -293,8 +297,8 @@ private fun CrashPromptOverlay(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text("What's included", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Link)
-                Icon(painterResource(LucideR.drawable.lucide_ic_chevron_down), null, tint = Wyrm.Link,
+                Text("What's included", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = wyrmScopedPalette.link)
+                Icon(painterResource(LucideR.drawable.lucide_ic_chevron_down), null, tint = wyrmScopedPalette.link,
                     modifier = Modifier.size(13.dp).rotate(chevron))
             }
             AnimatedVisibility(visible = showDetails, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
@@ -302,13 +306,13 @@ private fun CrashPromptOverlay(
                     SupportIncludedLine(LucideR.drawable.lucide_ic_smartphone, "Your phone model, Android and Wyrm version")
                     SupportIncludedLine(LucideR.drawable.lucide_ic_code, "Where in Wyrm's code it stopped")
                     SupportIncludedLine(LucideR.drawable.lucide_ic_file_text, "The last few minutes of Wyrm's own log")
-                    SupportIncludedLine(LucideR.drawable.lucide_ic_lock, "Never your password, keys, Team ID or messages", tint = Wyrm.Live)
+                    SupportIncludedLine(LucideR.drawable.lucide_ic_lock, "Never your password, keys, Team ID or messages", tint = wyrmScopedPalette.live)
                 }
             }
             Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Always send crash reports", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
-                    Text("Skip this question next time", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet,
+                    Text("Always send crash reports", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
+                    Text("Skip this question next time", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(top = 1.dp))
                 }
                 Spacer(Modifier.width(12.dp))
@@ -317,7 +321,7 @@ private fun CrashPromptOverlay(
             if (phase == CrashPhase.FAILED) {
                 Text(
                     "Couldn't send it. Try again, or send it later from Settings › Help & feedback.",
-                    fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge, modifier = Modifier.padding(top = 4.dp),
+                    fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.badge, modifier = Modifier.padding(top = 4.dp),
                 )
             }
             SupportCapsuleButton(
@@ -336,7 +340,7 @@ private fun CrashPromptOverlay(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .padding(top = 2.dp)
@@ -353,18 +357,22 @@ private fun CrashPromptOverlay(
 
 @Composable
 private fun SupportIncludedLine(icon: Int, text: String, tint: Color = Wyrm.Quiet) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.width(18.dp).padding(top = 2.dp), contentAlignment = Alignment.Center) {
             Icon(painterResource(icon), null, tint = tint, modifier = Modifier.size(12.dp))
         }
-        Text(text, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Mute)
+        Text(text, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.mute)
     }
 }
 
 @Composable
 private fun SupportCheckBadge(size: Dp, icon: Dp) {
-    Box(Modifier.size(size).clip(CircleShape).background(Wyrm.Live.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-        Icon(painterResource(LucideR.drawable.lucide_ic_check), null, tint = Wyrm.Live, modifier = Modifier.size(icon))
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Box(Modifier.size(size).clip(CircleShape).background(wyrmScopedPalette.live.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+        Icon(painterResource(LucideR.drawable.lucide_ic_check), null, tint = wyrmScopedPalette.live, modifier = Modifier.size(icon))
     }
 }
 
@@ -377,6 +385,8 @@ private fun SupportCapsuleButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
@@ -385,16 +395,16 @@ private fun SupportCapsuleButton(
             .height(52.dp)
             .scale(pressScale(pressed, enabled))
             .clip(WyrmCapsule)
-            .background(Wyrm.Ink)
+            .background(wyrmScopedPalette.ink)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (busy) {
-            IosSpinner(size = 18.dp, colour = Wyrm.OnInk)
+            IosSpinner(size = 18.dp, colour = wyrmScopedPalette.onInk)
             Spacer(Modifier.width(8.dp))
         }
-        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.5.sp, color = Wyrm.OnInk)
+        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.5.sp, color = wyrmScopedPalette.onInk)
     }
 }
 
@@ -407,17 +417,19 @@ private fun SupportLineField(
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     BasicTextField(
         value = value,
         onValueChange = onValue,
         enabled = enabled,
         singleLine = true,
-        textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Ink),
-        cursorBrush = SolidColor(Wyrm.Link),
-        modifier = modifier.fillMaxWidth().height(46.dp).clip(wyrmRounded(13.dp)).background(Wyrm.Well),
+        textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.ink),
+        cursorBrush = SolidColor(wyrmScopedPalette.link),
+        modifier = modifier.fillMaxWidth().height(46.dp).clip(wyrmRounded(13.dp)).background(wyrmScopedPalette.well),
         decorationBox = { inner ->
             Box(Modifier.fillMaxSize().padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart) {
-                if (value.isEmpty()) Text(placeholder, fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Quiet)
+                if (value.isEmpty()) Text(placeholder, fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.quiet)
                 inner()
             }
         },
@@ -438,6 +450,8 @@ private val DropTint = Color(0xFFD9822B)
  */
 @Composable
 internal fun DropPromptHost(repository: WyrmRepository, insetBottom: Dp, insetTop: Dp) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var shown by remember { mutableStateOf<DropRecord?>(null) }
     var last by remember { mutableStateOf<DropRecord?>(null) }
     val prompt = DropWatch.prompt
@@ -483,10 +497,10 @@ internal fun DropPromptHost(repository: WyrmRepository, insetBottom: Dp, insetTo
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
-                color = Wyrm.OnInk,
+                color = wyrmScopedPalette.onInk,
                 modifier = Modifier
                     .clip(WyrmCapsule)
-                    .background(Wyrm.Ink)
+                    .background(wyrmScopedPalette.ink)
                     .padding(horizontal = 16.dp, vertical = 11.dp),
             )
         }
@@ -502,6 +516,8 @@ private fun DropPromptOverlay(
     insetTop: Dp,
     onClosed: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val focus = LocalFocusManager.current
     val view = LocalView.current
     var note by remember(record.id) { mutableStateOf("") }
@@ -542,7 +558,7 @@ private fun DropPromptOverlay(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Wyrm.Ink.copy(alpha = 0.34f * appear))
+                .background(wyrmScopedPalette.ink.copy(alpha = 0.34f * appear))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.clearFocus(); if (centred && !busy) appeared = false },
         )
         Column(
@@ -565,8 +581,8 @@ private fun DropPromptOverlay(
                 }
                 .shadow(30.dp, shape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
                 .clip(shape)
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, shape)
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, shape)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 // A landscape lobby is short: the card scrolls rather than clipping.
                 .verticalScroll(rememberScrollState())
@@ -584,7 +600,7 @@ private fun DropPromptOverlay(
                         .padding(bottom = 12.dp)
                         .size(width = 36.dp, height = 5.dp)
                         .clip(CircleShape)
-                        .background(Wyrm.Rule),
+                        .background(wyrmScopedPalette.rule),
                 )
             }
             if (phase == CrashPhase.SENT) {
@@ -594,10 +610,10 @@ private fun DropPromptOverlay(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     SupportCheckBadge(64.dp, 26.dp)
-                    Text("Thank you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 21.sp, color = Wyrm.Ink)
+                    Text("Thank you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 21.sp, color = wyrmScopedPalette.ink)
                     Text(
                         "The report is with the developer. You just made Wyrm a little better.",
-                        fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Mute, textAlign = TextAlign.Center,
+                        fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.mute, textAlign = TextAlign.Center,
                     )
                 }
                 return@Column
@@ -615,15 +631,15 @@ private fun DropPromptOverlay(
                     val beforeSpawn = record.facts["dropReason"].orEmpty().startsWith("prespawn")
                     Text(
                         if (beforeSpawn) "${record.arenaLabel} · before your snake appeared" else "${record.arenaLabel} · ${record.lifeSec}s alive",
-                        fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet,
+                        fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet,
                     )
                 }
             }
             Text("The arena dropped you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 22.sp,
-                color = Wyrm.Ink, modifier = Modifier.padding(top = 16.dp))
+                color = wyrmScopedPalette.ink, modifier = Modifier.padding(top = 16.dp))
             Text(
                 record.sentence,
-                fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.5.sp, color = Wyrm.Mute,
+                fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.5.sp, color = wyrmScopedPalette.mute,
                 modifier = Modifier.padding(top = 6.dp),
             )
             SupportLineField(
@@ -643,8 +659,8 @@ private fun DropPromptOverlay(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text("What's included", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Link)
-                Icon(painterResource(LucideR.drawable.lucide_ic_chevron_down), null, tint = Wyrm.Link,
+                Text("What's included", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = wyrmScopedPalette.link)
+                Icon(painterResource(LucideR.drawable.lucide_ic_chevron_down), null, tint = wyrmScopedPalette.link,
                     modifier = Modifier.size(13.dp).rotate(chevron))
             }
             AnimatedVisibility(visible = showDetails, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
@@ -652,13 +668,13 @@ private fun DropPromptOverlay(
                     SupportIncludedLine(LucideR.drawable.lucide_ic_activity, "Arena, ping and how long you were in")
                     SupportIncludedLine(LucideR.drawable.lucide_ic_wifi, "Wi-Fi or mobile data, and whether it switched")
                     SupportIncludedLine(LucideR.drawable.lucide_ic_file_text, "The last minutes of Wyrm's own log")
-                    SupportIncludedLine(LucideR.drawable.lucide_ic_lock, "Never your password, keys, Team ID or messages", tint = Wyrm.Live)
+                    SupportIncludedLine(LucideR.drawable.lucide_ic_lock, "Never your password, keys, Team ID or messages", tint = wyrmScopedPalette.live)
                 }
             }
             Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Always send drop reports", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
-                    Text("Skip this question next time", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet,
+                    Text("Always send drop reports", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
+                    Text("Skip this question next time", fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(top = 1.dp))
                 }
                 Spacer(Modifier.width(12.dp))
@@ -667,7 +683,7 @@ private fun DropPromptOverlay(
             if (phase == CrashPhase.FAILED) {
                 Text(
                     "Couldn't send it. Check your connection and try again.",
-                    fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge, modifier = Modifier.padding(top = 4.dp),
+                    fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.badge, modifier = Modifier.padding(top = 4.dp),
                 )
             }
             SupportCapsuleButton(
@@ -686,7 +702,7 @@ private fun DropPromptOverlay(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .padding(top = 2.dp)
@@ -765,6 +781,8 @@ fun HelpCenterScreen(
     /** Wyrm Desktop has no app tour (2026-10-12): its row is left out there. */
     showTour: Boolean = true,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     LaunchedEffect(Unit) { SupportStore.refresh() }
     var expanded by remember { mutableStateOf(-1) }
     var sendingLast by remember { mutableStateOf(false) }
@@ -776,8 +794,8 @@ fun HelpCenterScreen(
         onBack = onBack,
     ) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("How can we help?", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 26.sp, color = Wyrm.Ink)
-            Text("Wyrm is made by one person, and every report is read.", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+            Text("How can we help?", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 26.sp, color = wyrmScopedPalette.ink)
+            Text("Wyrm is made by one person, and every report is read.", fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet)
         }
         Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SupportTile(SupportKind.BUG) { onCompose(SupportKind.BUG) }
@@ -834,10 +852,10 @@ fun HelpCenterScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Last crash", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+                        Text("Last crash", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
                         Text(
                             "${supportWhen(last.at)} · ${if (last.sent) "Sent. Thank you" else "Not sent"}",
-                            fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, modifier = Modifier.padding(top = 1.dp),
+                            fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 1.dp),
                         )
                     }
                     if (!last.sent) {
@@ -850,7 +868,7 @@ fun HelpCenterScreen(
                                 .height(34.dp)
                                 .scale(pressScale(pressed, !sendingLast))
                                 .clip(WyrmCapsule)
-                                .background(Wyrm.Ink)
+                                .background(wyrmScopedPalette.ink)
                                 .clickable(interactionSource = interaction, indication = null, enabled = !sendingLast) {
                                     sendingLast = true
                                     lastError = ""
@@ -861,15 +879,15 @@ fun HelpCenterScreen(
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (sendingLast) IosSpinner(size = 16.dp, colour = Wyrm.OnInk)
-                            else Text("Send", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = Wyrm.OnInk)
+                            if (sendingLast) IosSpinner(size = 16.dp, colour = wyrmScopedPalette.onInk)
+                            else Text("Send", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = wyrmScopedPalette.onInk)
                         }
                     }
                 }
             }
         }
         if (lastError.isNotEmpty()) {
-            Text(lastError, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge,
+            Text(lastError, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.badge,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp))
         }
         SettingsCaption("Off: Wyrm asks you each time, with Send and Not now. On: the report goes by itself and only a short note shows.")
@@ -894,12 +912,12 @@ fun HelpCenterScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(item.question, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp,
-                        color = Wyrm.Ink, modifier = Modifier.weight(1f))
-                    Icon(painterResource(LucideR.drawable.lucide_ic_plus), null, tint = Wyrm.Quiet,
+                        color = wyrmScopedPalette.ink, modifier = Modifier.weight(1f))
+                    Icon(painterResource(LucideR.drawable.lucide_ic_plus), null, tint = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(top = 3.dp).size(14.dp).rotate(turn))
                 }
                 AnimatedVisibility(visible = open, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                    Text(item.answer, fontFamily = Wyrm.Body, fontSize = 13.sp, lineHeight = 19.sp, color = Wyrm.Mute,
+                    Text(item.answer, fontFamily = Wyrm.Body, fontSize = 13.sp, lineHeight = 19.sp, color = wyrmScopedPalette.mute,
                         modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp))
                 }
             }
@@ -915,6 +933,8 @@ fun HelpCenterScreen(
 
 @Composable
 private fun RowScope.SupportTile(kind: SupportKind, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = wyrmRounded(16.dp)
@@ -924,17 +944,17 @@ private fun RowScope.SupportTile(kind: SupportKind, onClick: () -> Unit) {
             .heightIn(min = 108.dp)
             .scale(pressScale(pressed))
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(Modifier.size(38.dp).clip(wyrmRounded(11.dp)).background(Wyrm.Well), contentAlignment = Alignment.Center) {
-            Icon(painterResource(kind.icon), null, tint = Wyrm.Ink, modifier = Modifier.size(18.dp))
+        Box(Modifier.size(38.dp).clip(wyrmRounded(11.dp)).background(wyrmScopedPalette.well), contentAlignment = Alignment.Center) {
+            Icon(painterResource(kind.icon), null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(18.dp))
         }
         Text(kind.pageTitle, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-            color = Wyrm.Ink, maxLines = 2)
+            color = wyrmScopedPalette.ink, maxLines = 2)
     }
 }
 
@@ -950,6 +970,8 @@ fun SupportComposeScreen(
     onBack: () -> Unit,
     onReports: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val kinds = remember { listOf(SupportKind.BUG, SupportKind.SUGGESTION, SupportKind.HELP, SupportKind.OTHER) }
     val focus = LocalFocusManager.current
     val view = LocalView.current
@@ -999,7 +1021,7 @@ fun SupportComposeScreen(
                     Spacer(Modifier.height(60.dp))
                     SupportCheckBadge(76.dp, 30.dp)
                     Spacer(Modifier.height(12.dp))
-                    Text("Thank you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 26.sp, color = Wyrm.Ink)
+                    Text("Thank you", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 26.sp, color = wyrmScopedPalette.ink)
                     Spacer(Modifier.height(12.dp))
                     Text(
                         if (kind == SupportKind.SUGGESTION) {
@@ -1007,13 +1029,13 @@ fun SupportComposeScreen(
                         } else {
                             "Your report is with the developer. If we reply, it arrives in Alerts and under Your reports."
                         },
-                        fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Mute, textAlign = TextAlign.Center,
+                        fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.mute, textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(30.dp))
                     PaperPrimaryButton("Done", onClick = onBack)
                     Text(
                         "See your reports",
-                        fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.Link,
+                        fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = wyrmScopedPalette.link,
                         modifier = Modifier
                             .padding(top = 4.dp)
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onReports)
@@ -1031,28 +1053,28 @@ fun SupportComposeScreen(
                 },
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp).fillMaxWidth(),
             )
-            Text(kind.question, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Wyrm.Ink,
+            Text(kind.question, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = wyrmScopedPalette.ink,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 10.dp))
             val shape = wyrmRounded(14.dp)
             BasicTextField(
                 value = message,
                 onValueChange = { message = it.take(4000) },
                 enabled = !sending,
-                textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, lineHeight = 21.sp, color = Wyrm.Ink),
-                cursorBrush = SolidColor(Wyrm.Link),
+                textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, lineHeight = 21.sp, color = wyrmScopedPalette.ink),
+                cursorBrush = SolidColor(wyrmScopedPalette.link),
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth()
                     .heightIn(min = 200.dp)
                     .clip(shape)
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, shape)
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, shape)
                     .padding(horizontal = 15.dp, vertical = 18.dp),
                 decorationBox = { inner ->
                     Box(Modifier.fillMaxWidth()) {
                         if (message.isEmpty()) {
                             Text(kind.placeholder, fontFamily = Wyrm.Body, fontSize = 15.sp, lineHeight = 21.sp,
-                                color = Wyrm.Quiet.copy(alpha = 0.8f))
+                                color = wyrmScopedPalette.quiet)
                         }
                         inner()
                     }
@@ -1060,12 +1082,12 @@ fun SupportComposeScreen(
             )
             Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp), verticalAlignment = Alignment.Top) {
                 if (error.isNotEmpty()) {
-                    Text(error, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge, modifier = Modifier.weight(1f))
+                    Text(error, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.badge, modifier = Modifier.weight(1f))
                 } else {
                     Spacer(Modifier.weight(1f))
                 }
                 Text("${message.length}/4000", fontFamily = Wyrm.Body, fontSize = 11.sp,
-                    color = if (message.length > 3800) Wyrm.Badge else Wyrm.Quiet)
+                    color = if (message.length > 3800) wyrmScopedPalette.badge else wyrmScopedPalette.quiet)
             }
             SettingsSectionLabel("Include")
             SettingsCard {
@@ -1092,7 +1114,7 @@ fun SupportComposeScreen(
                 ) {
                     IosSpinner(size = 18.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text("Sending…", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+                    Text("Sending…", fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet)
                 }
             }
         }
@@ -1108,6 +1130,8 @@ fun SupportReportsScreen(
     onBack: () -> Unit,
     onNew: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     LaunchedEffect(Unit) { SupportStore.refresh() }
     // The end of the badge trail: replies new when the list opened keep a red
     // mark while it is open, even though opening it is reading them.
@@ -1138,11 +1162,11 @@ fun SupportReportsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(painterResource(LucideR.drawable.lucide_ic_inbox), null, tint = Wyrm.Quiet, modifier = Modifier.size(28.dp))
+                Icon(painterResource(LucideR.drawable.lucide_ic_inbox), null, tint = wyrmScopedPalette.quiet, modifier = Modifier.size(28.dp))
                 Text(SupportStore.error.ifEmpty { "No reports yet" }, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold,
-                    fontSize = 17.sp, color = Wyrm.Ink, textAlign = TextAlign.Center)
+                    fontSize = 17.sp, color = wyrmScopedPalette.ink, textAlign = TextAlign.Center)
                 Text("Problems, ideas and questions you send appear here, with Wyrm's replies.",
-                    fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet, textAlign = TextAlign.Center)
+                    fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet, textAlign = TextAlign.Center)
             }
             else -> Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SupportStore.reports.forEach { report -> SupportReportCard(report, fresh = report.id in fresh.value) }
@@ -1153,6 +1177,8 @@ fun SupportReportsScreen(
 
 @Composable
 private fun SupportReportCard(report: SupportReport, fresh: Boolean = false) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(17.dp)
     val status = when {
         fresh -> "New reply from Wyrm"
@@ -1166,37 +1192,37 @@ private fun SupportReportCard(report: SupportReport, fresh: Boolean = false) {
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 SupportKind.title(report.kind).uppercase(),
-                fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, letterSpacing = 1.sp, color = Wyrm.Ink,
-                modifier = Modifier.clip(WyrmCapsule).background(Wyrm.Well).padding(horizontal = 8.dp, vertical = 3.dp),
+                fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, letterSpacing = 1.sp, color = wyrmScopedPalette.ink,
+                modifier = Modifier.clip(WyrmCapsule).background(wyrmScopedPalette.well).padding(horizontal = 8.dp, vertical = 3.dp),
             )
-            if (fresh) Box(Modifier.size(8.dp).clip(WyrmCapsule).background(Wyrm.Badge))
+            if (fresh) Box(Modifier.size(8.dp).clip(WyrmCapsule).background(wyrmScopedPalette.badge))
             Text(status, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp,
                 color = when {
-                    fresh -> Wyrm.Badge
-                    report.reply.isBlank() -> Wyrm.Quiet
-                    else -> Wyrm.Live
+                    fresh -> wyrmScopedPalette.badge
+                    report.reply.isBlank() -> wyrmScopedPalette.quiet
+                    else -> wyrmScopedPalette.live
                 }, modifier = Modifier.weight(1f))
-            Text(trailTime(report.createdAt), fontFamily = Wyrm.Body, fontSize = 11.sp, color = Wyrm.Quiet)
+            Text(trailTime(report.createdAt), fontFamily = Wyrm.Body, fontSize = 11.sp, color = wyrmScopedPalette.quiet)
         }
         Text(report.message.ifBlank { if (report.kind == "drop") "Arena drop report" else "Crash report" }, fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 19.sp,
-            color = Wyrm.Ink, maxLines = 5)
+            color = wyrmScopedPalette.ink, maxLines = 5)
         if (report.reply.isNotBlank()) {
             Row(
-                Modifier.fillMaxWidth().clip(wyrmRounded(14.dp)).background(Wyrm.Live.copy(alpha = 0.09f)).padding(12.dp),
+                Modifier.fillMaxWidth().clip(wyrmRounded(14.dp)).background(wyrmScopedPalette.live.copy(alpha = 0.09f)).padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 WyrmBrandMark(size = 26.dp)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("Wyrm", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Wyrm.Ink)
-                    Text(report.reply, fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = Wyrm.Ink)
+                    Text("Wyrm", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = wyrmScopedPalette.ink)
+                    Text(report.reply, fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = wyrmScopedPalette.ink)
                 }
             }
         }
@@ -1205,6 +1231,8 @@ private fun SupportReportCard(report: SupportReport, fresh: Boolean = false) {
 
 @Composable
 private fun SupportReportSkeleton() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val pulse = rememberInfiniteTransition(label = "report-skeleton")
     val dim by pulse.animateFloat(1f, 0.55f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "report-skeleton-dim")
     val shape = wyrmRounded(17.dp)
@@ -1214,13 +1242,13 @@ private fun SupportReportSkeleton() {
             .fillMaxWidth()
             .graphicsLayer { alpha = dim }
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(Modifier.width(90.dp).height(12.dp).clip(wyrmRounded(5.dp)).background(Wyrm.Well))
-        Box(Modifier.fillMaxWidth().height(13.dp).clip(wyrmRounded(5.dp)).background(Wyrm.Well))
-        Box(Modifier.width(190.dp).height(13.dp).clip(wyrmRounded(5.dp)).background(Wyrm.Well))
+        Box(Modifier.width(90.dp).height(12.dp).clip(wyrmRounded(5.dp)).background(wyrmScopedPalette.well))
+        Box(Modifier.fillMaxWidth().height(13.dp).clip(wyrmRounded(5.dp)).background(wyrmScopedPalette.well))
+        Box(Modifier.width(190.dp).height(13.dp).clip(wyrmRounded(5.dp)).background(wyrmScopedPalette.well))
     }
 }

@@ -24,7 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,6 +85,8 @@ fun NotificationsScreen(
     onHighlightConsumed: () -> Unit = {},
     onRefresh: (done: () -> Unit) -> Unit = { it() },
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var pulling by remember { mutableStateOf(false) }
     LaunchedEffect(pulling) { if (pulling) onRefresh { pulling = false } }
     val listState = rememberLazyListState()
@@ -97,7 +99,7 @@ fun NotificationsScreen(
             onHighlightConsumed()
         }
     }
-    Box(modifier = Modifier.fillMaxSize().background(Wyrm.Paper)) {
+    Box(modifier = Modifier.fillMaxSize().background(wyrmScopedPalette.paper)) {
     Column(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -117,8 +119,8 @@ fun NotificationsScreen(
                                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Link, size = 16.dp, semibold = true)
-                                    Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.Link)
+                                    IosIcon(IosGlyph.CHEVRON_LEFT, wyrmScopedPalette.link, size = 16.dp, semibold = true)
+                                    Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = wyrmScopedPalette.link)
                                 }
                             }
                         }
@@ -130,7 +132,7 @@ fun NotificationsScreen(
                                 fontFamily = Wyrm.Body,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 12.sp,
-                                color = Wyrm.Link,
+                                color = wyrmScopedPalette.link,
                                 modifier = Modifier.clickable(onClick = onMarkAllRead),
                             )
                         }
@@ -235,6 +237,9 @@ private fun NotificationCard(
     onOpenLeaderboard: () -> Unit,
     onOpenBackup: () -> Unit,
 ) {
+ WyrmHeroTheme(slot = 2, enabled = notification.kind == NotificationKind.EVENT) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     NotificationCardShell(
         onClick = onTap,
         onLongClick = onLongPress,
@@ -243,7 +248,7 @@ private fun NotificationCard(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(7.dp).clip(WyrmCapsule).background(if (notification.read) Color.Transparent else Wyrm.Live))
+                Box(Modifier.size(7.dp).clip(WyrmCapsule).background(if (notification.read) Color.Transparent else wyrmScopedPalette.live))
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = alertLabel(notification.kind),
@@ -251,33 +256,35 @@ private fun NotificationCard(
                     fontWeight = FontWeight.Bold,
                     fontSize = 9.5.sp,
                     letterSpacing = 1.sp,
-                    color = Wyrm.Live,
+                    color = wyrmScopedPalette.live,
                 )
                 Spacer(Modifier.weight(1f))
-                Text(notification.createdAt.take(10), fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet)
+                Text(notification.createdAt.take(10), fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = wyrmScopedPalette.quiet)
                 Box(
                     Modifier
                         .size(28.dp)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onLongPress),
                     contentAlignment = Alignment.Center,
-                ) { IosIcon(IosGlyph.ELLIPSIS, Wyrm.Quiet, size = 18.dp) }
+                ) { IosIcon(IosGlyph.ELLIPSIS, wyrmScopedPalette.quiet, size = 18.dp) }
             }
-            Text(notification.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Wyrm.Ink)
+            Text(notification.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = wyrmScopedPalette.ink)
             if (notification.body.isNotBlank()) {
                 WyrmMarkdown(source = notification.body, baseSize = 12.5.sp)
             }
             alertMeta(notification).forEach { (key, value) ->
                 Row {
-                    Text(key, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet)
+                    Text(key, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
                     Spacer(Modifier.weight(1f))
-                    Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = Wyrm.Ink)
+                    Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = wyrmScopedPalette.ink)
                 }
             }
             alertActionTitle(notification)?.let { action ->
-                Text("$action ›", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Link)
+                Text("$action ›", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = wyrmScopedPalette.link)
             }
         }
     }
+
+ }
 }
 
 /** The kind in tracked caps, as Wyrm iOS words it (`WyrmAlertRouting.label`). */
@@ -285,6 +292,7 @@ private fun alertLabel(kind: NotificationKind): String = when (kind) {
     NotificationKind.TRAIL_LIKE -> "BEAD ON YOUR TRAIL"
     NotificationKind.TRAIL_REPLY -> "TRAIL REPLY"
     NotificationKind.SUPPORT -> "FROM WYRM"
+    NotificationKind.MENTION -> "MENTION"
     else -> kind.name.replace('_', ' ')
 }
 
@@ -292,6 +300,7 @@ private fun alertLabel(kind: NotificationKind): String = when (kind) {
 private fun alertActionTitle(n: WyrmNotification): String? = when (n.kind) {
     NotificationKind.TRAIL_LIKE, NotificationKind.TRAIL_REPLY -> if (n.trailId.isNullOrBlank()) null else "View trail"
     NotificationKind.SUPPORT -> "See your reports"
+    NotificationKind.MENTION -> "View message"
     NotificationKind.FOLLOW -> if (n.actorId.isNullOrBlank()) null else "View profile"
     else -> null
 }
@@ -317,6 +326,8 @@ private fun NotificationActionsPopup(
     onSetRead: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val dismissInteraction = remember { MutableInteractionSource() }
     val cardInteraction = remember { MutableInteractionSource() }
     Box(
@@ -336,8 +347,8 @@ private fun NotificationActionsPopup(
                 .padding(bottom = insetBottom + Wyrm.Gap)
                 .fillMaxWidth()
                 .clip(wyrmRounded(15.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(15.dp))
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(15.dp))
                 .clickable(
                     interactionSource = cardInteraction,
                     indication = null,
@@ -351,7 +362,7 @@ private fun NotificationActionsPopup(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.5.sp,
                 letterSpacing = 0.92.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
             Spacer(Modifier.height(6.dp))
             Text(
@@ -359,14 +370,14 @@ private fun NotificationActionsPopup(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 maxLines = 2,
             )
             Spacer(Modifier.height(16.dp))
             WyrmRule()
             NotificationPopupAction(
                 label = if (notification.read) "Mark as unread" else "Mark as read",
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
             ) { onSetRead(!notification.read) }
             WyrmRule()
             NotificationPopupAction("Delete notification", Wyrm.Blood, onDelete)
@@ -392,9 +403,11 @@ private fun NotificationPopupAction(label: String, color: Color, onClick: () -> 
 /** The small-caps tag every card opens with, plus the unread dot and the clock. */
 @Composable
 private fun NotificationHeader(tag: String, tagColor: Color, timestamp: String, unread: Boolean) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     // Wyrm iOS: unread dot, the kind in tracked caps, the date on the right.
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(7.dp).clip(WyrmCapsule).background(if (unread) Wyrm.Live else Color.Transparent))
+        Box(Modifier.size(7.dp).clip(WyrmCapsule).background(if (unread) wyrmScopedPalette.live else Color.Transparent))
         Spacer(Modifier.width(8.dp))
         Text(
             text = tag.uppercase(),
@@ -402,38 +415,42 @@ private fun NotificationHeader(tag: String, tagColor: Color, timestamp: String, 
             fontWeight = FontWeight.Bold,
             fontSize = 9.5.sp,
             letterSpacing = 1.sp,
-            color = Wyrm.Live,
+            color = wyrmScopedPalette.live,
         )
         Spacer(Modifier.weight(1f))
         Text(
             text = timestamp,
             fontFamily = Wyrm.Body,
             fontSize = 10.5.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
     }
 }
 
 @Composable
 private fun UnreadDot() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .size(7.dp)
             .clip(wyrmRounded(999.dp))
-            .background(Wyrm.Live),
+            .background(wyrmScopedPalette.live),
     )
 }
 
 @Composable
 private fun FeatureCardBody(n: WyrmNotification) {
-    NotificationHeader("New Feature", Wyrm.Live, n.timestamp, !n.read)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    NotificationHeader("New Feature", wyrmScopedPalette.live, n.timestamp, !n.read)
     Spacer(Modifier.height(8.dp))
     Text(
         text = n.title,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.Bold,
         fontSize = 15.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
     )
     Spacer(Modifier.height(8.dp))
     WyrmMarkdown(n.body, baseSize = 14.sp)
@@ -441,6 +458,8 @@ private fun FeatureCardBody(n: WyrmNotification) {
 
 @Composable
 private fun EventCardBody(n: WyrmNotification, onJoin: (String) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var clock by remember(n.id) { mutableLongStateOf(System.currentTimeMillis()) }
     // A live countdown on Play (OM, 2026-10-01): every second, computed from the
     // start time each tick, never a cached label.
@@ -451,14 +470,14 @@ private fun EventCardBody(n: WyrmNotification, onJoin: (String) -> Unit) {
         }
     }
     val started = n.hasStarted(java.time.Instant.ofEpochMilli(clock))
-    NotificationHeader("Battledome Event", Wyrm.Live, n.timestamp, !n.read)
+    NotificationHeader("Battledome Event", wyrmScopedPalette.live, n.timestamp, !n.read)
     Spacer(Modifier.height(8.dp))
     Text(
         text = n.title,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.Bold,
         fontSize = 16.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
     )
     if (n.body.isNotBlank()) {
         Spacer(Modifier.height(8.dp))
@@ -483,14 +502,16 @@ private fun EventCardBody(n: WyrmNotification, onJoin: (String) -> Unit) {
 
 @Composable
 private fun UpdateCardBody(n: WyrmNotification, onOpenUpdate: () -> Unit) {
-    NotificationHeader("Update Available", Wyrm.Live, n.timestamp, !n.read)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    NotificationHeader("Update Available", wyrmScopedPalette.live, n.timestamp, !n.read)
     Spacer(Modifier.height(8.dp))
     Text(
         text = n.title,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.Bold,
         fontSize = 15.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
     )
     n.version?.takeIf { it.isNotBlank() }?.let {
         Spacer(Modifier.height(6.dp))
@@ -506,7 +527,9 @@ private fun UpdateCardBody(n: WyrmNotification, onOpenUpdate: () -> Unit) {
 
 @Composable
 private fun InviteCardBody(n: WyrmNotification, onJoin: (String) -> Unit) {
-    NotificationHeader("Server Invite", Wyrm.Live, n.timestamp, !n.read)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    NotificationHeader("Server Invite", wyrmScopedPalette.live, n.timestamp, !n.read)
     Spacer(Modifier.height(8.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         WyrmAvatar(
@@ -522,7 +545,7 @@ private fun InviteCardBody(n: WyrmNotification, onJoin: (String) -> Unit) {
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
         )
     }
     if (n.body.isNotBlank()) {
@@ -539,6 +562,8 @@ private fun InviteCardBody(n: WyrmNotification, onJoin: (String) -> Unit) {
 
 @Composable
 private fun FollowCardBody(n: WyrmNotification) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(verticalAlignment = Alignment.CenterVertically) {
         WyrmAvatar(
             url = "",
@@ -550,7 +575,7 @@ private fun FollowCardBody(n: WyrmNotification) {
         Spacer(Modifier.width(11.dp))
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Wyrm.Ink)) {
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = wyrmScopedPalette.ink)) {
                     append(n.actorName ?: "Someone")
                 }
                 append("  " + n.body)
@@ -558,7 +583,7 @@ private fun FollowCardBody(n: WyrmNotification) {
             fontFamily = Wyrm.Body,
             fontSize = 13.sp,
             lineHeight = 19.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(8.dp))
@@ -571,7 +596,7 @@ private fun FollowCardBody(n: WyrmNotification) {
                 text = n.timestamp,
                 fontFamily = Wyrm.Body,
                 fontSize = 10.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
         }
     }
@@ -579,14 +604,16 @@ private fun FollowCardBody(n: WyrmNotification) {
 
 @Composable
 private fun AchievementCardBody(n: WyrmNotification) {
-    NotificationHeader("Milestone", Wyrm.Live, n.timestamp, !n.read)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    NotificationHeader("Milestone", wyrmScopedPalette.live, n.timestamp, !n.read)
     Spacer(Modifier.height(8.dp))
     Text(
         text = n.title,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.Bold,
         fontSize = 15.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
     )
     Spacer(Modifier.height(6.dp))
     WyrmMarkdown(n.body, baseSize = 14.sp)
@@ -594,6 +621,8 @@ private fun AchievementCardBody(n: WyrmNotification) {
 
 @Composable
 private fun NoticeCardBody(n: WyrmNotification) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     NotificationHeader("Notice", Wyrm.Blood, n.timestamp, !n.read)
     Spacer(Modifier.height(8.dp))
     Text(
@@ -601,7 +630,7 @@ private fun NoticeCardBody(n: WyrmNotification) {
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.Bold,
         fontSize = 15.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
     )
     if (n.body.isNotBlank()) {
         Spacer(Modifier.height(6.dp))
@@ -611,14 +640,16 @@ private fun NoticeCardBody(n: WyrmNotification) {
 
 @Composable
 private fun BroadcastCardBody(n: WyrmNotification) {
-    NotificationHeader("Announcement", Wyrm.Quiet, n.timestamp, !n.read)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    NotificationHeader("Announcement", wyrmScopedPalette.quiet, n.timestamp, !n.read)
     Spacer(Modifier.height(8.dp))
     Text(
         text = n.title,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.Bold,
         fontSize = 15.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
     )
     if (n.body.isNotBlank()) {
         Spacer(Modifier.height(6.dp))
@@ -628,14 +659,16 @@ private fun BroadcastCardBody(n: WyrmNotification) {
 
 @Composable
 private fun RankCardBody(n: WyrmNotification, onOpenLeaderboard: () -> Unit) {
-    NotificationHeader("Leaderboard", Wyrm.Live, n.timestamp, !n.read)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    NotificationHeader("Leaderboard", wyrmScopedPalette.live, n.timestamp, !n.read)
     Spacer(Modifier.height(8.dp))
     Text(
         text = n.title,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.Bold,
         fontSize = 15.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
     )
     Spacer(Modifier.height(6.dp))
     WyrmMarkdown(n.body, baseSize = 14.sp)
@@ -645,14 +678,16 @@ private fun RankCardBody(n: WyrmNotification, onOpenLeaderboard: () -> Unit) {
 
 @Composable
 private fun BackupCardBody(n: WyrmNotification, onOpenBackup: () -> Unit) {
-    NotificationHeader("Backup", Wyrm.Quiet, n.timestamp, !n.read)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    NotificationHeader("Backup", wyrmScopedPalette.quiet, n.timestamp, !n.read)
     Spacer(Modifier.height(8.dp))
     Text(
         text = n.title,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.Bold,
         fontSize = 15.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
     )
     Spacer(Modifier.height(6.dp))
     WyrmMarkdown(n.body, baseSize = 14.sp)
@@ -668,6 +703,8 @@ private fun NotificationOutlineAction(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = wyrmRounded(12.dp)
@@ -677,8 +714,8 @@ private fun NotificationOutlineAction(
             .height(46.dp)
             .scale(pressScale(pressed))
             .clip(shape)
-            .background(if (enabled) Wyrm.Paper else Wyrm.Well)
-            .border(1.dp, Wyrm.Ink.copy(alpha = if (enabled) 0.24f else 0.08f), shape)
+            .background(if (enabled) wyrmScopedPalette.paper else wyrmScopedPalette.well)
+            .border(1.dp, wyrmScopedPalette.ink.copy(alpha = if (enabled) 0.24f else 0.08f), shape)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -692,7 +729,7 @@ private fun NotificationOutlineAction(
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
-            color = if (enabled) Wyrm.Ink else Wyrm.Quiet.copy(alpha = 0.55f),
+            color = if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.quiet,
         )
     }
 }
@@ -761,6 +798,8 @@ private fun eventCountdown(startsAt: String?, nowMs: Long): String {
 /** A label/value pair, the same shape an event's rundown always takes. */
 @Composable
 private fun InfoRow(label: String, value: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -772,7 +811,7 @@ private fun InfoRow(label: String, value: String) {
             fontWeight = FontWeight.Bold,
             fontSize = 10.sp,
             letterSpacing = 1.2.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.width(78.dp),
         )
         Text(
@@ -780,7 +819,7 @@ private fun InfoRow(label: String, value: String) {
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.Bold,
             fontSize = 12.5.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
         )
     }
 }

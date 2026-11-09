@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="trails_camera" path="trails-camera/" />
+    <!-- Settings › Developer › Wyrm logs: the shared copy (2026-11-07). -->
+    <cache-path name="wyrm_logs" path="wyrm-logs/" />
 </paths>

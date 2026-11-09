@@ -1,4 +1,5 @@
 #include "tcontext.h"
+#include "tswappy.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +17,15 @@
    rebuild does can bring it back. Retrying every frame froze the app until it
    was killed. Noted once; tcontext_begin then draws nothing, the window stops
    its swapchain recovery, and the app asks the player to reopen Wyrm. */
+#ifdef __ANDROID__
+#include <SDL3/SDL_timer.h>
+/* ADPF work time (2026-11-07, main.c): this frame's wait inside
+   tcontext_begin (fence + acquire) and when its present was called. Both
+   are idle or pacing, not work, and are left out of the reported time. */
+uint64_t tcontext_begin_wait_ns;
+uint64_t tcontext_present_start_ns;
+#endif
+
 static void tcontext_device_lost(tcontext* context, const char* where) {
   context->swapchain_ok = false;
   if (context->device_lost) return;
@@ -72,13 +82,25 @@ void _tcontext_create_instance(tcontext* context) {
 bool _tcontext_create_surface(tcontext* context, twindow* window) {
   context->surface = VK_NULL_HANDLE;
 #ifdef WYRM_SDL_JNI
+#ifdef WYRM_DESKTOP
+  /* The game canvas in a direct match, else the hidden window
+     (desktop_bridge.c "Direct presentation"). */
+  if (!wyrm_desktop_create_surface(window->handle, context->instance,
+                                   &context->surface)) {
+#else
   if (!SDL_Vulkan_CreateSurface(window->handle, context->instance, NULL,
                                 &context->surface)) {
+#endif
     SDL_Log("Wyrm: Vulkan surface creation failed: %s", SDL_GetError());
     android_startup_failure(4, "Vulkan surface failed", SDL_GetError());
     return false;
   }
   TCONTEXT_LOG("Wyrm: Vulkan surface ready");
+#ifdef __ANDROID__
+  tswappy_set_window(SDL_GetPointerProperty(
+      SDL_GetWindowProperties(window->handle),
+      SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, NULL));
+#endif
 #else
   if (glfwCreateWindowSurface(context->instance, window->handle, NULL,
                               &context->surface) != VK_SUCCESS)
@@ -309,6 +331,19 @@ int _tcontext_select_device(tcontext* context) {
 }
 
 void _tcontext_create_device(tcontext* context) {
+  const char* extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+  const char** enabled = extensions;
+  uint32_t enabled_count = 1;
+#ifdef __ANDROID__
+  /* Swappy's extensions (VK_GOOGLE_display_timing where present). */
+  uint32_t swappy_count = 0;
+  const char** swappy_list = tswappy_device_extensions(
+      context->ph_device, VK_KHR_SWAPCHAIN_EXTENSION_NAME, &swappy_count);
+  if (swappy_list && swappy_count) {
+    enabled = swappy_list;
+    enabled_count = swappy_count;
+  }
+#endif
   VkResult result = vkCreateDevice(
       context->ph_device,
       &(VkDeviceCreateInfo){
@@ -326,10 +361,12 @@ void _tcontext_create_device(tcontext* context) {
                   .pQueuePriorities = &(float){1.0f}},
           .enabledLayerCount = 0,
           .ppEnabledLayerNames = NULL,
-          .enabledExtensionCount = 1,
-          .ppEnabledExtensionNames =
-              (const char*[]){VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
+          .enabledExtensionCount = enabled_count,
+          .ppEnabledExtensionNames = enabled},
       NULL, &context->device);
+#ifdef __ANDROID__
+  tswappy_free_extensions(swappy_list);
+#endif
   TCONTEXT_LOG("Wyrm: vkCreateDevice=%d", (int)result);
 #ifdef WYRM_SDL_JNI
   if (result == VK_SUCCESS) {
@@ -343,6 +380,9 @@ void _tcontext_create_device(tcontext* context) {
 #endif
 
   vkGetDeviceQueue(context->device, context->queue_family, 0, &context->queue);
+#ifdef __ANDROID__
+  if (result == VK_SUCCESS) tswappy_device_created(context);
+#endif
 }
 
 void _tcontext_create_swapchain(tcontext* context, bool vsync) {
@@ -353,6 +393,17 @@ void _tcontext_create_swapchain(tcontext* context, bool vsync) {
   context->size[0] = capabilities.currentExtent.width;
   context->size[1] = capabilities.currentExtent.height;
   context->min_image_count = capabilities.minImageCount + 1;
+#ifdef WYRM_DESKTOP
+  /* Direct match on Windows (OM, 2026-11-05: "arrow late response"): FIFO
+     with three images let two finished frames wait in line for the monitor
+     (~35-50 ms at 60 Hz). Two images (Windows' minimum) leave at most one:
+     the frame being drawn shows at the next refresh. With late latching
+     (main.c) the mouse is read after that wait. */
+  if (wyrm_desktop_direct()) {
+    context->min_image_count = capabilities.minImageCount;
+    if (context->min_image_count < 2) context->min_image_count = 2;
+  }
+#endif
   if (capabilities.maxImageCount > 0 &&
       context->min_image_count > capabilities.maxImageCount)
     context->min_image_count = capabilities.maxImageCount;
@@ -469,6 +520,9 @@ void _tcontext_create_swapchain(tcontext* context, bool vsync) {
              capabilities.currentExtent.width, capabilities.currentExtent.height,
              context->min_image_count);
     android_startup_stage(7, "Swapchain ready", detail);
+#ifdef __ANDROID__
+    tswappy_swapchain_created(context);
+#endif
   } else {
     char detail[96];
     snprintf(detail, sizeof(detail), "vkCreateSwapchainKHR returned %d", (int)result);
@@ -790,6 +844,9 @@ tcontext* tcontext_create(twindow* window, bool vsync, int fif) {
 void tcontext_resize(tcontext* context, const ivec2 size, bool vsync) {
   if (context->surface_lost || context->surface == VK_NULL_HANDLE) return;
   tcontext_wait_idle(context);
+#ifdef __ANDROID__
+  tswappy_swapchain_destroying(context, context->swapchain);
+#endif
   context->old_swapchain = context->swapchain;
   context->swapchain = VK_NULL_HANDLE;
   const uint32_t old_image_count = context->image_count;
@@ -863,6 +920,9 @@ static void _tcontext_destroy_swapchain_resources(tcontext* context) {
   }
   context->image_count = 0;
   if (context->swapchain != VK_NULL_HANDLE) {
+#ifdef __ANDROID__
+    tswappy_swapchain_destroying(context, context->swapchain);
+#endif
     vkDestroySwapchainKHR(context->device, context->swapchain, NULL);
     context->swapchain = VK_NULL_HANDLE;
   }
@@ -931,7 +991,74 @@ bool tcontext_recreate_surface(tcontext* context, twindow* window, bool vsync) {
 #endif
 }
 
+/*
+ * Late input latching (OM, 2026-10-23: "input lag"): the frame's wait (the
+ * fence, then the swapchain's next image, which is where FIFO blocks for the
+ * display) used to come after the touches were read and the game had moved,
+ * so every frame showed input as old as that wait. The loop now calls this
+ * first and reads the touches after it. The image must then be drawn and
+ * presented this frame; tcontext_begin uses it. Window changes are not applied
+ * between this and the present (twindow_pump_events only queues them).
+ */
+bool tcontext_acquire(tcontext* context) {
+  if (context->acquired) return true;
+  context->last_present_succeeded = false;
+  if (context->device_lost) return false;
+  if (context->swapchain == VK_NULL_HANDLE || context->image_count == 0) {
+    if (!context->surface_lost) context->swapchain_ok = false;
+    return false;
+  }
+  tcontext_frame* fr = context->frames + context->current_frame;
+  if (vkWaitForFences(context->device, 1, &fr->wait_fence, VK_TRUE,
+                      UINT64_MAX) == VK_ERROR_DEVICE_LOST) {
+    tcontext_device_lost(context, "fence wait");
+    return false;
+  }
+  VkResult r = vkAcquireNextImageKHR(context->device, context->swapchain,
+                                     UINT64_MAX, fr->present_complete,
+                                     VK_NULL_HANDLE, &context->current_image);
+  if (r == VK_ERROR_OUT_OF_DATE_KHR) {
+    context->swapchain_ok = false;
+    return false;
+  }
+  if (r == VK_ERROR_DEVICE_LOST) {
+    tcontext_device_lost(context, "acquire");
+    return false;
+  }
+  if (r == VK_ERROR_SURFACE_LOST_KHR) {
+    context->surface_lost = true;
+    context->swapchain_ok = false;
+    TCONTEXT_LOG("Wyrm: Android Vulkan surface was lost during acquire");
+    return false;
+  }
+  if ((r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) ||
+      context->current_image >= context->image_count) {
+    TCONTEXT_LOG("Wyrm: vkAcquireNextImageKHR failed: %d image=%u/%u",
+                 (int)r, context->current_image, context->image_count);
+    return false;
+  }
+  context->acquired = true;
+  return true;
+}
+
 bool tcontext_begin(tcontext* context) {
+  if (context->acquired) {
+    /* tcontext_acquire already waited and took the image this frame. */
+    context->acquired = false;
+#ifdef __ANDROID__
+    tcontext_begin_wait_ns = 0; /* that wait came before the frame's work */
+#endif
+    tcontext_frame* fr = context->frames + context->current_frame;
+    vkResetFences(context->device, 1, &fr->wait_fence);
+    vkResetCommandBuffer(fr->cmd, 0);
+    vkBeginCommandBuffer(fr->cmd,
+                         &(VkCommandBufferBeginInfo){
+                             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                             .pNext = NULL,
+                             .flags = 0,
+                             .pInheritanceInfo = NULL});
+    return true;
+  }
   context->last_present_succeeded = false;
   if (context->device_lost) return false;
   /* No swapchain right now: a rebuild failed, or the surface was torn down
@@ -944,6 +1071,9 @@ bool tcontext_begin(tcontext* context) {
     return false;
   }
   tcontext_frame* fr = context->frames + context->current_frame;
+#ifdef __ANDROID__
+  const uint64_t wait_from = SDL_GetTicksNS();
+#endif
   if (vkWaitForFences(context->device, 1, &fr->wait_fence, VK_TRUE,
                       UINT64_MAX) == VK_ERROR_DEVICE_LOST) {
     tcontext_device_lost(context, "fence wait");
@@ -953,6 +1083,9 @@ bool tcontext_begin(tcontext* context) {
   VkResult r = vkAcquireNextImageKHR(context->device, context->swapchain,
                                      UINT64_MAX, fr->present_complete,
                                      VK_NULL_HANDLE, &context->current_image);
+#ifdef __ANDROID__
+  tcontext_begin_wait_ns = SDL_GetTicksNS() - wait_from;
+#endif
 
   if (r == VK_ERROR_OUT_OF_DATE_KHR) {
     context->swapchain_ok = false;
@@ -1117,7 +1250,10 @@ void tcontext_end(tcontext* context) {
 
   vkCmdEndRenderPass(fr->cmd);
 #ifdef WYRM_DESKTOP
-  desktop_capture_record(context, fr->cmd);
+  /* Presented straight to the screen in a direct match: no readback, so no
+     copy and no wait on this frame's fence. */
+  const bool desktop_capture = !wyrm_desktop_direct();
+  if (desktop_capture) desktop_capture_record(context, fr->cmd);
 #endif
   vkEndCommandBuffer(fr->cmd);
 
@@ -1149,17 +1285,23 @@ void tcontext_end(tcontext* context) {
     return;
   }
 
-  VkResult r = vkQueuePresentKHR(
-      context->queue,
-      &(VkPresentInfoKHR){
-          .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-          .pNext = NULL,
-          .waitSemaphoreCount = 1,
-          .pWaitSemaphores = &context->render_completes[context->current_image],
-          .swapchainCount = 1,
-          .pSwapchains = &context->swapchain,
-          .pImageIndices = &context->current_image,
-          .pResults = NULL});
+  const VkPresentInfoKHR present_info = {
+      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+      .pNext = NULL,
+      .waitSemaphoreCount = 1,
+      .pWaitSemaphores = &context->render_completes[context->current_image],
+      .swapchainCount = 1,
+      .pSwapchains = &context->swapchain,
+      .pImageIndices = &context->current_image,
+      .pResults = NULL};
+#ifdef __ANDROID__
+  /* Android Frame Pacing (tswappy.h). Swappy may sleep here for its vsync:
+     the frame's work ends now. */
+  tcontext_present_start_ns = SDL_GetTicksNS();
+  VkResult r = tswappy_present(context, &present_info);
+#else
+  VkResult r = vkQueuePresentKHR(context->queue, &present_info);
+#endif
 
   if (r == VK_ERROR_DEVICE_LOST) tcontext_device_lost(context, "present");
   if (r == VK_ERROR_SURFACE_LOST_KHR) {
@@ -1177,7 +1319,7 @@ void tcontext_end(tcontext* context) {
   context->last_present_succeeded =
       (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR);
 #ifdef WYRM_DESKTOP
-  desktop_capture_publish(context, fr->wait_fence);
+  if (desktop_capture) desktop_capture_publish(context, fr->wait_fence);
 #endif
 #ifdef WYRM_SDL_JNI
   if (!context->last_present_succeeded && r != VK_ERROR_SURFACE_LOST_KHR &&
@@ -1219,6 +1361,10 @@ void tcontext_destroy(tcontext* context) {
 
   free(context->swapchain_frames);
   vkDestroyRenderPass(context->device, context->renderpass, NULL);
+#ifdef __ANDROID__
+  tswappy_swapchain_destroying(context, context->swapchain);
+  tswappy_device_destroying(context);
+#endif
   vkDestroySwapchainKHR(context->device, context->swapchain, NULL);
   vkDestroyDevice(context->device, NULL);
   vkDestroySurfaceKHR(context->instance, context->surface, NULL);

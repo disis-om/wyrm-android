@@ -4,6 +4,7 @@
 #include "../game/snake.h"
 #include "../game/tags.h"
 #include "../game/wyrm_skins.h"
+#include "../game/wyrm_audio.h"
 #include "../game/oef.h"
 #include "../platform/android_home.h"
 #include "../user.h"
@@ -16,8 +17,8 @@
  * Custom arenas (OM, 2026-10-13): the id community-run arenas know a player
  * by, sent the way NTL 9.68 sends it (main-mt.js `j3`): 'C' (0x43) + 16
  * characters of [0-9A-Za-z], right after the challenge answer and before the
- * join, only to the arenas on the list the apps fetch
- * (ntl-slither.com/slither/useplayerid.php; official arenas are not on it),
+ * join. Since 2026-10-24 to every arena, as NTL's `!idforce` (NTL 9.76 has
+ * no online list any more; the old one was ntl-slither.com/slither/useplayerid.php),
  * compared as "ip:port" in lower case. Set by the apps from any thread
  * (Android JNI WyrmActivity.nativeSetCustomArenas, iOS
  * WyrmIOSSetCustomArenas).
@@ -52,36 +53,19 @@ void custom_arenas_set(const char* id, const char* list) {
   SDL_UnlockSpinlock(&custom_arena_lock);
 }
 
-/* True, with the packet in `out`, when `arena` is on the list. */
+/* The packet for every arena (OM, 2026-10-24, NTL's `!idforce`): false only
+   while the app has not handed over a valid id. `arena` is no longer used. */
 static bool custom_arena_id_packet(const char* arena,
                                    uint8_t out[1 + CUSTOM_ARENA_ID_LEN]) {
-  bool found = false;
-  size_t len = arena ? strlen(arena) : 0;
-  if (len == 0) return false;
+  (void)arena;
   SDL_LockSpinlock(&custom_arena_lock);
-  if (custom_arena_id[0]) {
-    const char* line = custom_arena_list;
-    while (*line && !found) {
-      const char* end = strchr(line, '\n');
-      size_t n = end ? (size_t)(end - line) : strlen(line);
-      if (n == len) {
-        found = true;
-        for (size_t i = 0; i < n; i++) {
-          if (line[i] != (char)tolower((unsigned char)arena[i])) {
-            found = false;
-            break;
-          }
-        }
-      }
-      line = end ? end + 1 : line + n;
-    }
-    if (found) {
-      out[0] = 'C';
-      memcpy(out + 1, custom_arena_id, CUSTOM_ARENA_ID_LEN);
-    }
+  bool ready = custom_arena_id[0] != 0;
+  if (ready) {
+    out[0] = 'C';
+    memcpy(out + 1, custom_arena_id, CUSTOM_ARENA_ID_LEN);
   }
   SDL_UnlockSpinlock(&custom_arena_lock);
-  return found;
+  return ready;
 }
 
 #ifdef WYRM_SDL_JNI
@@ -527,6 +511,7 @@ static void food_packet(game_data* g, const uint8_t* a, size_t n) {
     for (int i=last;i>=0;i--) if (g->data.foods[i].id==id) {
       if (eater>=0) {
         g->data.foods[i].eaten=true; g->data.foods[i].ebid=eater;
+        if (eater==g->data.snake_id) wyrm_audio_food_eaten(g->data.foods[i].sz);
         g->data.foods[i].eaten_fr=0;
       } else {
         g->data.foods[i]=g->data.foods[last];
@@ -577,11 +562,27 @@ static void minimap_packet(game_data* g, const uint8_t* a, size_t n) {
   free(teams); free(layer); free(staged);
 }
 
+/* A name or message cut at a byte limit can end in half a UTF-8 character,
+   which draws as '?' (OM, 2026-11-07): the broken tail is dropped. */
+static void wyrm_utf8_clip(char* s) {
+  size_t n = strlen(s), i = n;
+  int follow = 0;
+  while (i > 0 && follow < 4 && ((unsigned char)s[i - 1] & 0xC0) == 0x80) {
+    --i;
+    ++follow;
+  }
+  if (i == 0) return;
+  unsigned char lead = (unsigned char)s[i - 1];
+  int need = lead >= 0xF0 ? 3 : lead >= 0xE0 ? 2 : lead >= 0xC0 ? 1 : 0;
+  if (lead >= 0xC0 && follow < need) s[i - 1] = 0;
+}
+
 static void arena_text(char* out, size_t capacity, const uint8_t* in, size_t count) {
   /* Plain text, never a format string or markup. Bounded native storage. */
   size_t size=count<capacity-1?count:capacity-1;
   for (size_t i=0;i<size;i++) out[i]=in[i]>=32?(char)in[i]:' ';
   out[size]=0;
+  wyrm_utf8_clip(out);
 }
 
 static void auxiliary_packet(game_data* g, const uint8_t* a, size_t n) {
@@ -711,7 +712,7 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
     }
 
     /* Custom arenas (OM, 2026-10-13): NTL's id packet, between the answer
-       and the join, only to an arena on the list. */
+       and the join, to every arena (2026-10-24). */
     {
       uint8_t id_packet[1 + CUSTOM_ARENA_ID_LEN];
       if (custom_arena_id_packet(user_settings_arena(usrs), id_packet)) {
@@ -946,6 +947,7 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
       size_t cp_len = GLM_MIN(nl, MAX_NICKNAME_LEN);
       memcpy(o.nk, a + m, cp_len);
       o.nk[cp_len] = '\0';
+      wyrm_utf8_clip(o.nk);
       m += nl;
       int skl = gdata->data.protocol_version >= 11 ? a[m++] : 0;
       /* NTL's tag corner (see ntl_tag_corner), read as NTL reads it: the tag,
@@ -1124,6 +1126,11 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
       o.cfl = o.tl - .6;
       o.id = id;
       o.ntl_id = id;
+      /* Packet S may have come before our snake (a join or a respawn): our
+         snake then takes NTL's id now (2026-11-07,
+         Wyrm iOS/Scripts/engine_team_sid_2026_11_07.py). */
+      if (id == gdata->data.session_snake_id && gdata->data.session_id)
+        o.ntl_id = snake_ntl_id(id, gdata->data.session_id);
       o.xx = snx;
       o.yy = sny;
       o.cv = cv % NUM_DEFAULT_SKINS;
@@ -1190,6 +1197,8 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
           } else
             o->id = -1234;
           if (is_kill) {
+            /* AIR's death sounds (OM, 2026-11-08, game/wyrm_audio.c). */
+            wyrm_audio_snake_died(gdata, o, o->id == -1);
             o->dead = true;
             o->dead_amt = 0;
             o->edir = 0;
@@ -1774,6 +1783,7 @@ void got_packet(tenv* env, uint8_t* a, int a_len) {
         size_t cp_len = GLM_MIN(nl, MAX_NICKNAME_LEN);
         memcpy(gdata->data.lb.entries[pos - 1].nickname, a + m, cp_len);
         gdata->data.lb.entries[pos - 1].nickname[cp_len] = '\0';
+        wyrm_utf8_clip(gdata->data.lb.entries[pos - 1].nickname);
       }
       m += nl;
     }

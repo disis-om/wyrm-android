@@ -39,18 +39,21 @@ object TeamHudStore {
         // (OM, 2026-10-18), appended likewise.
         "global_name", "global_text",
         "chatbtn_label", "chatbtn_fill", "chatbtn_scale", "chatbtn_opacity",
+        // The chat button's label opacity (OM, 2026-11-01), appended likewise.
+        "chatbtn_label_opacity",
     )
-    private val DEFAULTS = floatArrayOf(1f, 1f, 340f, 210f, 0f, 0f, 400f, 270f, 0f, 0f, 1f, 1f, 1f, 0f, 1f, 1f, 0f, 0f,
-        0f, 0f, 0f, 9f, 1f, 0.9f)
+    private val DEFAULTS = floatArrayOf(1f, 1f, 340f, 210f, 0f, 0f, 400f, 270f, 0f, 0f, 1f, 1f, 1f, 0f, 0.75f, 0.75f, 0f, 0f,
+        0f, 0f, 0f, 9f, 1f, 0.9f, 1f)
     private val RANGES = listOf(
         0.65f..1.60f, 0.05f..1f, 220f..900f, 120f..800f, 0f..8f, 0f..8f,
         240f..1000f, 150f..900f, 0f..8f, 0f..8f,
         0f..1f, 0f..1f, 0f..1f,
         0f..8f,
-        0.7f..2.2f, 1f..2.2f,
+        0.25f..3f, 0.25f..3f,
         0f..8f, 0f..8f,
         0f..8f, 0f..8f,
         0f..8f, 0f..9f, 0.6f..2.5f, 0.1f..1f,
+        0f..1f,
     )
 
     /** Colour indexes: whole numbers. */
@@ -77,6 +80,10 @@ object TeamHudStore {
     @JvmStatic
     fun attach(context: Context, publish: (FloatArray) -> Unit) {
         val store = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!store.getBoolean("lbOriginalV1", false)) {
+            store.edit().putFloat("lb_width", 0.75f).putFloat("lb_height", 0.75f)
+                .putBoolean("lbOriginalV1", true).commit()
+        }
         prefs = store
         KEYS.forEachIndexed { index, key ->
             values[key] = store.getFloat(key, DEFAULTS[index]).let {

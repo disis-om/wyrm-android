@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -266,35 +266,27 @@ fun PaperJoystick(
     opacity: Float = 1f,
     knob: Offset = Offset.Zero,
 ) {
-    val knobSize = diameter * 0.42f
-    val travel = (diameter - knobSize) / 2f
-    Box(
-        modifier = modifier.size(diameter).alpha(opacity.coerceIn(0f, 1f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clip(CircleShape)
-                .background(Wyrm.Card)
-                .border(1.5.dp, Wyrm.Ink, CircleShape),
-        )
-        Box(
-            Modifier
-                .size(diameter * 0.62f)
-                .clip(CircleShape)
-                .border(1.dp, Wyrm.Rule, CircleShape),
-        )
-        Box(
-            Modifier
-                .offset(
-                    x = travel * knob.x.coerceIn(-1f, 1f),
-                    y = travel * knob.y.coerceIn(-1f, 1f),
-                )
-                .size(knobSize)
-                .clip(CircleShape)
-                .background(Wyrm.Ink),
-        )
+    // The original's joystick (OM, 2026-11-01), as the arena draws it: a #808080
+    // disc and a white knob, each with a black halo; the default opacity 0.62
+    // is the original's 0.35 (mobile_controls.c draw_joystick).
+    val a = (opacity.coerceIn(0.05f, 1f) * 0.35f / 0.62f).coerceAtMost(1f)
+    androidx.compose.foundation.Canvas(modifier.size(diameter)) {
+        val base = size.minDimension * 0.5f * 0.73f
+        val c = center
+        fun halo(at: Offset, r: Float, spread: Float) {
+            for (i in 0 until 6) {
+                val t = (i + 0.5f) / 6f
+                val fade = (1f - t) * (1f - t)
+                drawCircle(Color.Black.copy(alpha = a * 0.55f * fade), r + spread * t, at,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(spread / 6f + 1f))
+            }
+        }
+        halo(c, base, base * 0.109f)
+        drawCircle(Color(0xFF808080).copy(alpha = a), base, c)
+        val knobR = base * 0.402f
+        val k = Offset(c.x + knob.x.coerceIn(-1f, 1f) * base * 0.536f, c.y + knob.y.coerceIn(-1f, 1f) * base * 0.536f)
+        halo(k, knobR, knobR * 0.146f)
+        drawCircle(Color.White.copy(alpha = a), knobR, k)
     }
 }
 
@@ -304,21 +296,32 @@ fun PaperBoostButton(
     modifier: Modifier = Modifier,
     opacity: Float = 1f,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = modifier
             .size(diameter)
             .clip(CircleShape)
-            .background(Wyrm.Card.copy(alpha = opacity.coerceIn(0f, 1f)))
-            .border(1.5.dp, Wyrm.Ink, CircleShape),
+            .background(wyrmScopedPalette.card.copy(alpha = opacity.coerceIn(0f, 1f)))
+            .border(1.5.dp, wyrmScopedPalette.ink, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = "»",
-            fontFamily = Wyrm.Body,
-            fontWeight = FontWeight.Bold,
-            fontSize = (diameter.value * 0.44f).sp,
-            color = Wyrm.Ink,
-        )
+        // The original boost's triangle, pointing up (OM, 2026-11-01), at the
+        // button's opacity, as the arena draws it (draw_boost).
+        val ink = wyrmScopedPalette.ink
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val k = size.minDimension * 0.5f / 110f
+            val c = center
+            fun tri(drop: Float) = androidx.compose.ui.graphics.Path().apply {
+                moveTo(c.x, c.y - 41.5f * k + drop)
+                lineTo(c.x + 56f * k, c.y + 25.5f * k + drop)
+                lineTo(c.x - 56f * k, c.y + 25.5f * k + drop)
+                close()
+            }
+            val a = opacity.coerceIn(0f, 1f)
+            for (i in 1..4) drawPath(tri((2f + 4f * i) * k), Color.Black.copy(alpha = a * 0.07f))
+            drawPath(tri(0f), ink.copy(alpha = a))
+        }
     }
 }
 
@@ -330,6 +333,8 @@ fun PaperZoomBar(
     opacity: Float = 1f,
     value: Float = 0.5f,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val thickness = 26.dp
     val knob = thickness - 8.dp
     val fraction = value.coerceIn(0f, 1f)
@@ -339,8 +344,8 @@ fun PaperZoomBar(
             .then(if (vertical) Modifier.width(thickness).height(length) else Modifier.width(length).height(thickness))
             .alpha(opacity.coerceIn(0f, 1f))
             .clip(wyrmRounded(999.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Ink, wyrmRounded(999.dp)),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.ink, wyrmRounded(999.dp)),
         contentAlignment = if (vertical) Alignment.TopCenter else Alignment.CenterStart,
     ) {
         Box(
@@ -349,7 +354,7 @@ fun PaperZoomBar(
                     if (vertical) Modifier.width(thickness).height(length * fraction)
                     else Modifier.width(length * fraction).height(thickness)
                 )
-                .background(Wyrm.Track),
+                .background(wyrmScopedPalette.track),
         )
         Box(
             Modifier
@@ -359,7 +364,7 @@ fun PaperZoomBar(
                 )
                 .size(knob)
                 .clip(CircleShape)
-                .background(Wyrm.Ink),
+                .background(wyrmScopedPalette.ink),
         )
     }
 }
@@ -374,7 +379,11 @@ fun PaperKey(
     colour: Int = 0,
     /** The fill, the same palette; 0 = the theme's paper. */
     fill: Int = 9,
+    /** LABEL OPACITY (OM, 2026-11-01): the label alone fades. */
+    labelOpacity: Float = 1f,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     fun swatchOf(index: Int) = TeamHudStore.COLOUR_SWATCHES.getOrNull(index)?.takeIf { index > 0 && it != Color.Unspecified }
     val ink = swatchOf(colour) ?: Color.White
     val swatch = if (fill == 9) Color(0xFF808080) else swatchOf(fill)
@@ -383,7 +392,7 @@ fun PaperKey(
             .width((104 * scale).dp)
             .height((54 * scale).dp)
             .clip(RoundedCornerShape((14 * scale).dp))
-            .background((swatch ?: Wyrm.Card).copy(alpha = opacity.coerceIn(0f, 1f)))
+            .background((swatch ?: wyrmScopedPalette.card).copy(alpha = opacity.coerceIn(0f, 1f)))
             .border(1.25.dp, ink, RoundedCornerShape((14 * scale).dp)),
         contentAlignment = Alignment.Center,
     ) {
@@ -393,7 +402,7 @@ fun PaperKey(
             fontWeight = FontWeight.SemiBold,
             fontSize = (12 * scale).sp,
             letterSpacing = 0.7.sp,
-            color = ink,
+            color = ink.copy(alpha = ink.alpha * labelOpacity.coerceIn(0f, 1f)),
         )
     }
 }

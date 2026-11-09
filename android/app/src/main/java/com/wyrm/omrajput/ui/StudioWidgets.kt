@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -54,15 +54,17 @@ internal fun StudioCapsule(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val fg = if (filled) Wyrm.OnInk else Wyrm.Ink
+    val fg = if (filled) wyrmScopedPalette.onInk else wyrmScopedPalette.ink
     Row(
         modifier
             .scale(pressScale(pressed, enabled))
             .clip(WyrmCapsule)
-            .background(if (filled) Wyrm.Ink.copy(alpha = if (enabled) 1f else 0.35f) else Wyrm.Card)
-            .then(if (filled) Modifier else Modifier.border(1.dp, Wyrm.Rule, WyrmCapsule))
+            .background(if (filled) wyrmScopedPalette.ink.copy(alpha = if (enabled) 1f else 0.35f) else wyrmScopedPalette.card)
+            .then(if (filled) Modifier else Modifier.border(1.dp, wyrmScopedPalette.rule, WyrmCapsule))
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -82,6 +84,8 @@ internal fun StudioRoundButton(
     size: Dp = 42.dp,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -89,12 +93,12 @@ internal fun StudioRoundButton(
             .size(size)
             .scale(pressScale(pressed, enabled))
             .clip(CircleShape)
-            .background(if (active) Wyrm.Ink else Wyrm.Card)
-            .border(1.dp, if (active) Wyrm.Ink else Wyrm.Rule, CircleShape)
+            .background(if (active) wyrmScopedPalette.ink else wyrmScopedPalette.card)
+            .border(1.dp, if (active) wyrmScopedPalette.ink else wyrmScopedPalette.rule, CircleShape)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(painterResource(icon), null, tint = (if (active) Wyrm.OnInk else Wyrm.Ink).copy(alpha = if (enabled) 1f else 0.35f),
+        Icon(painterResource(icon), null, tint = (if (active) wyrmScopedPalette.onInk else wyrmScopedPalette.ink).copy(alpha = if (enabled) 1f else 0.35f),
             modifier = Modifier.size(size * 0.45f))
     }
 }
@@ -108,11 +112,13 @@ internal fun StudioValueSlider(
     shown: (Float) -> String,
     onChange: (Float) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Ink,
+            Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = wyrmScopedPalette.ink,
                 modifier = Modifier.weight(1f))
-            Text(shown(value), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, color = Wyrm.Quiet)
+            Text(shown(value), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet)
         }
         Spacer(Modifier.height(6.dp))
         WyrmSlider(value = value, minimum = range.start, maximum = range.endInclusive, onChange = onChange)

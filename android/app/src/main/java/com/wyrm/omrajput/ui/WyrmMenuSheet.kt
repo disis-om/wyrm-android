@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,13 +76,15 @@ internal fun WyrmMenuSheet(
     subtitle: String = "",
     onDismiss: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     if (LocalCentredDialogs.current) {
         CentredDialog(onDismiss) {
             Column {
-                Text(title, fontFamily = Wyrm.Display, fontSize = 23.sp, color = Wyrm.Ink)
-                if (subtitle.isNotBlank()) Text(subtitle, fontFamily = Wyrm.Body, color = Wyrm.Quiet, modifier = Modifier.padding(vertical = 8.dp))
+                Text(title, fontFamily = Wyrm.Display, fontSize = 23.sp, color = wyrmScopedPalette.ink)
+                if (subtitle.isNotBlank()) Text(subtitle, fontFamily = Wyrm.Body, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(vertical = 8.dp))
                 items.forEach { item -> MenuRow(item) { onDismiss(); item.onClick() } }
-                Text("Cancel · Esc", fontFamily = Wyrm.Body, color = Wyrm.Quiet,
+                Text("Cancel · Esc", fontFamily = Wyrm.Body, color = wyrmScopedPalette.quiet,
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onDismiss).padding(16.dp))
             }
         }
@@ -123,22 +125,22 @@ internal fun WyrmMenuSheet(
                     Modifier
                         .fillMaxWidth()
                         .clip(wyrmRounded(26.dp))
-                        .background(Wyrm.Card)
-                        .border(1.dp, Wyrm.Rule, wyrmRounded(26.dp))
+                        .background(wyrmScopedPalette.card)
+                        .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(26.dp))
                         .padding(bottom = 6.dp),
                 ) {
                     Box(Modifier.fillMaxWidth().padding(top = 9.dp), contentAlignment = Alignment.Center) {
-                        Box(Modifier.width(38.dp).height(5.dp).clip(WyrmCapsule).background(Wyrm.Rule))
+                        Box(Modifier.width(38.dp).height(5.dp).clip(WyrmCapsule).background(wyrmScopedPalette.rule))
                     }
                     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp)) {
-                        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wyrm.Ink)
+                        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = wyrmScopedPalette.ink)
                         if (subtitle.isNotBlank()) {
-                            Text(subtitle, fontFamily = Wyrm.Body, fontSize = 13.sp, lineHeight = 18.sp, color = Wyrm.Quiet,
+                            Text(subtitle, fontFamily = Wyrm.Body, fontSize = 13.sp, lineHeight = 18.sp, color = wyrmScopedPalette.quiet,
                                 modifier = Modifier.padding(top = 2.dp))
                         }
                     }
                     items.forEachIndexed { index, item ->
-                        if (index > 0) Box(Modifier.padding(start = 70.dp).fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+                        if (index > 0) Box(Modifier.padding(start = 70.dp).fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
                         MenuRow(item) { close(item.onClick) }
                     }
                 }
@@ -150,12 +152,12 @@ internal fun WyrmMenuSheet(
                         .height(54.dp)
                         .scale(pressScale(pressed))
                         .clip(wyrmRounded(20.dp))
-                        .background(Wyrm.Card)
-                        .border(1.dp, Wyrm.Rule, wyrmRounded(20.dp))
+                        .background(wyrmScopedPalette.card)
+                        .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(20.dp))
                         .clickable(interactionSource = interaction, indication = null) { close() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("Cancel", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wyrm.Ink)
+                    Text("Cancel", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = wyrmScopedPalette.ink)
                 }
             }
         }
@@ -164,9 +166,11 @@ internal fun WyrmMenuSheet(
 
 @Composable
 private fun MenuRow(item: WyrmMenuItem, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val tint = if (item.destructive) Wyrm.Badge else Wyrm.Ink
+    val tint = if (item.destructive) wyrmScopedPalette.badge else wyrmScopedPalette.ink
     Row(
         Modifier
             .fillMaxWidth()
@@ -184,7 +188,7 @@ private fun MenuRow(item: WyrmMenuItem, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(item.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp, color = tint)
             if (item.detail.isNotBlank()) {
-                Text(item.detail, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, modifier = Modifier.padding(top = 1.dp))
+                Text(item.detail, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 1.dp))
             }
         }
     }

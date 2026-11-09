@@ -1,18 +1,19 @@
 #include "spr_renderer.h"
 
 #include <string.h>
+#include "instance_storage.h"
 
-spr_renderer* spr_renderer_create(tcontext* ctx, int max_instances,
-                                  VkPipelineLayout layout, VkRenderPass pass) {
+static spr_renderer* spr_renderer_create_impl(tcontext* ctx, int max_instances,
+    VkPipelineLayout layout, VkRenderPass pass, bool original, bool additive) {
   spr_renderer* r = malloc(sizeof(spr_renderer));
 
   VkShaderModule vertex_shader =
-      tcontext_create_shader(ctx, "app/res/shaders/bin/sprv.spv");
+      tcontext_create_shader(ctx, original ? "app/res/shaders/bin/osprv.spv" : "app/res/shaders/bin/sprv.spv");
   VkShaderModule fragment_shader =
-      tcontext_create_shader(ctx, "app/res/shaders/bin/sprf.spv");
+      tcontext_create_shader(ctx, original ? "app/res/shaders/bin/osprf.spv" : "app/res/shaders/bin/sprf.spv");
 
   vkCreateGraphicsPipelines(
-      ctx->device, NULL, 1,
+      ctx->device, VK_NULL_HANDLE, 1,
       &(VkGraphicsPipelineCreateInfo){
           .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
           .pNext = NULL,
@@ -133,11 +134,13 @@ spr_renderer* spr_renderer_create(tcontext* ctx, int max_instances,
                   .pAttachments =
                       &(VkPipelineColorBlendAttachmentState){
                           .blendEnable = VK_TRUE,
-                          .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+                          /* The original's art is premultiplied (texture.c,
+                             OM 2026-11-01); its tints are pushed that way. */
+                          .srcColorBlendFactor = original ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA,
                           .dstColorBlendFactor =
-                              VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+                              additive ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
                           .colorBlendOp = VK_BLEND_OP_ADD,
-                          .srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+                          .srcAlphaBlendFactor = original ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA,
                           .dstAlphaBlendFactor =
                               VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
                           .alphaBlendOp = VK_BLEND_OP_ADD,
@@ -165,27 +168,40 @@ spr_renderer* spr_renderer_create(tcontext* ctx, int max_instances,
   vkDestroyShaderModule(ctx->device, fragment_shader, NULL);
   vkDestroyShaderModule(ctx->device, vertex_shader, NULL);
 
-  r->instance_buffer =
-      tdbuffer_create(ctx, NULL, max_instances * sizeof(spr_instance),
-                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-  r->instances = malloc(max_instances * sizeof(spr_instance));
+  r->instance_buffer = tdbuffer_create_stream(ctx,
+      (VkDeviceSize)max_instances * sizeof(spr_instance), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  r->instances = NULL;
+  r->capacity = 0;
   r->max_instances = max_instances;
   r->num_instances = 0;
 
   return r;
 }
 
+spr_renderer* spr_renderer_create(tcontext* ctx, int capacity,
+    VkPipelineLayout layout, VkRenderPass pass) {
+  return spr_renderer_create_impl(ctx,capacity,layout,pass,false,false);
+}
+spr_renderer* spr_renderer_create_original(tcontext* ctx, int capacity,
+    VkPipelineLayout layout, VkRenderPass pass, bool additive) {
+  return spr_renderer_create_impl(ctx,capacity,layout,pass,true,additive);
+}
 void spr_renderer_push(spr_renderer* r, const spr_instance* instance) {
   if (r->num_instances >= r->max_instances) {
     return;
   }
+  spr_instance* grown = instance_storage_reserve(r->instances, &r->capacity,
+      r->max_instances, r->num_instances + 1, sizeof(spr_instance));
+  if (!grown) return;
+  r->instances = grown;
   r->instances[r->num_instances++] = *instance;
 }
 
 void spr_renderer_render(spr_renderer* r, tcontext* ctx) {
   tcontext_frame* fr = ctx->frames + ctx->current_frame;
-  memcpy(r->instance_buffer[ctx->current_frame].data, r->instances,
-         r->num_instances * sizeof(spr_instance));
+  if (r->num_instances <= 0 || !tdbuffer_upload(ctx, r->instance_buffer,
+      ctx->current_frame, r->instances,
+      (VkDeviceSize)r->num_instances * sizeof(spr_instance))) return;
   vkCmdBindPipeline(fr->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipeline);
   vkCmdBindVertexBuffers(fr->cmd, 1, 1,
                          &r->instance_buffer[ctx->current_frame].handle,

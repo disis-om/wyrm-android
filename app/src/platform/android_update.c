@@ -343,7 +343,7 @@ static bool mobile_valid(const mobile_control_settings* settings) {
   if (settings->handedness < MOBILE_LEFT_HANDED ||
       settings->handedness > MOBILE_RIGHT_HANDED ||
       settings->joystick_mode < MOBILE_JOYSTICK_DYNAMIC ||
-      settings->joystick_mode > MOBILE_STEERING_ARROW ||
+      settings->joystick_mode > MOBILE_STEERING_CLASSIC ||
       settings->boost_mode < MOBILE_BOOST_TOUCH_ZONE ||
       settings->boost_mode > MOBILE_BOOST_FIXED ||
       settings->zoom_orientation < MOBILE_ZOOM_HORIZONTAL ||

@@ -11,6 +11,7 @@
 #include <jni.h>
 
 #include "../game/tag_count.h"
+#include "../game/tags.h"
 #include "../mobile/mobile_controls.h"
 #include "../mobile/mobile_hotkeys.h"
 #include "../user.h"
@@ -87,6 +88,10 @@ static const setting_desc GLOBAL_FIELDS[] = {
     {"general.zoom_step", "general", "Zoom step",
      "How far one zoom press travels.", SETTING_FLOAT, 0.05f, 0.5f, NULL,
      OWNER_SETTINGS, SETTINGS_FIELD(zoom_step)},
+    {"general.native_text_style", "general", "Arena text", 
+     "Text in Wyrm mode. Near Original keeps its original text.",
+     SETTING_ENUM, 0, 1, "Normal|High visibility texts", OWNER_SETTINGS,
+     SETTINGS_FIELD(ext.native_text_style)},
     {"general.snake_scores", "general", "Show snake scores",
      "Prints each snake's score under its name.", SETTING_BOOL, 0, 1, NULL,
      OWNER_SETTINGS, SETTINGS_FIELD(snake_scores)},
@@ -125,8 +130,8 @@ static const setting_desc GLOBAL_FIELDS[] = {
      "The soft shadow the original app draws under every snake.",
      SETTING_BOOL, 0, 1, NULL, OWNER_SETTINGS,
      SETTINGS_FIELD(ext.snake_shadow[1])},
-    {"assist.hide_cosmetics", "assist", "Hide own tag and accessories",
-     "While assist is on, your tag, accessory and Wyrm look are hidden.",
+    {"assist.hide_cosmetics", "assist", "Hide all tags and accessories",
+     "While assist is on, all tags, accessories, hair and Wyrm look decorations are hidden.",
      SETTING_BOOL, 0, 1, NULL, OWNER_SETTINGS,
      SETTINGS_FIELD(ext.assist_hide_cosmetics)},
     /* Wyrm skin (OM, 2026-10-13): set from the Skin tab, never listed. */
@@ -139,7 +144,7 @@ static const setting_desc GLOBAL_FIELDS[] = {
        it. The ranges are the mod's own: chain 1 to 3, swing 1 to 2. */
     {"tags.index", "tags", "Tag",
      "Which tag hangs from your head. Below zero is none.", SETTING_INT, -1,
-     TAG_COUNT - 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(tag_index)},
+     TAG_INDEX_LIMIT - 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(tag_index)},
     {"tags.chain", "tags", "Chain length",
      "How far the tag trails behind the head.", SETTING_FLOAT, 1.0f, 3.0f, NULL,
      OWNER_SETTINGS, SETTINGS_FIELD(tag_chain)},
@@ -175,11 +180,12 @@ static const setting_desc GLOBAL_FIELDS[] = {
      2, "Small|Regular|Large", OWNER_SETTINGS, SETTINGS_FIELD(ui_font_size)},
     {"general.stats_font", "general.type", "Stats text", "", SETTING_ENUM, 0, 2,
      "Small|Regular|Large", OWNER_SETTINGS, SETTINGS_FIELD(stats_font_size)},
-    {"general.lb_font", "general.type", "Leaderboard text", "", SETTING_ENUM, 0,
-     2, "Small|Regular|Large", OWNER_SETTINGS, SETTINGS_FIELD(lb_font_size)},
-    {"general.name_font", "general.type", "Player names", "", SETTING_ENUM, 0,
-     2, "Small|Regular|Large", OWNER_SETTINGS,
-     SETTINGS_FIELD(snake_names_font_size)},
+    {"general.lb_font", "general.type", "Leaderboard size", "", SETTING_FLOAT, .25f,
+     3.0f, NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.lb_size)},
+    {"general.name_font", "general.type", "Player names", "", SETTING_FLOAT, .5f,
+     2.5f, NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.name_scale)},
+    {"layout.chat_text_scale", "layout", "Chat text size", "", SETTING_FLOAT, .5f,
+     2.5f, NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.chat_text_scale)},
 
     {"general.laser_color", "general.bot", "Laser colour", "", SETTING_COLOR4,
      0, 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(laser_color)},
@@ -200,8 +206,8 @@ static const setting_desc GLOBAL_FIELDS[] = {
     /* CONTROLS. Steering is one choice of three rather than a checkbox and a
        menu that can contradict each other. */
     {"controls.joystick_mode", "controls", "Steering",
-     "How you point the snake.", SETTING_ENUM, 0, 2,
-     "Joystick under finger|Fixed joystick|Arrow drag", OWNER_CONTROLS,
+     "How you point the snake.", SETTING_ENUM, 0, 3,
+     "Joystick under finger|Fixed joystick|Arrow drag|Classic", OWNER_CONTROLS,
      CONTROLS_FIELD(joystick_mode)},
     {"controls.handedness", "controls", "Handedness",
      "Which side the joystick lives on.", SETTING_ENUM, 0, 1,
@@ -224,6 +230,9 @@ static const setting_desc GLOBAL_FIELDS[] = {
     {"controls.zoom_orientation", "controls.zoom", "Zoom bar", "", SETTING_ENUM,
      0, 1, "Horizontal|Vertical", OWNER_CONTROLS,
      CONTROLS_FIELD(zoom_orientation)},
+    /* + and - swap ends (OM, 2026-10-30). */
+    {"controls.zoom_flip", "controls.zoom", "Flip zoom bar", "", SETTING_BOOL,
+     0, 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.zoom_flip)},
     {"controls.zoom_length", "controls.zoom", "Zoom bar length", "",
      SETTING_FLOAT, 0.65f, 1.55f, NULL, OWNER_CONTROLS,
      CONTROLS_FIELD(zoom_length)},
@@ -249,8 +258,17 @@ static const setting_desc GLOBAL_FIELDS[] = {
      "slither; 100% moves it furthest.",
      SETTING_FLOAT, 0.0f, 1.0f, NULL, OWNER_SETTINGS,
      SETTINGS_FIELD(ext.arrow_sens)},
+    {"arrow.double_tap_boost", "controls.arrow", "Double tap to boost",
+     "Double tap and hold your steering finger to boost; lift it to stop. "
+     "In Wyrm's visible-button mode, only the boost button boosts.",
+     SETTING_BOOL, 0, 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.arrow_double_tap_boost)},
     {"arrow.color", "controls.arrow", "Arrow colour", "", SETTING_COLOR3, 0, 1,
      NULL, OWNER_ARROW, ARROW_FIELD(color)},
+    /* OM, 2026-11-01: off = the snake's arrow colour, as slither's. */
+    {"arrow.colour_own", "controls.arrow", "My own arrow colour",
+     "Off: the arrow takes your snake's colour, as in slither. Picking a "
+     "colour turns it on.",
+     SETTING_BOOL, 0, 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.arrow_colour_own)},
 
     /* ON-SCREEN BUTTONS. Positions and per-action modes use their own bridge. */
     {"keys.key_scale", "keys", "Button size", "", SETTING_FLOAT, 0.65f, 5.00f,
@@ -315,6 +333,37 @@ static const setting_desc GLOBAL_FIELDS[] = {
      OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 15)},
     {"layout.key_16_fill", "layout", "", "", SETTING_INT, 0, 9, NULL,
      OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_fill, 16)},
+    /* A key's label opacity (OM, 2026-11-01), ext.key_label_opacity. */
+    {"layout.key_1_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 1)},
+    {"layout.key_2_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 2)},
+    {"layout.key_3_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 3)},
+    {"layout.key_4_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 4)},
+    {"layout.key_6_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 6)},
+    {"layout.key_7_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 7)},
+    {"layout.key_8_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 8)},
+    {"layout.key_9_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 9)},
+    {"layout.key_14_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 14)},
+    {"layout.key_15_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 15)},
+    {"layout.key_16_label_opacity", "layout", "", "", SETTING_FLOAT, 0.0f,
+     1.0f, NULL, OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_label_opacity, 16)},
+    /* Near Original's joystick (OM, 2026-11-01): its place (-1 = the
+       original's) and size, set in the layout editor. */
+    {"layout.near_joystick_x", "layout", "", "", SETTING_FLOAT, -1.0f, 1.0f,
+     NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.near_joy_x)},
+    {"layout.near_joystick_y", "layout", "", "", SETTING_FLOAT, -1.0f, 1.0f,
+     NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.near_joy_y)},
+    {"layout.near_joystick_size", "layout", "", "", SETTING_FLOAT, 0.65f,
+     1.45f, NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.near_joy_size)},
     /* Spine on my snake only (OM, 2026-10-14). No label: the Modes page
        shows it under Spine as Mine / Everyone. */
     {"normal.spine_mine", "normal", "", "", SETTING_BOOL, 0, 1, NULL,
@@ -327,6 +376,16 @@ static const setting_desc GLOBAL_FIELDS[] = {
      OWNER_SETTINGS, SETTINGS_FIELD(ext.boost_own[0])},
     {"assist.boost_own", "assist", "", "", SETTING_BOOL, 0, 1, NULL,
      OWNER_SETTINGS, SETTINGS_FIELD(ext.boost_own[1])},
+    /* Food texture (OM, 2026-10-25), normal and assist; Food page. */
+    {"normal.food_texture", "normal", "", "", SETTING_INT, 0, 7, NULL,
+     OWNER_SETTINGS, SETTINGS_FIELD(ext.food_tex[0])},
+    {"assist.food_texture", "assist", "", "", SETTING_INT, 0, 7, NULL,
+     OWNER_SETTINGS, SETTINGS_FIELD(ext.food_tex[1])},
+    /* Skin texture (OM, 2026-10-25), Skin tab › Select texture. */
+    {"skin.texture", "skin", "", "", SETTING_INT, 0, 9, NULL,
+     OWNER_SETTINGS, SETTINGS_FIELD(ext.skin_tex)},
+    {"skin.texture_mine", "skin", "", "", SETTING_BOOL, 0, 1, NULL,
+     OWNER_SETTINGS, SETTINGS_FIELD(ext.skin_tex_mine)},
     /* On-screen key colours (OM, 2026-10-14), ext.key_colour by action. */
     {"layout.key_1_colour", "layout", "", "", SETTING_INT, 0, 8, NULL,
      OWNER_SETTINGS, SETTINGS_ARRAY_FIELD(ext.key_colour, 1)},
@@ -423,6 +482,9 @@ static const mode_desc MODE_FIELDS[] = {
      MODE_FIELD(show_boost)},
     {"boost_type", "Boost style", "", SETTING_ENUM, 0, 1, "Normal|Simple",
      MODE_FIELD(boost_type)},
+    /* Back (OM, 2026-10-23): how bright the boost glow is. */
+    {"boost_strength", "Boost strength", "", SETTING_FLOAT, 0.25f, 3.0f, NULL,
+     MODE_FIELD(boost_strength)},
     {"food_type", "Food style", "", SETTING_ENUM, 0, 8,
      "Original|Rings|Mixed|Star|Triangle|Diamond|Hexagon|Square|Flower",
      MODE_FIELD(food_type)},
@@ -432,9 +494,6 @@ static const mode_desc MODE_FIELDS[] = {
      MODE_FIELD(food_float)},
     {"food_flicker", "Food flickers", "", SETTING_BOOL, 0, 1, NULL,
      MODE_FIELD(food_flicker)},
-    {"const_food_scale", "Constant food size",
-     "Food stays the same size however far you are zoomed out.", SETTING_BOOL,
-     0, 1, NULL, MODE_FIELD(const_food_scale)},
     {"uniform_food_color", "One food colour", "", SETTING_BOOL, 0, 1, NULL,
      MODE_FIELD(uniform_food_color)},
     {"food_color", "Food colour", "", SETTING_COLOR3, 0, 1, NULL,
@@ -623,6 +682,9 @@ static void write_field(tenv* env, const char* id, const float* values,
     } else if (strcmp(id, "hud.chat") == 0) {
       x = &settings->hud_chat_x;
       y = &settings->hud_chat_y;
+    } else if (strcmp(id, "layout.near_joystick") == 0) {
+      x = &settings->ext.near_joy_x;
+      y = &settings->ext.near_joy_y;
     }
     if (x && y && isfinite(values[0]) && isfinite(values[1])) {
       *x = values[0] < 0.0f ? 0.0f : (values[0] > 1.0f ? 1.0f : values[0]);

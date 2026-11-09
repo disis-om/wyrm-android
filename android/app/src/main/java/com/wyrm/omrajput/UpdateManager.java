@@ -119,6 +119,7 @@ final class UpdateManager {
                 preferences.edit().putLong(PREF_LAST_CHECK, System.currentTimeMillis()).apply();
                 if (manifest.versionCode <= installedVersion) {
                     availableManifest = null;
+                    UpdateChannel.setUpdateRequired(false);
                     emit(WyrmActivity.UPDATE_UP_TO_DATE, 100,
                             "Wyrm is up to date",
                             "You are on " + versionName() + ".",
@@ -126,6 +127,8 @@ final class UpdateManager {
                     return;
                 }
                 availableManifest = manifest;
+                UpdateChannel.setUpdateRequired(manifest.mandatory
+                        || installedVersion < manifest.minimumVersionCode);
                 emit(WyrmActivity.UPDATE_AVAILABLE, 0,
                         "Wyrm " + manifest.versionName + " is available",
                         manifest.headline + " • " + humanBytes(manifest.apkSize),

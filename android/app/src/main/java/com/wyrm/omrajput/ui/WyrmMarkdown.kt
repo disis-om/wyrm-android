@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -94,13 +94,32 @@ fun WyrmMarkdown(
     modifier: Modifier = Modifier,
     baseSize: TextUnit = 13.sp,
     onMediaOpen: ((ReleaseMedia) -> Unit)? = null,
+    /** Pictures drawn in the message (the notice popup, OM 2026-10-30), any public link. */
+    images: Boolean = false,
 ) {
     val document = remember(source) { MARKDOWN_PARSER.parse(keepTyping(source)) }
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        document.children().forEach { MarkdownBlock(it, baseSize, 0, onMediaOpen) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalMarkdownImages provides images) {
+        Column(
+            modifier = modifier,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            document.children().forEach { MarkdownBlock(it, baseSize, 0, onMediaOpen) }
+        }
+    }
+}
+
+private val LocalMarkdownImages = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/** Inline Markdown (bold, italic, code, links) of a builder block, paragraphs kept. */
+internal fun markdownInline(source: String): AnnotatedString {
+    val document = MARKDOWN_PARSER.parse(source)
+    return buildAnnotatedString {
+        var first = true
+        document.children().forEach { block ->
+            if (!first) append("\n\n")
+            first = false
+            if (block is Paragraph || block is Heading) append(inline(block)) else append(plainText(block))
+        }
     }
 }
 
@@ -151,13 +170,34 @@ private fun MarkdownBlock(
     depth: Int,
     onMediaOpen: ((ReleaseMedia) -> Unit)?,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     when (node) {
         is Paragraph -> {
             val media = paragraphMedia(node)
-            if (media != null && onMediaOpen != null) {
+            val pictures = if (LocalMarkdownImages.current) node.children().filterIsInstance<Image>().toList() else emptyList()
+            // A picture's address on a line by itself is the picture too (OM pastes links).
+            val bare = if (LocalMarkdownImages.current) node.children().toList().singleOrNull()?.let { only ->
+                when (only) {
+                    is Link -> only.destination
+                    is Text -> only.literal.trim()
+                    else -> null
+                }
+            }?.takeIf(::isPictureAddress) else null
+            if (bare != null) {
+                NoticeImage(bare, "", 100f, "center")
+            } else if (pictures.isNotEmpty()) {
+                // Words first, then each picture at its own width ("w=60 a=center" in its title).
+                val words = inline(node, skipImages = true)
+                if (words.text.isNotBlank()) Text(words, fontFamily = Wyrm.Body, fontSize = baseSize, lineHeight = baseSize * 1.46f, color = wyrmScopedPalette.ink)
+                pictures.forEach { picture ->
+                    val layout = noticeImageLayout(picture.title)
+                    NoticeImage(picture.destination, plainText(picture), layout.width, layout.align)
+                }
+            } else if (media != null && onMediaOpen != null) {
                 ReleaseMediaCard(media = media, onOpen = { onMediaOpen(media) })
             } else {
-                MarkdownText(node, baseSize, Wyrm.Ink)
+                MarkdownText(node, baseSize, wyrmScopedPalette.ink)
             }
         }
         is Heading -> {
@@ -168,13 +208,13 @@ private fun MarkdownBlock(
                 fontWeight = if (node.level >= 3) FontWeight.Bold else FontWeight.SemiBold,
                 fontSize = size,
                 letterSpacing = if (node.level >= 3) 0.4.sp else TextUnit.Unspecified,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.padding(top = if (node.level == 1) 6.dp else 2.dp),
             )
         }
         is ThematicBreak -> WyrmRule(modifier = Modifier.padding(vertical = 6.dp))
         is BlockQuote -> Row(modifier = Modifier.fillMaxWidth()) {
-            Box(Modifier.width(2.dp).align(Alignment.Top).background(Wyrm.Link))
+            Box(Modifier.width(2.dp).align(Alignment.Top).background(wyrmScopedPalette.link))
             Column(
                 modifier = Modifier.padding(start = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(7.dp),
@@ -216,6 +256,8 @@ private fun MarkdownList(
     orderedStart: Int?,
     onMediaOpen: ((ReleaseMedia) -> Unit)?,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         list.children().filterIsInstance<ListItem>().forEachIndexed { index, item ->
             val task = item.descendants().filterIsInstance<TaskListItemMarker>().firstOrNull()
@@ -230,14 +272,14 @@ private fun MarkdownList(
                         fontFamily = Wyrm.Body,
                         fontSize = 12.sp,
                         textAlign = TextAlign.End,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.width(22.dp),
                     )
                     else -> Text(
                         text = when (depth % 3) { 0 -> "—"; 1 -> "·"; else -> "▪" },
                         fontFamily = Wyrm.Body,
                         fontSize = baseSize,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                     )
                 }
                 Spacer(Modifier.width(9.dp))
@@ -254,12 +296,14 @@ private fun MarkdownList(
 
 @Composable
 private fun TaskMarker(checked: Boolean) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .padding(top = 2.dp)
             .width(13.dp)
             .clip(wyrmRounded(4.dp))
-            .background(if (checked) Wyrm.Live else Wyrm.Well),
+            .background(if (checked) wyrmScopedPalette.live else wyrmScopedPalette.well),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -274,6 +318,8 @@ private fun TaskMarker(checked: Boolean) {
 
 @Composable
 private fun CodeBlock(source: String, language: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         if (language.isNotBlank()) WyrmLabel(language.substringBefore(' '))
         // The theme's well (OM, 2026-10-11): WyrmWell is the old dark glass,
@@ -282,15 +328,15 @@ private fun CodeBlock(source: String, language: String) {
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(wyrmRounded(Wyrm.CornerSmall))
-                .background(Wyrm.Well)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(Wyrm.CornerSmall)),
+                .background(wyrmScopedPalette.well)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(Wyrm.CornerSmall)),
         ) {
             Text(
                 text = source.trimEnd(),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.horizontalScroll(rememberScrollState()).padding(12.dp),
             )
         }
@@ -299,6 +345,8 @@ private fun CodeBlock(source: String, language: String) {
 
 @Composable
 private fun MarkdownTable(table: TableBlock, baseSize: TextUnit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val rows = table.children()
         .filter { it is TableHead || it is TableBody }
         .flatMap { section ->
@@ -324,8 +372,8 @@ private fun MarkdownTable(table: TableBlock, baseSize: TextUnit) {
                     .clip(shape)
                     // The theme's card and rule (OM, 2026-10-11): fixed Carbon
                     // drew a black table with faint text on light themes.
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, shape),
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, shape),
             ) {
                 rows.forEachIndexed { rowIndex, row ->
                     val header = row.header
@@ -335,8 +383,8 @@ private fun MarkdownTable(table: TableBlock, baseSize: TextUnit) {
                             .height(IntrinsicSize.Min)
                             .background(
                                 when {
-                                    header -> Wyrm.Well
-                                    rowIndex % 2 == 0 -> Wyrm.Ink.copy(alpha = 0.025f)
+                                    header -> wyrmScopedPalette.well
+                                    rowIndex % 2 == 0 -> wyrmScopedPalette.ink
                                     else -> Color.Transparent
                                 }
                             ),
@@ -353,7 +401,7 @@ private fun MarkdownTable(table: TableBlock, baseSize: TextUnit) {
                                 },
                                 fontSize = if (header) 12.sp else baseSize,
                                 letterSpacing = if (header) 0.35.sp else TextUnit.Unspecified,
-                                color = if (header) Wyrm.Ink else Wyrm.Mute,
+                                color = if (header) wyrmScopedPalette.ink else wyrmScopedPalette.mute,
                                 textAlign = when (cell?.alignment) {
                                     TableCell.Alignment.CENTER -> TextAlign.Center
                                     TableCell.Alignment.RIGHT -> TextAlign.End
@@ -369,12 +417,12 @@ private fun MarkdownTable(table: TableBlock, baseSize: TextUnit) {
                                     modifier = Modifier
                                         .fillMaxHeight()
                                         .width(1.dp)
-                                        .background(Wyrm.Rule)
+                                        .background(wyrmScopedPalette.rule)
                                 )
                             }
                         }
                     }
-                    if (rowIndex < rows.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+                    if (rowIndex < rows.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
                 }
             }
         }
@@ -388,16 +436,18 @@ private data class MarkdownTableRow(
 
 @Composable
 private fun LiteralHtml(literal: String, baseSize: TextUnit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = literal,
         fontFamily = Wyrm.Body,
         fontSize = baseSize,
         lineHeight = baseSize * 1.46f,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
     )
 }
 
-private fun inline(parent: Node): AnnotatedString = buildAnnotatedString {
+private fun inline(parent: Node, skipImages: Boolean = false): AnnotatedString = buildAnnotatedString {
     fun appendNode(node: Node) {
         when (node) {
             is Text -> append(node.literal)
@@ -435,7 +485,7 @@ private fun inline(parent: Node): AnnotatedString = buildAnnotatedString {
                 pop()
                 pop()
             }
-            is Image -> {
+            is Image -> if (!skipImages) {
                 pushStyle(SpanStyle(fontStyle = FontStyle.Italic, color = Wyrm.Quiet))
                 node.children().forEach(::appendNode)
                 pop()

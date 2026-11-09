@@ -27,7 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -78,125 +78,27 @@ data class WyrmPalette(
     val track: Color,
     val hover: Color,
     val dark: Boolean,
+    val hero: WyrmHero = WyrmHero(paper, ink, quiet, mute, rule, well, paper, paper),
+    val hero2: WyrmHero = WyrmHero(paper, ink, quiet, mute, rule, well, paper, paper),
 )
 
-enum class WyrmThemeId(
-    val storedName: String,
-    val displayName: String,
-    val description: String,
-    val palette: WyrmPalette,
-) {
-    PAPER(
-        "paper", "Paper", "The original warm Wyrm canvas",
-        WyrmPalette(
-            Color(0xFFF7F6F3), Color(0xFFFFFFFF), Color(0xFF37352F), Color(0xFFFFFFFF),
-            Color(0xFF787774), Color(0xFF6B6660), Color(0x1437352F), Color(0x1237352F),
-            Color(0xFF448361), Color(0xFF2F6FDE), Color(0xFF7C776F), Color(0xF0FCFBFA),
-            Color(0xFFC6C1B8), Color(0xFFC4554D), Color(0xFFF0EEE9), Color(0xFFEFEDE8),
-            Color(0xFFFAF9F7), false,
-        ),
-    ),
-    GRAPHITE(
-        "graphite", "Graphite", "Charcoal paper, warm readable type",
-        WyrmPalette(
-            Color(0xFF171816), Color(0xFF222321), Color(0xFFF2EFE8), Color(0xFF171816),
-            Color(0xFFB9B5AD), Color(0xFFD1CDC4), Color(0x24F2EFE8), Color(0x1CF2EFE8),
-            Color(0xFF72B68F), Color(0xFF8CB4FF), Color(0xFFA7A39B), Color(0xF01D1E1C),
-            Color(0xFF77746E), Color(0xFFE17B72), Color(0xFF2B2C29), Color(0xFF30312E),
-            Color(0xFF282926), true,
-        ),
-    ),
-    BLUSH(
-        "blush", "Blush", "Soft rose paper with berry ink",
-        WyrmPalette(
-            Color(0xFFFFF4F5), Color(0xFFFFFBFB), Color(0xFF4C3036), Color(0xFFFFFBFB),
-            Color(0xFF88676D), Color(0xFF73555B), Color(0x184C3036), Color(0x124C3036),
-            Color(0xFF3F8062), Color(0xFF9D4561), Color(0xFF8A7074), Color(0xF0FFF9FA),
-            Color(0xFFCDB7BA), Color(0xFFC44F5F), Color(0xFFF7E7E9), Color(0xFFF3E1E4),
-            Color(0xFFFFF8F8), false,
-        ),
-    ),
-    SUN(
-        "sun", "Sun", "Cream and ochre without harsh glare",
-        WyrmPalette(
-            Color(0xFFFFF8DE), Color(0xFFFFFCF0), Color(0xFF463B22), Color(0xFFFFFCF0),
-            Color(0xFF7D6F51), Color(0xFF695C40), Color(0x18463B22), Color(0x12463B22),
-            Color(0xFF487A59), Color(0xFF9A681D), Color(0xFF82765E), Color(0xF0FFFAE9),
-            Color(0xFFC9BB96), Color(0xFFB94F47), Color(0xFFF4EAC8), Color(0xFFF1E5BD),
-            Color(0xFFFFFBEA), false,
-        ),
-    ),
-    SLATE(
-        "slate", "Slate", "Cool grey field with crisp graphite",
-        WyrmPalette(
-            Color(0xFFF0F2F3), Color(0xFFF9FAFA), Color(0xFF30383C), Color(0xFFF9FAFA),
-            Color(0xFF646E74), Color(0xFF566168), Color(0x1830383C), Color(0x1230383C),
-            Color(0xFF3F7D61), Color(0xFF356C8E), Color(0xFF727C81), Color(0xF0F5F7F7),
-            Color(0xFFB8C0C3), Color(0xFFB65252), Color(0xFFE5E9EA), Color(0xFFE2E7E8),
-            Color(0xFFF5F7F7), false,
-        ),
-    ),
-    LILAC(
-        "lilac", "Lilac", "Pale violet paper with aubergine ink",
-        WyrmPalette(
-            Color(0xFFF7F2FC), Color(0xFFFCFAFF), Color(0xFF403348), Color(0xFFFCFAFF),
-            Color(0xFF796B81), Color(0xFF65566E), Color(0x18403348), Color(0x12403348),
-            Color(0xFF487D61), Color(0xFF7655A3), Color(0xFF7C7182), Color(0xF0FAF7FD),
-            Color(0xFFC3B7CA), Color(0xFFC15362), Color(0xFFEDE4F2), Color(0xFFE9E0EF),
-            Color(0xFFFAF7FD), false,
-        ),
-    ),
-    FOREST(
-        "forest", "Forest", "Muted sage with deep evergreen ink",
-        WyrmPalette(
-            Color(0xFFF1F5ED), Color(0xFFFAFCF8), Color(0xFF2F3F34), Color(0xFFFAFCF8),
-            Color(0xFF647168), Color(0xFF536158), Color(0x182F3F34), Color(0x122F3F34),
-            Color(0xFF3D7B56), Color(0xFF356F5C), Color(0xFF707C73), Color(0xF0F7FAF5),
-            Color(0xFFB6C2B7), Color(0xFFB95450), Color(0xFFE4EBDD), Color(0xFFE1E9DA),
-            Color(0xFFF7FAF5), false,
-        ),
-    ),
-    MIDNIGHT(
-        "midnight", "Midnight", "Blue-black paper with cool moonlit type",
-        WyrmPalette(
-            Color(0xFF101820), Color(0xFF19242D), Color(0xFFEAF1F4), Color(0xFF101820),
-            Color(0xFFAAB8C0), Color(0xFFC5D0D5), Color(0x24EAF1F4), Color(0x1CEAF1F4),
-            Color(0xFF6DB68F), Color(0xFF83B8E8), Color(0xFF9DABB3), Color(0xF0141E27),
-            Color(0xFF6B7B85), Color(0xFFE07972), Color(0xFF22303A), Color(0xFF283741),
-            Color(0xFF1E2A34), true,
-        ),
-    );
+/* WyrmThemeId, the 22 themes and their stored colours live in WyrmThemeTables.kt. */
 
-    companion object {
-        fun fromStored(value: String?): WyrmThemeId =
-            entries.firstOrNull { it.storedName == value } ?: PAPER
-    }
-}
-
-private fun Color.withThemeIntensity(intensity: Float): Color {
-    /* Fifty percent is the palette exactly as designed. Above that point only
-       chroma grows; the softer half is handled by WyrmPalette so it can move
-       the whole theme towards Paper without sacrificing text contrast. */
-    val safeIntensity = intensity.coerceIn(0f, 1f)
-    if (kotlin.math.abs(safeIntensity - 0.5f) < 0.0001f) return this
-    val multiplier = safeIntensity * 2f
-    val luminance = red * 0.2126f + green * 0.7152f + blue * 0.0722f
-    return Color(
-        red = (luminance + (red - luminance) * multiplier).coerceIn(0f, 1f),
-        green = (luminance + (green - luminance) * multiplier).coerceIn(0f, 1f),
-        blue = (luminance + (blue - luminance) * multiplier).coerceIn(0f, 1f),
-        alpha = alpha,
-    )
-}
-
-private fun Color.mixTowards(target: Color, amount: Float): Color {
+private fun Color.mixKeepAlpha(target: Color, amount: Float): Color {
     val t = amount.coerceIn(0f, 1f)
     return Color(
         red = red + (target.red - red) * t,
         green = green + (target.green - green) * t,
         blue = blue + (target.blue - blue) * t,
-        alpha = alpha + (target.alpha - alpha) * t,
+        alpha = alpha,
     )
+}
+
+private fun Color.chroma(intensity: Float): Color {
+    val m = intensity * 2f
+    val l = red * 0.2126f + green * 0.7152f + blue * 0.0722f
+    fun f(v: Float) = (l + (v - l) * m).coerceIn(0f, 1f)
+    return Color(f(red), f(green), f(blue), alpha)
 }
 
 private fun contrastRatio(background: Color, foreground: Color): Float {
@@ -205,91 +107,161 @@ private fun contrastRatio(background: Color, foreground: Color): Float {
     return (lighter + 0.05f) / (darker + 0.05f)
 }
 
-private fun Color.withReadableContrast(foreground: Color, minimum: Float = 4.5f): Color {
-    if (contrastRatio(this, foreground) >= minimum) return this
-    val target = if (foreground.luminance() < 0.5f) Color.White else Color(0xFF111111)
-    var low = 0f
-    var high = 1f
-    repeat(12) {
-        val middle = (low + high) / 2f
-        if (contrastRatio(mixTowards(target, middle), foreground) >= minimum) high = middle
-        else low = middle
+/** Walk the colour toward black or white until it clears [minimum] on every background. */
+private fun Color.ensureAgainst(backgrounds: List<Color>, minimum: Float): Color {
+    fun worst(c: Color) = backgrounds.minOf { contrastRatio(it, c) }
+    if (worst(this) >= minimum) return this
+    val black = Color.Black
+    val white = Color.White
+    val target = if (worst(black) >= worst(white)) black else white
+    var best = this
+    var bestW = worst(this)
+    var t = 0.04f
+    while (t <= 1.001f) {
+        val mixed = mixKeepAlpha(target, t)
+        val w = worst(mixed)
+        if (w >= minimum) return mixed
+        if (w > bestW) {
+            best = mixed
+            bestW = w
+        }
+        t += 0.04f
     }
-    return mixTowards(target, high)
+    return best
+}
+
+/** Move a surface toward paper until ink on it clears 4.5:1. */
+private fun Color.separateToward(paper: Color, ink: Color): Color {
+    if (contrastRatio(this, ink) >= 4.5f) return this
+    var best = this
+    var bestR = contrastRatio(this, ink)
+    var t = 0.04f
+    while (t <= 1.001f) {
+        val mixed = mixKeepAlpha(paper, t)
+        val r = contrastRatio(mixed, ink)
+        if (r >= 4.5f) return mixed
+        if (r > bestR) {
+            best = mixed
+            bestR = r
+        }
+        t += 0.04f
+    }
+    return best
+}
+
+private fun WyrmHero.retinted(bg: Color, hi: Color, lo: Color, seedOn: Color): WyrmHero {
+    val on = seedOn.ensureAgainst(listOf(bg), 6.5f)
+    val well = bg.mixKeepAlpha(on, 0.14f).copy(alpha = 1f).separateToward(bg, on)
+    val quiet = on.mixKeepAlpha(bg, 0.28f).ensureAgainst(listOf(bg, well), 4.5f)
+    val mute = on.mixKeepAlpha(bg, 0.14f).ensureAgainst(listOf(bg, well), 4.5f)
+    return WyrmHero(
+        bg = bg,
+        on = on,
+        quiet = quiet,
+        mute = mute,
+        rule = on.copy(alpha = 0.22f),
+        well = well,
+        hi = hi,
+        lo = lo,
+    )
+}
+
+/** Card-local palette. Slot 2 is hero2; anything else is hero. Tab roles stay. */
+internal fun WyrmPalette.heroView(slot: Int): WyrmPalette {
+    val h = if (slot == 2) hero2 else hero
+    return copy(
+        paper = h.bg,
+        card = h.bg,
+        ink = h.on,
+        onInk = h.bg,
+        quiet = h.quiet,
+        mute = h.mute,
+        rule = h.rule,
+        rowRule = h.rule,
+        live = h.on,
+        link = h.on,
+        chevron = h.quiet,
+        well = h.well,
+        track = h.rule,
+        dark = h.bg.luminance() < 0.45f,
+    )
+}
+
+private fun WyrmPalette.resecured(): WyrmPalette {
+    val ink2 = ink.ensureAgainst(listOf(paper), 7.5f)
+    val card2 = card.separateToward(paper, ink2)
+    val well2 = well.separateToward(paper, ink2)
+    val body = listOf(paper, card2)
+    return copy(
+        ink = ink2,
+        card = card2,
+        well = well2,
+        onInk = onInk.ensureAgainst(listOf(ink2), 4.5f),
+        quiet = quiet.ensureAgainst(body + well2, 4.5f),
+        mute = mute.ensureAgainst(body + well2, 4.5f),
+        live = live.ensureAgainst(body + well2, 4.5f),
+        badge = badge.ensureAgainst(body + well2, 4.5f),
+        link = link.ensureAgainst(body + well2, 4.5f),
+        tabIdle = tabIdle.ensureAgainst(listOf(tabBar, paper), 4.5f),
+        chevron = chevron.ensureAgainst(body + well2, 4.5f),
+        dark = paper.luminance() < 0.45f,
+    )
 }
 
 internal fun WyrmPalette.withIntensity(intensity: Float): WyrmPalette {
-    val safeIntensity = intensity.coerceIn(0f, 1f)
-    if (kotlin.math.abs(safeIntensity - 0.5f) < 0.0001f) return this
-
-    if (safeIntensity < 0.5f) {
-        val base = WyrmThemeId.PAPER.palette
-        if (safeIntensity < 0.0001f) return base
-        val amount = safeIntensity * 2f
-        val rawPaper = base.paper.mixTowards(paper, amount)
-        val rawCard = base.card.mixTowards(card, amount)
-        val rawWell = base.well.mixTowards(well, amount)
-        val surfaces = listOf(rawPaper, rawCard, rawWell)
-        val baseScore = surfaces.minOf { contrastRatio(it, base.ink) }
-        val themeScore = surfaces.minOf { contrastRatio(it, ink) }
-        val fallbackInk = listOf(Color(0xFF111111), Color.White).maxBy { candidate ->
-            surfaces.minOf { contrastRatio(it, candidate) }
-        }
-        val mixedInk = when {
-            baseScore >= 4.5f && baseScore >= themeScore -> base.ink
-            themeScore >= 4.5f -> ink
-            else -> fallbackInk
-        }
-        val useThemeText = mixedInk == ink || mixedInk.luminance() > 0.5f
-        val mixedOnInk = when (mixedInk) {
-            base.ink -> base.onInk
-            ink -> onInk
-            else -> if (mixedInk.luminance() > 0.5f) Color(0xFF111111) else Color.White
-        }
-        val mixedPaper = rawPaper.withReadableContrast(mixedInk)
-        val mixedCard = rawCard.withReadableContrast(mixedInk)
-        val mixedWell = rawWell.withReadableContrast(mixedInk)
-        return WyrmPalette(
-            paper = mixedPaper,
-            card = mixedCard,
-            ink = mixedInk,
-            onInk = mixedOnInk,
-            quiet = if (useThemeText) quiet else base.quiet,
-            mute = if (useThemeText) mute else base.mute,
-            rule = base.rule.mixTowards(rule, amount),
-            rowRule = base.rowRule.mixTowards(rowRule, amount),
-            live = base.live.mixTowards(live, amount),
-            link = base.link.mixTowards(link, amount),
-            tabIdle = if (useThemeText) tabIdle else base.tabIdle,
-            tabBar = base.tabBar.mixTowards(tabBar, amount),
-            chevron = if (useThemeText) chevron else base.chevron,
-            badge = base.badge.mixTowards(badge, amount),
-            well = mixedWell,
-            track = base.track.mixTowards(track, amount),
-            hover = base.hover.mixTowards(hover, amount),
-            dark = mixedPaper.luminance() < 0.45f,
+    val safe = intensity.coerceIn(0f, 1f)
+    // Even at 50%, secure small-text roles: the prototype's decorative
+    // chevron/link seeds can be below the app's 4.5:1 reading floor.
+    val shifted = if (safe < 0.5f) {
+        val t = 1f - safe * 2f
+        copy(
+            card = card.mixKeepAlpha(paper, t),
+            well = well.mixKeepAlpha(paper, t),
+            track = track.mixKeepAlpha(paper, t),
+            hover = hover.mixKeepAlpha(paper, t),
+            live = live.mixKeepAlpha(paper, t),
+            badge = badge.mixKeepAlpha(paper, t),
+            tabBar = tabBar.mixKeepAlpha(paper, t),
+            rule = rule.copy(alpha = rule.alpha * (1f - t)),
+            rowRule = rowRule.copy(alpha = rowRule.alpha * (1f - t)),
+            hero = hero.retinted(
+                hero.bg.mixKeepAlpha(paper, t),
+                hero.hi.mixKeepAlpha(paper, t),
+                hero.lo.mixKeepAlpha(paper, t),
+                hero.on,
+            ),
+            hero2 = hero2.retinted(
+                hero2.bg.mixKeepAlpha(paper, t),
+                hero2.hi.mixKeepAlpha(paper, t),
+                hero2.lo.mixKeepAlpha(paper, t),
+                hero2.on,
+            ),
+        )
+    } else {
+        fun Color.lift() = chroma(safe)
+        copy(
+            paper = paper.lift(),
+            card = card.lift(),
+            ink = ink.lift(),
+            onInk = onInk.lift(),
+            quiet = quiet.lift(),
+            mute = mute.lift(),
+            rule = rule.lift(),
+            rowRule = rowRule.lift(),
+            live = live.lift(),
+            link = link.lift(),
+            tabIdle = tabIdle.lift(),
+            tabBar = tabBar.lift(),
+            chevron = chevron.lift(),
+            badge = badge.lift(),
+            well = well.lift(),
+            track = track.lift(),
+            hover = hover.lift(),
+            hero = hero.retinted(hero.bg.lift(), hero.hi.lift(), hero.lo.lift(), hero.on.lift()),
+            hero2 = hero2.retinted(hero2.bg.lift(), hero2.hi.lift(), hero2.lo.lift(), hero2.on.lift()),
         )
     }
-
-    return copy(
-        paper = paper.withThemeIntensity(safeIntensity),
-        card = card.withThemeIntensity(safeIntensity),
-        ink = ink.withThemeIntensity(safeIntensity),
-        onInk = onInk.withThemeIntensity(safeIntensity),
-        quiet = quiet.withThemeIntensity(safeIntensity),
-        mute = mute.withThemeIntensity(safeIntensity),
-        rule = rule.withThemeIntensity(safeIntensity),
-        rowRule = rowRule.withThemeIntensity(safeIntensity),
-        live = live.withThemeIntensity(safeIntensity),
-        link = link.withThemeIntensity(safeIntensity),
-        tabIdle = tabIdle.withThemeIntensity(safeIntensity),
-        tabBar = tabBar.withThemeIntensity(safeIntensity),
-        chevron = chevron.withThemeIntensity(safeIntensity),
-        badge = badge.withThemeIntensity(safeIntensity),
-        well = well.withThemeIntensity(safeIntensity),
-        track = track.withThemeIntensity(safeIntensity),
-        hover = hover.withThemeIntensity(safeIntensity),
-    )
+    return shifted.resecured()
 }
 
 /**
@@ -305,20 +277,26 @@ internal fun WyrmPalette.withIntensity(intensity: Float): WyrmPalette {
  * outdoors can resolve it — the app read as dim rather than as quiet.
  */
 object Wyrm {
-    val Black = Color(0xFF080808)
-    val Carbon = Color(0xFF141414)
-    val Raised = Color(0xFF1E1E1E)
-    val Line = Color(0xFF343434)
+    val Black: Color get() = palette.paper
+    val Carbon: Color get() = palette.card
+    val Raised: Color get() = palette.well
+    val Line: Color get() = palette.rule
 
-    val White = Color(0xFFFAF9F6)
-    val SoftWhite = Color(0xFFE6E4DE)
-    val Grey = Color(0xFFAFAEA8)
-    val Faint = Color(0xFF7E7D78)
+    val White: Color get() = palette.ink
+    val SoftWhite: Color get() = palette.mute
+    val Grey: Color get() = palette.quiet
+    val Faint: Color get() = palette.quiet
 
-    private var themeState by mutableStateOf(WyrmThemeId.PAPER)
+    private var themeState by mutableStateOf(WyrmThemeId.SAND)
+    private var modeState by mutableStateOf(WyrmThemeId.SAND.defaultMode)
+    private var systemDarkState by mutableStateOf(false)
     private var intensityState by mutableFloatStateOf(0.5f)
-    private var paletteState by mutableStateOf(themeState.palette.withIntensity(intensityState))
+    private var paletteState by mutableStateOf(
+        themeState.side(modeState, systemDarkState).withIntensity(intensityState),
+    )
     val theme: WyrmThemeId get() = themeState
+    val themeMode: WyrmThemeMode get() = modeState
+    val systemDark: Boolean get() = systemDarkState
     val themeIntensity: Float get() = intensityState
     val currentPalette: WyrmPalette get() = paletteState
     private val palette: WyrmPalette get() = paletteState
@@ -365,13 +343,29 @@ object Wyrm {
         val luminance = background.luminance()
         val darkContrast = (luminance + 0.05f) / 0.05f
         val lightContrast = 1.05f / (luminance + 0.05f)
-        return if (darkContrast >= lightContrast) Color(0xFF111111) else Color.White
+        return if (darkContrast >= lightContrast) Color.Black else Color.White
     }
 
-    fun applyTheme(theme: WyrmThemeId, intensity: Float = intensityState) {
+    fun applyTheme(
+        theme: WyrmThemeId,
+        intensity: Float = intensityState,
+        mode: WyrmThemeMode = modeState,
+    ) {
         themeState = theme
+        modeState = mode
         intensityState = intensity.coerceIn(0f, 1f)
-        paletteState = theme.palette.withIntensity(intensityState)
+        republish()
+    }
+
+    /** Phone light/dark. Republishes only while the saved mode is Auto. */
+    fun setSystemDark(dark: Boolean) {
+        if (systemDarkState == dark) return
+        systemDarkState = dark
+        if (modeState == WyrmThemeMode.AUTO) republish()
+    }
+
+    private fun republish() {
+        paletteState = themeState.side(modeState, systemDarkState).withIntensity(intensityState)
     }
 
     /** The engine-boot green. Used for the mark. Live UI uses [Live]. */
@@ -522,27 +516,29 @@ fun pressScale(pressed: Boolean, enabled: Boolean = true): Float {
 
 @Composable
 fun WyrmTheme(content: @Composable () -> Unit) {
-    val scheme = if (Wyrm.theme.palette.dark) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val scheme = if (Wyrm.currentPalette.dark) {
         darkColorScheme(
-            primary = Wyrm.Ink,
-            onPrimary = Wyrm.OnInk,
-            secondary = Wyrm.Live,
-            background = Wyrm.Paper,
-            onBackground = Wyrm.Ink,
-            surface = Wyrm.Card,
-            onSurface = Wyrm.Ink,
-            outline = Wyrm.Rule,
+            primary = wyrmScopedPalette.ink,
+            onPrimary = wyrmScopedPalette.onInk,
+            secondary = wyrmScopedPalette.live,
+            background = wyrmScopedPalette.paper,
+            onBackground = wyrmScopedPalette.ink,
+            surface = wyrmScopedPalette.card,
+            onSurface = wyrmScopedPalette.ink,
+            outline = wyrmScopedPalette.rule,
         )
     } else {
         lightColorScheme(
-            primary = Wyrm.Ink,
-            onPrimary = Wyrm.OnInk,
-            secondary = Wyrm.Live,
-            background = Wyrm.Paper,
-            onBackground = Wyrm.Ink,
-            surface = Wyrm.Card,
-            onSurface = Wyrm.Ink,
-            outline = Wyrm.Rule,
+            primary = wyrmScopedPalette.ink,
+            onPrimary = wyrmScopedPalette.onInk,
+            secondary = wyrmScopedPalette.live,
+            background = wyrmScopedPalette.paper,
+            onBackground = wyrmScopedPalette.ink,
+            surface = wyrmScopedPalette.card,
+            onSurface = wyrmScopedPalette.ink,
+            outline = wyrmScopedPalette.rule,
         )
     }
     MaterialTheme(

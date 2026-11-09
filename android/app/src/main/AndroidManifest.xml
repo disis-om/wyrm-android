@@ -136,6 +136,10 @@
         <receiver
             android:name="com.wyrm.omrajput.UpdateInstallReceiver"
             android:exported="false" />
+        <!-- Event "Remind me": the phone's own alert 30 and 10 min before (2026-10-30). -->
+        <receiver
+            android:name="com.wyrm.omrajput.data.EventReminderReceiver"
+            android:exported="false" />
 
         <service
             android:name="com.wyrm.omrajput.WyrmMessagingService"

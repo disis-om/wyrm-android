@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -98,6 +98,8 @@ fun ProfileScreen(
     offline: Boolean,
     updatedAt: Long,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var confirmingDelete by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     val handle = if (profile.username.isBlank()) "no username yet" else "@${profile.username}"
@@ -112,12 +114,12 @@ fun ProfileScreen(
         Prop("In the arena since", since.ifBlank { "—" }, onClick = null),
     )
 
-    Box(modifier = Modifier.fillMaxSize().background(Wyrm.Paper)) {
+    Box(modifier = Modifier.fillMaxSize().background(wyrmScopedPalette.paper)) {
         Column(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Wyrm.Paper.copy(alpha = 0.94f))
+                    .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                     .padding(top = insetTop)
                     .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
             ) {
@@ -130,7 +132,7 @@ fun ProfileScreen(
                         text = "‹ $backLabel",
                         fontFamily = Wyrm.Body,
                         fontSize = 16.sp,
-                        color = Wyrm.Link,
+                        color = wyrmScopedPalette.link,
                         modifier = Modifier
                             .align(Alignment.CenterStart)
                             .clickable(onClick = onBack)
@@ -141,7 +143,7 @@ fun ProfileScreen(
                         fontFamily = Wyrm.Body,
                         fontSize = 18.sp,
                         letterSpacing = 1.sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .clickable(onClick = { menuOpen = true })
@@ -153,7 +155,7 @@ fun ProfileScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Wyrm.Rule),
+                    .background(wyrmScopedPalette.rule),
             )
 
             PullToRefreshBox(
@@ -169,7 +171,7 @@ fun ProfileScreen(
             ) {
                 if (offline && updatedAt > 0L) {
                     Text("Offline · updated ${profileCacheAge(updatedAt)} ago", fontFamily = Wyrm.Body, fontSize = 11.sp,
-                        color = Wyrm.Quiet, modifier = Modifier.padding(start = 20.dp, top = 14.dp))
+                        color = wyrmScopedPalette.quiet, modifier = Modifier.padding(start = 20.dp, top = 14.dp))
                 }
                 Row(
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 18.dp),
@@ -190,7 +192,7 @@ fun ProfileScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 23.sp,
                             letterSpacing = (-0.4).sp,
-                            color = Wyrm.Ink,
+                            color = wyrmScopedPalette.ink,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -198,7 +200,7 @@ fun ProfileScreen(
                             text = handle,
                             fontFamily = Wyrm.Body,
                             fontSize = 14.sp,
-                            color = Wyrm.Quiet,
+                            color = wyrmScopedPalette.quiet,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = 2.dp),
@@ -265,18 +267,20 @@ private data class Prop(
 
 @Composable
 private fun PropCard(props: List<Prop>) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     val nums = TextStyle(fontFeatureSettings = "tnum")
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
     ) {
         props.forEachIndexed { index, prop ->
             if (index > 0) {
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
             }
             val interaction = remember { MutableInteractionSource() }
             val pressed by interaction.collectIsPressedAsState()
@@ -304,14 +308,14 @@ private fun PropCard(props: List<Prop>) {
                     text = prop.label,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.width(124.dp),
                 )
                 Text(
                     text = prop.value,
                     fontFamily = Wyrm.Body,
                     fontSize = if (prop.label.startsWith("Rank by") && prop.value.takeWhile { it.isDigit() }.length >= 4) 12.sp else 15.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     style = nums,
                     maxLines = 1,
                     softWrap = false,
@@ -325,19 +329,21 @@ private fun PropCard(props: List<Prop>) {
 
 @Composable
 private fun BioCard(bio: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     Text(
         text = bio,
         fontFamily = Wyrm.Body,
         fontSize = 14.5.sp,
         lineHeight = 22.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .padding(14.dp),
     )
 }
@@ -351,6 +357,8 @@ private fun ProfileMenuSheet(
     onDelete: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val sheet = wyrmRounded(15.dp)
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -368,20 +376,20 @@ private fun ProfileMenuSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(sheet)
-                    .background(Wyrm.Card.copy(alpha = 0.97f)),
+                    .background(wyrmScopedPalette.card.copy(alpha = 0.97f)),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     text = handle,
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 12.dp, bottom = 11.dp),
                 )
-                MenuAction("Edit profile", Wyrm.Ink, onEdit)
-                MenuAction("Backup and restore", Wyrm.Ink, onBackup)
-                MenuAction("Sign out", Wyrm.Ink, onSignOut)
-                MenuAction("Delete account", Wyrm.Badge, onDelete)
+                MenuAction("Edit profile", wyrmScopedPalette.ink, onEdit)
+                MenuAction("Backup and restore", wyrmScopedPalette.ink, onBackup)
+                MenuAction("Sign out", wyrmScopedPalette.ink, onSignOut)
+                MenuAction("Delete account", wyrmScopedPalette.badge, onDelete)
             }
             Box(
                 modifier = Modifier
@@ -389,7 +397,7 @@ private fun ProfileMenuSheet(
                     .fillMaxWidth()
                     .height(56.dp)
                     .clip(sheet)
-                    .background(Wyrm.Card.copy(alpha = 0.97f))
+                    .background(wyrmScopedPalette.card.copy(alpha = 0.97f))
                     .clickable(onClick = onCancel),
                 contentAlignment = Alignment.Center,
             ) {
@@ -398,7 +406,7 @@ private fun ProfileMenuSheet(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 17.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                 )
             }
         }
@@ -407,7 +415,9 @@ private fun ProfileMenuSheet(
 
 @Composable
 private fun MenuAction(label: String, colour: Color, onClick: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -421,19 +431,23 @@ private fun MenuAction(label: String, colour: Color, onClick: () -> Unit) {
 
 @Composable
 private fun SectionLabel(text: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = text.uppercase(),
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.5.sp,
         letterSpacing = 0.92.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 8.dp),
     )
 }
 
 @Composable
 private fun DeleteConfirm(onCancel: () -> Unit, onConfirm: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -450,8 +464,8 @@ private fun DeleteConfirm(onCancel: () -> Unit, onConfirm: () -> Unit) {
             modifier = Modifier
                 .padding(horizontal = 22.dp)
                 .clip(shape)
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, shape)
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, shape)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -464,7 +478,7 @@ private fun DeleteConfirm(onCancel: () -> Unit, onConfirm: () -> Unit) {
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp,
-                color = Wyrm.Badge,
+                color = wyrmScopedPalette.badge,
             )
             Spacer(Modifier.height(10.dp))
             Text(
@@ -475,7 +489,7 @@ private fun DeleteConfirm(onCancel: () -> Unit, onConfirm: () -> Unit) {
                 fontFamily = Wyrm.Body,
                 fontSize = 14.sp,
                 lineHeight = 21.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
             Spacer(Modifier.height(18.dp))
             Row {
@@ -489,6 +503,8 @@ private fun DeleteConfirm(onCancel: () -> Unit, onConfirm: () -> Unit) {
 
 @Composable
 private fun OutlineKeep(modifier: Modifier, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -496,7 +512,7 @@ private fun OutlineKeep(modifier: Modifier, onClick: () -> Unit) {
             .height(42.dp)
             .scale(pressScale(pressed))
             .clip(wyrmRounded(10.dp))
-            .border(1.dp, Wyrm.Rule, wyrmRounded(10.dp))
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(10.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -504,13 +520,15 @@ private fun OutlineKeep(modifier: Modifier, onClick: () -> Unit) {
             text = "Keep it",
             fontFamily = Wyrm.Body,
             fontSize = 15.sp,
-            color = Wyrm.Mute,
+            color = wyrmScopedPalette.mute,
         )
     }
 }
 
 @Composable
 private fun FillDelete(modifier: Modifier, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -518,7 +536,7 @@ private fun FillDelete(modifier: Modifier, onClick: () -> Unit) {
             .height(42.dp)
             .scale(pressScale(pressed))
             .clip(wyrmRounded(10.dp))
-            .background(Wyrm.Badge)
+            .background(wyrmScopedPalette.badge)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -527,7 +545,7 @@ private fun FillDelete(modifier: Modifier, onClick: () -> Unit) {
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
-            color = Wyrm.contentOn(Wyrm.Badge),
+            color = Wyrm.contentOn(wyrmScopedPalette.badge),
         )
     }
 }

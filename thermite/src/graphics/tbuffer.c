@@ -36,6 +36,7 @@ tbuffer* tbuffer_create(tcontext* context, const void* data, VkDeviceSize size,
       &staging_buffer, &staging_memory, &staging_info);
 
   memcpy(staging_info.pMappedData, data, size);
+  vmaFlushAllocation(context->allocator, staging_memory, 0, size);
 
   vkResetCommandBuffer(context->transfer_cmd, 0);
   vkBeginCommandBuffer(context->transfer_cmd,

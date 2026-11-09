@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -94,13 +94,15 @@ internal fun SkinAccessoryContent(
 
 @Composable
 private fun WornCard(atlas: androidx.compose.ui.graphics.ImageBitmap?, worn: Int) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     Row(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -108,7 +110,7 @@ private fun WornCard(atlas: androidx.compose.ui.graphics.ImageBitmap?, worn: Int
             modifier = Modifier
                 .size(52.dp)
                 .clip(wyrmRounded(12.dp))
-                .background(Wyrm.Ink),
+                .background(wyrmScopedPalette.ink),
             contentAlignment = Alignment.Center,
         ) {
             if (worn >= 0 && atlas != null) {
@@ -125,21 +127,21 @@ private fun WornCard(atlas: androidx.compose.ui.graphics.ImageBitmap?, worn: Int
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.sp,
                 letterSpacing = 0.92.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
             Text(
                 text = if (worn < 0) "Nothing yet" else "Accessory ${worn + 1}",
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.5.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.padding(top = 2.dp),
             )
             Text(
                 text = "Accessories sit on the head and never affect play.",
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 modifier = Modifier.padding(top = 1.dp),
             )
         }
@@ -154,15 +156,17 @@ private fun AccessoryCell(
     modifier: Modifier,
     onPick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(12.dp)
     Box(
         modifier = modifier
             .aspectRatio(1f)
             .clip(shape)
-            .background(Wyrm.Ink)
+            .background(wyrmScopedPalette.ink)
             .border(
                 if (selected) 2.dp else 1.dp,
-                if (selected) Wyrm.Ink else Wyrm.Rule,
+                if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule,
                 shape,
             )
             .clickable(onClick = onPick),

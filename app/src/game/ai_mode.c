@@ -10,6 +10,7 @@
 #include "../mobile/mobile_hotkeys.h"
 #include "../user.h"
 #include "game_data.h"
+#include "wyrm_audio.h"
 #include "arena_theme.h"
 #include "oef.h"
 #include "redraw.h"
@@ -664,6 +665,7 @@ static void eat(game_data* g) {
         continue;
       f->eaten = true;
       f->ebid = s->id;
+      if (s->local_player) wyrm_audio_food_eaten(f->sz);
       int k = (int)(s->sct + s->fam);
       int max = g->data.mscps - 1;
       if (k > max) k = max;
@@ -682,6 +684,8 @@ static void drop_snake(game_data* g, snake* s) {
 }
 static void kill_ai_snake(game_data* g, snake* s) {
   if (s->dead) return;
+  /* AIR's death sounds in Play with AI too (OM, 2026-11-08). */
+  wyrm_audio_snake_died(g, s, s->local_player);
   drop_snake(g, s);
   s->dead = true;
   s->dead_amt = 0;

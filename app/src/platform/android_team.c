@@ -1,4 +1,5 @@
 #include "android_team.h"
+#include "../game/sheet_text.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 
 #include "../game/arena_theme.h"
 #include "../game/tags.h"
+#include "../game/wyrm_extras.h"
 #include "../game/ai_mode.h"
 #include "android_home.h"
 #include <math.h>
@@ -43,6 +45,8 @@ typedef struct team_member {
      (empty in the menu). */
   char owner[40];
   char server[160];
+  /* NTL's minimap icon `di` (OM, 2026-11-07); 1000 = its plain dot. */
+  int di;
 } team_member;
 
 static tenv* team_env = NULL;
@@ -116,7 +120,7 @@ enum {
   STYLE_STATS_PANEL, /* the stats panel's plate (OM, 2026-10-05) */
   STYLE_STATS_TEXT,  /* the stats panel's text colour, 0 = theme (OM, 2026-10-11) */
   STYLE_LB_WIDTH,    /* the leaderboard's width, x its own (OM, 2026-10-13) */
-  STYLE_LB_HEIGHT,   /* its row height, x its own; 1.75+ = two-line names */
+  STYLE_LB_HEIGHT,   /* row pitch x14u, independent of text SIZE */
   STYLE_ONLINE_NAME, /* ONLINE tab names, 0 = theme (OM, 2026-10-14) */
   STYLE_ONLINE_DATA, /* ONLINE tab "@username - server" line, 0 = theme */
   STYLE_GLOBAL_NAME, /* GLOBAL tab names, 0 = theme (OM, 2026-10-18) */
@@ -125,13 +129,15 @@ enum {
   STYLE_BTN_FILL,    /* its fill: 0 theme card, 1-8 the palette, 9 grey */
   STYLE_BTN_SCALE,   /* its size, x its own */
   STYLE_BTN_OPACITY, /* its opacity */
+  STYLE_BTN_LABEL_OPACITY, /* its label's opacity (OM, 2026-11-01) */
   STYLE_COUNT
 };
 static float hud_style[STYLE_COUNT] = {1.0f,   1.0f, 340.0f, 210.0f, 0.0f, 0.0f,
                                        400.0f, 270.0f, 0.0f, 0.0f,   1.0f, 1.0f,
-                                       1.0f,   0.0f,   1.0f, 1.0f,
+                                       1.0f,   0.0f,   .75f, .75f,
                                        0.0f,   0.0f,
-                                       0.0f,   0.0f,   0.0f, 9.0f, 1.0f, 0.9f};
+                                       0.0f,   0.0f,   0.0f, 9.0f, 1.0f, 0.9f,
+                                       1.0f};
 
 #define TEAM_CHAT_MAX 80
 typedef struct team_chat_line {
@@ -263,6 +269,12 @@ static void hud_unlock(ImFont* font, int old) {
 static float hud_text_width(ImFont* font, float size, const char* text,
                             const char* end) {
   if (!font || !text) return 0.0f;
+  char run[2048];
+  const char* candidate = text;
+  if (end && (size_t)(end-text) < sizeof(run)) {
+    memcpy(run,text,(size_t)(end-text)); run[end-text]=0; candidate=run;
+  }
+  if ((!end || candidate == run) && sheet_ok(candidate)) return sheet_width(candidate,size,SHEET_THIN);
   ImVec2 out;
   ImFont_CalcTextSizeA(&out, font, size, 1e9f, 0.0f, text, end, NULL);
   return out.x;
@@ -296,20 +308,36 @@ static float hud_wrap(ImDrawList* draw, ImFont* font, float size, float x,
   float cy = y;
   bool first = true;
   if (!font || s == end) return line;
+  bool use_sheet = sheet_ok(text);
   int guard = 0;
   while (s < end && guard < 48) {
     guard++;
     float avail = width - (first ? indent : 0.0f);
     if (avail < size) avail = size;
-    const char* brk = ImFont_CalcWordWrapPosition(font, size, s, end, avail);
+    const char* brk;
+    if (use_sheet) {
+      char line_text[2048];
+      const char* last_space = NULL;
+      brk = s;
+      while (brk < end && (size_t)(brk-s) < sizeof(line_text)-1) {
+        size_t n = (size_t)(brk-s)+1;
+        memcpy(line_text,s,n); line_text[n]=0;
+        if (sheet_width(line_text,size,SHEET_THIN) > avail) break;
+        if (*brk == ' ') last_space = brk;
+        ++brk;
+      }
+      if (brk < end && last_space && last_space > s) brk = last_space;
+    } else brk = ImFont_CalcWordWrapPosition(font, size, s, end, avail);
     if (!brk || brk <= s) {
       brk = s + 1;
       while (brk < end && ((unsigned char)*brk & 0xC0) == 0x80) brk++;
     }
-    if (draw)
-      ImDrawList_AddText_FontPtr(draw, font, size,
-                                 (ImVec2){x + (first ? indent : 0.0f), cy},
-                                 colour, s, brk, 0.0f, NULL);
+    if (draw) {
+      if (use_sheet)
+        sheet_add_text(draw,font,size,(ImVec2){x+(first ? indent : 0),cy},colour,s,brk,0,NULL);
+      else
+        ImDrawList_AddText_FontPtr(draw,font,size,(ImVec2){x+(first ? indent : 0),cy},colour,s,brk,0,NULL);
+    }
     cy += line;
     first = false;
     s = brk;
@@ -341,11 +369,11 @@ unsigned int android_team_stats_colour(int role, float alpha) {
 /* The leaderboard's WIDTH and HEIGHT (OM, 2026-10-13), drawn by
    ui_overlay.c: multiples of the board's own width and row height. */
 float android_team_lb_width(void) {
-  return hud_clamp(hud_style[STYLE_LB_WIDTH], 0.7f, 2.2f);
+  return hud_clamp(hud_style[STYLE_LB_WIDTH], .25f, 3.0f);
 }
 
 float android_team_lb_height(void) {
-  return hud_clamp(hud_style[STYLE_LB_HEIGHT], 1.0f, 2.2f);
+  return hud_clamp(hud_style[STYLE_LB_HEIGHT], .25f, 3.0f);
 }
 
 void android_team_set_chat(const char* packed) {
@@ -587,7 +615,6 @@ void android_team_poll(tenv* env) {
       now - presence_published_at < PRESENCE_PUBLISH_MS)
     return;
   presence_published_at = now;
-  presence_was_playing = playing;
 
   int x = 0;
   int y = 0;
@@ -595,16 +622,29 @@ void android_team_poll(tenv* env) {
      `sid` and looks a tag up by. The raw arena id put our tag on nobody. */
   int sid = 0;
   if (playing) {
-    int length = tdarray_length(game->data.snakes);
+    int length = game->data.snakes ? tdarray_length(game->data.snakes) : 0;
+    bool found = false;
     if (length > 0) {
-      snake* me = game->data.snakes + (length - 1);
-      if (game->data.snake_id == me->id) {
+      /* Other snakes can arrive after ours; array order is not identity. */
+      snake* me = NULL;
+      for (int i = 0; i < length; ++i) {
+        if (game->data.snakes[i].id == game->data.snake_id) {
+          me = game->data.snakes + i;
+          break;
+        }
+      }
+      if (me) {
+        found = true;
         x = (int)(me->xx + me->fx);
         y = (int)(me->yy + me->fy);
         sid = me->ntl_id;
       }
     }
+    /* Joining/respawn may expose PLAYING before our snake arrives. Never
+       publish a fabricated in-arena 0,0; publish again as soon as it exists. */
+    if (!found) playing = false;
   }
+  presence_was_playing = playing;
 
   /*
    * The tag goes out too, in the mod's own numbering.
@@ -782,6 +822,8 @@ bool android_team_is_teammate(tenv* env, int sid, const char* name) {
 
 void android_team_draw_minimap(tenv* env, float left, float top,
                                float diameter) {
+  /* Wyrm friends (mutual follows) in this arena (OM, 2026-11-07). */
+  wyrm_extras_draw_friends(env, left, top, diameter);
   int count = frame_member_count;
   if (count <= 0 || diameter <= 0.0f) return;
 
@@ -791,29 +833,57 @@ void android_team_draw_minimap(tenv* env, float left, float top,
 
   float centre_x = left + diameter * 0.5f;
   float centre_y = top + diameter * 0.5f;
+  /* The map's own frame (OM, 2026-10-23): your mark and the cells sit at 0.9
+     of the radius (mm.slang, wyrm_draw_minimap). Teammates were at 0.8 and
+     showed somewhere else than where they were. */
+  float reach = diameter * 0.5f * 0.9f;
   float radius = diameter * 0.026f;
   if (radius < 4.0f) radius = 4.0f;
   if (radius > 7.0f) radius = 7.0f;
+  int snakes = tdarray_length(game->data.snakes);
 
   ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
   for (int i = 0; i < count; ++i) {
-    if (!team_member_here(env, frame_members + i)) continue;
-    if (frame_members[i].x == 0 && frame_members[i].y == 0) continue;
-    if (team_member_is_me(env, frame_members + i)) continue;
+    const team_member* member = frame_members + i;
+    if (!team_member_here(env, member)) continue;
+    if (team_member_is_me(env, member)) continue;
 
-    float nx = (frame_members[i].x - game->data.grd) / world_radius;
-    float ny = (frame_members[i].y - game->data.grd) / world_radius;
-    if (nx < -1.0f || nx > 1.0f || ny < -1.0f || ny > 1.0f) continue;
+    /* The service's copy is up to a poll old: a teammate this client can see
+       uses its live place, found by NTL's snake id (the reference client
+       does the same). */
+    float x = (float)member->x;
+    float y = (float)member->y;
+    if (member->sid > 0 && snakes > 0) {
+      snake* live = snake_find_by_ntl_id(game->data.snakes, snakes, member->sid);
+      if (live && !live->dead && live->id != game->data.snake_id) {
+        x = live->xx;
+        y = live->yy;
+      }
+    }
+    if (!isfinite(x) || !isfinite(y) || (x == 0.0f && y == 0.0f)) continue;
 
-    ImVec2 point = {centre_x + nx * diameter * 0.40f,
-                    centre_y + ny * diameter * 0.40f};
-    /* A dark ring under the mark so it survives a pale patch of map, then
-       Wyrm's green — the one colour the interface reserves for something that
-       is alive right now. */
+    /* Past the map's current border the mark stays on its edge; it used to be
+       dropped, and a teammate near the border vanished. */
+    float nx = (x - game->data.grd) / world_radius;
+    float ny = (y - game->data.grd) / world_radius;
+    /* Not `far`: a Windows macro (Wyrm Desktop compiles this file). */
+    float out = sqrtf(nx * nx + ny * ny);
+    if (out > 1.0f) {
+      nx /= out;
+      ny /= out;
+    }
+
+    ImVec2 point = {centre_x + nx * reach, centre_y + ny * reach};
+    /* A dark ring under the mark so it survives a pale patch of map, then a
+       bright green (OM, 2026-10-23: brighter than the theme's green). */
+    /* The icon the teammate chose in NTL (OM, 2026-11-07); the old dot
+       when it is unknown. */
+    if (!wyrm_extras_ntl_mark(draw, point, radius, member->di)) {
     ImDrawList_AddCircleFilled(draw, point, radius + 2.0f,
                                team_colour(0, 0, 0, 0.70f), 20);
     ImDrawList_AddCircleFilled(draw, point, radius,
-                               arena_theme_colour(ARENA_THEME_LIVE, 1.0f), 20);
+                               team_colour(0.20f, 1.0f, 0.36f, 1.0f), 20);
+    }
   }
 }
 
@@ -858,7 +928,7 @@ float android_team_draw_roster_centered(tenv* env, float centre_x,
 
   char title[24];
   snprintf(title, sizeof(title), "TEAM  %d", count);
-  ImDrawList_AddText_FontPtr(draw, bold, data_size,
+  sheet_add_text(draw, bold, data_size,
                              (ImVec2){min.x + pad, min.y + pad * 0.7f},
                              arena_theme_colour(ARENA_THEME_QUIET, opacity),
                              title, NULL, 0.0f, NULL);
@@ -908,11 +978,11 @@ float android_team_draw_roster_centered(tenv* env, float centre_x,
     hud_fit(bold, name_size, name,
             text_right - text_left - score_w - 10.0f * scale, fitted,
             sizeof(fitted));
-    ImDrawList_AddText_FontPtr(
+    sheet_add_text(
         draw, bold, name_size, (ImVec2){text_left, y},
         hud_text_colour(name_colour, ARENA_THEME_INK, alpha), fitted, NULL,
         0.0f, NULL);
-    ImDrawList_AddText_FontPtr(
+    sheet_add_text(
         draw, bold, name_size, (ImVec2){text_right - score_w, y},
         hud_text_colour(name_colour, ARENA_THEME_INK, alpha), score_text,
         NULL, 0.0f, NULL);
@@ -920,13 +990,13 @@ float android_team_draw_roster_centered(tenv* env, float centre_x,
     float data_y = y + name_size + 3.0f * scale;
     float half = (text_right - text_left) * 0.5f - 6.0f * scale;
     hud_fit(regular, data_size, owner, half, fitted, sizeof(fitted));
-    ImDrawList_AddText_FontPtr(
+    sheet_add_text(
         draw, regular, data_size, (ImVec2){text_left, data_y},
         hud_text_colour(data_colour, ARENA_THEME_QUIET, alpha), fitted, NULL,
         0.0f, NULL);
     hud_fit(regular, data_size, server, half, fitted, sizeof(fitted));
     float server_w = hud_text_width(regular, data_size, fitted, NULL);
-    ImDrawList_AddText_FontPtr(
+    sheet_add_text(
         draw, regular, data_size, (ImVec2){text_right - server_w, data_y},
         hud_text_colour(data_colour, ARENA_THEME_QUIET, alpha), fitted, NULL,
         0.0f, NULL);
@@ -1116,7 +1186,7 @@ void android_team_draw_chat_button(tenv* env) {
   if (!bold || !regular) return;
   int bold_flags = hud_lock(bold);
   int regular_flags = hud_lock(regular);
-  float text_size = regular->LegacySize * scale;
+  float text_size = regular->LegacySize * scale * env->usr->usrs.ext.chat_text_scale;
   float label_size = bold->LegacySize * 0.86f * scale;
   float pad = 12.0f * scale;
   ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
@@ -1209,10 +1279,19 @@ void android_team_draw_chat_button(tenv* env) {
     /* Label and badge keep full contrast, as on the keys. */
     float bs = btn_scale;
     float bl = label_size * bs;
-    ImDrawList_AddText_FontPtr(
-        draw, bold, bl,
-        (ImVec2){left + 22.0f * scale * bs, top + (vis_h - bl) * 0.5f},
-        btn_ink, label, NULL, 0.0f, NULL);
+    /* The thin sheet at the label's own opacity (OM, 2026-11-01). */
+    float lop = hud_clamp(hud_style[STYLE_BTN_LABEL_OPACITY], 0.0f, 1.0f);
+    ImU32 label_ink = (btn_ink & 0x00FFFFFFu) |
+                      ((ImU32)(((btn_ink >> 24) & 255u) * lop) << 24);
+    if (sheet_ok(label))
+      sheet_layer(draw, label, bl,
+                  (ImVec2){left + 22.0f * scale * bs, top + (vis_h - bl) * 0.5f},
+                  label_ink, SHEET_THIN, 0);
+    else
+      sheet_add_text(
+          draw, bold, bl,
+          (ImVec2){left + 22.0f * scale * bs, top + (vis_h - bl) * 0.5f},
+          label_ink, label, NULL, 0.0f, NULL);
     if (badge[0]) {
       float bx = left + (22.0f * scale + label_w + 8.0f * scale) * bs;
       float bh = (label_size + 6.0f * scale) * bs;
@@ -1220,7 +1299,7 @@ void android_team_draw_chat_button(tenv* env) {
       ImDrawList_AddRectFilled(
           draw, (ImVec2){bx, by}, (ImVec2){bx + badge_w * bs, by + bh},
           arena_theme_colour(ARENA_THEME_BADGE, pill_alpha), 999.0f, 0);
-      ImDrawList_AddText_FontPtr(
+      sheet_add_text(
           draw, bold, bl,
           (ImVec2){bx + 7.0f * scale * bs, by + 3.0f * scale * bs},
           team_colour(1, 1, 1, pill_alpha), badge, NULL, 0.0f, NULL);
@@ -1260,7 +1339,7 @@ void android_team_draw_chat_button(tenv* env) {
     for (int t = 0; t < CHAT_TAB_COUNT; ++t) {
       float tw = hud_text_width(bold, tab_size, tab_names[t], NULL);
       bool shown = t == chat_tab;
-      ImDrawList_AddText_FontPtr(
+      sheet_add_text(
           draw, bold, tab_size,
           (ImVec2){tab_x, top + (header_h - tab_size) * 0.5f},
           arena_theme_colour(shown ? ARENA_THEME_INK : ARENA_THEME_QUIET,
@@ -1281,7 +1360,7 @@ void android_team_draw_chat_button(tenv* env) {
         ImDrawList_AddRectFilled(
             draw, (ImVec2){bx, by}, (ImVec2){bx + nw + 9.0f * scale, by + bh},
             arena_theme_colour(ARENA_THEME_BADGE, body_alpha), 999.0f, 0);
-        ImDrawList_AddText_FontPtr(
+        sheet_add_text(
             draw, bold, bs, (ImVec2){bx + 4.5f * scale, by + 2.0f * scale},
             team_colour(1, 1, 1, body_alpha), tab_count[t], NULL, 0.0f, NULL);
         bw = nw + 14.0f * scale;
@@ -1296,15 +1375,10 @@ void android_team_draw_chat_button(tenv* env) {
        the whole corner, a little past the panel's edge. */
     float close_cx = left + vis_w - pad * 0.5f - close_w * 0.5f;
     float close_cy = top + header_h * 0.5f;
-    float arm = 6.5f * scale;
-    ImDrawList_AddLine(
-        draw, (ImVec2){close_cx - arm, close_cy - arm},
-        (ImVec2){close_cx + arm, close_cy + arm},
-        arena_theme_colour(ARENA_THEME_INK, 0.85f * body_alpha), 2.5f * scale);
-    ImDrawList_AddLine(
-        draw, (ImVec2){close_cx - arm, close_cy + arm},
-        (ImVec2){close_cx + arm, close_cy - arm},
-        arena_theme_colour(ARENA_THEME_INK, 0.85f * body_alpha), 2.5f * scale);
+    /* The original's X (OM, 2026-11-01): the sheet glyph, white face over
+       its baked outline, about 15 px tall at scale 1 (was two ink lines). */
+    sheet_glyph_centred('X', SHEET_THIN, 15.0f * scale / 38.0f, close_cx, close_cy,
+                        team_colour(1, 1, 1, 0.92f * body_alpha));
     chat_close_rect[0] = close_cx - close_w * 0.5f;
     chat_close_rect[1] = top - 10.0f * scale;
     chat_close_rect[2] = close_w + pad * 0.5f + 8.0f * scale;
@@ -1318,7 +1392,7 @@ void android_team_draw_chat_button(tenv* env) {
       ImDrawList_AddRectFilled(
           draw, input_min, input_max,
           arena_theme_colour(ARENA_THEME_WELL, 0.9f * body_alpha), 999.0f, 0);
-      ImDrawList_AddText_FontPtr(
+      sheet_add_text(
           draw, regular, text_size,
           (ImVec2){input_min.x + pad,
                    input_min.y + (input_h - text_size) * 0.5f},
@@ -1364,7 +1438,7 @@ void android_team_draw_chat_button(tenv* env) {
       if (lines == 0) {
         const char* empty = online ? "No one online" : "No messages yet";
         float w = hud_text_width(regular, text_size, empty, NULL);
-        ImDrawList_AddText_FontPtr(
+        sheet_add_text(
             draw, regular, text_size,
             (ImVec2){left + (vis_w - w) * 0.5f,
                      list_top + (list_height - text_size) * 0.5f},
@@ -1398,7 +1472,7 @@ void android_team_draw_chat_button(tenv* env) {
           if (row_y > list_bottom) continue;
           if (row_y + h < list_top) break;
         }
-        ImDrawList_AddText_FontPtr(
+        sheet_add_text(
             draw, bold, text_size, (ImVec2){list_left, row_y},
             hud_text_colour(lead_colour, ARENA_THEME_INK, body_alpha), lead,
             NULL, 0.0f, NULL);
@@ -1417,12 +1491,12 @@ void android_team_draw_chat_button(tenv* env) {
         if (thumb_h < 24.0f * scale) thumb_h = 24.0f * scale;
         if (thumb_h > list_height) thumb_h = list_height;
         float thumb_y = list_top + (list_height - thumb_h) * (online_scroll / most);
-        ImDrawList_AddLine(
-            draw, (ImVec2){bar_x, list_top}, (ImVec2){bar_x, list_bottom},
-            arena_theme_colour(ARENA_THEME_RULE, 0.7f * body_alpha), 3.0f * scale);
-        ImDrawList_AddLine(
-            draw, (ImVec2){bar_x, thumb_y}, (ImVec2){bar_x, thumb_y + thumb_h},
-            arena_theme_colour(ARENA_THEME_INK, 0.6f * body_alpha), 3.0f * scale);
+        /* The original's bar (OM, 2026-11-01): the sheet's '|' with its
+           baked outline, a faint track and a white thumb. */
+        sheet_bar(bar_x, list_top, list_bottom, 3.0f * scale,
+                  team_colour(1, 1, 1, 0.22f * body_alpha), SHEET_THIN);
+        sheet_bar(bar_x, thumb_y, thumb_y + thumb_h, 4.0f * scale,
+                  team_colour(1, 1, 1, 0.9f * body_alpha), SHEET_THIN);
       }
     }
   }
@@ -1691,7 +1765,7 @@ void android_team_draw_respawn_toggle(tenv* env) {
   ImDrawList_AddRect(draw, min, max,
                      arena_theme_colour(ARENA_THEME_BADGE, 0.58f),
                      999.0f, 0, 1.5f);
-  ImDrawList_AddText_FontPtr(draw, font, font->LegacySize,
+  sheet_add_text(draw, font, font->LegacySize,
                              (ImVec2){x + (width - size.x) * 0.5f,
                                       y + (height - size.y) * 0.5f},
                              arena_theme_colour(ARENA_THEME_BADGE, 1.0f), label,
@@ -1789,7 +1863,7 @@ void android_team_draw_chat_help(tenv* env) {
                        bot_on ? arena_theme_colour(ARENA_THEME_LIVE, 0.60f)
                               : arena_theme_colour(ARENA_THEME_INK, 0.34f),
                        999.0f, 0, 1.5f);
-    ImDrawList_AddText_FontPtr(draw, font, font->LegacySize,
+    sheet_add_text(draw, font, font->LegacySize,
                                (ImVec2){x + (width - size.x) * 0.5f,
                                         top + (height - size.y) * 0.5f},
                                arena_theme_colour(ARENA_THEME_INK, 0.94f), label,
@@ -1820,7 +1894,7 @@ void android_team_draw_chat_help(tenv* env) {
   ImDrawList_AddRect(draw, min, max,
                      arena_theme_colour(ARENA_THEME_BADGE, 0.55f),
                      12.0f, 0, 1.5f);
-  ImDrawList_AddText_FontPtr(draw, font, font->LegacySize,
+  sheet_add_text(draw, font, font->LegacySize,
                              (ImVec2){min.x + 17.0f, min.y + 11.0f},
                              arena_theme_colour(ARENA_THEME_INK, 0.94f), text,
                              NULL, 0, NULL);
@@ -1894,6 +1968,11 @@ Java_com_wyrm_omrajput_WyrmActivity_nativeSetTeamMembers(JNIEnv* env,
       member->sid = atoi(sid_text);
       tab_field(row, 9, member->owner, sizeof(member->owner));
       tab_field(row, 10, member->server, sizeof(member->server));
+      {
+        char di_text[12];
+        tab_field(row, 11, di_text, sizeof(di_text));
+        member->di = di_text[0] ? atoi(di_text) : 1000;
+      }
       count++;
     }
     line = end ? end + 1 : NULL;

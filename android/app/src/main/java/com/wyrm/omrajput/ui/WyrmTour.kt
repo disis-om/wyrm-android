@@ -33,7 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -418,13 +418,15 @@ private fun cardY(hole: Rect?, cardHeight: Float, height: Float, topLimit: Float
 
 @Composable
 private fun TourCardSurface(content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         Modifier
             .fillMaxWidth()
             .shadow(18.dp, wyrmRounded(22.dp), clip = false)
             .clip(wyrmRounded(22.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(22.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(22.dp))
             // The card itself answers taps, so a tap on it never reaches the dim.
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
             .padding(18.dp),
@@ -433,6 +435,8 @@ private fun TourCardSurface(content: @Composable () -> Unit) {
 
 @Composable
 private fun TourWelcomeCard(step: TourStep, drawn: Float, onStart: () -> Unit, onSkip: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     // The W draws itself as the welcome arrives.
     val fill by animateFloatAsState(if (drawn > 0.5f) 1f else 0f, tween(1100, easing = FastOutSlowInEasing), label = "tour-mark")
     TourCardSurface {
@@ -440,9 +444,9 @@ private fun TourWelcomeCard(step: TourStep, drawn: Float, onStart: () -> Unit, o
             WyrmMark(size = 64.dp, fill = fill)
             Spacer(Modifier.height(14.dp))
             Text(step.title, fontFamily = Wyrm.Display, fontWeight = FontWeight.SemiBold, fontSize = 30.sp,
-                color = Wyrm.Ink, textAlign = TextAlign.Center)
+                color = wyrmScopedPalette.ink, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
-            Text(step.body, fontFamily = Wyrm.Body, fontSize = 14.5.sp, lineHeight = 20.sp, color = Wyrm.Mute,
+            Text(step.body, fontFamily = Wyrm.Body, fontSize = 14.5.sp, lineHeight = 20.sp, color = wyrmScopedPalette.mute,
                 textAlign = TextAlign.Center)
             Spacer(Modifier.height(20.dp))
             TourPrimaryButton("Show me around", Modifier.fillMaxWidth(), onStart)
@@ -454,14 +458,16 @@ private fun TourWelcomeCard(step: TourStep, drawn: Float, onStart: () -> Unit, o
 
 @Composable
 private fun TourDoneCard(step: TourStep, onDone: () -> Unit, onBack: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     TourCardSurface {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             WyrmMark(size = 52.dp)
             Spacer(Modifier.height(12.dp))
             Text(step.title, fontFamily = Wyrm.Display, fontWeight = FontWeight.SemiBold, fontSize = 26.sp,
-                color = Wyrm.Ink, textAlign = TextAlign.Center)
+                color = wyrmScopedPalette.ink, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
-            Text(step.body, fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 20.sp, color = Wyrm.Mute,
+            Text(step.body, fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 20.sp, color = wyrmScopedPalette.mute,
                 textAlign = TextAlign.Center)
             Spacer(Modifier.height(18.dp))
             TourPrimaryButton("Let's play", Modifier.fillMaxWidth(), onDone)
@@ -480,19 +486,21 @@ private fun TourStepCard(
     onBack: () -> Unit,
     onSkip: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     TourCardSurface {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("$number of $total", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp,
-                letterSpacing = 0.4.sp, color = Wyrm.Quiet)
+                letterSpacing = 0.4.sp, color = wyrmScopedPalette.quiet)
             Spacer(Modifier.width(10.dp))
             TourBeads(number, total, Modifier.weight(1f))
             Spacer(Modifier.width(10.dp))
             TourTextButton("Skip", onSkip)
         }
         Spacer(Modifier.height(8.dp))
-        Text(step.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Wyrm.Ink)
+        Text(step.title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = wyrmScopedPalette.ink)
         Spacer(Modifier.height(5.dp))
-        Text(step.body, fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 19.5.sp, color = Wyrm.Mute)
+        Text(step.body, fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 19.5.sp, color = wyrmScopedPalette.mute)
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (number > 1) TourTextButton("Back", onBack)
@@ -505,30 +513,36 @@ private fun TourStepCard(
 /** Progress as a row of beads, the lit ones in the theme's live colour. */
 @Composable
 private fun TourBeads(number: Int, total: Int, modifier: Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically) {
         for (i in 1..total) {
             Box(Modifier.size(if (i == number) 8.dp else 6.dp).clip(CircleShape)
-                .background(if (i <= number) Wyrm.Live else Wyrm.Rule))
+                .background(if (i <= number) wyrmScopedPalette.live else wyrmScopedPalette.rule))
         }
     }
 }
 
 @Composable
 private fun TourPrimaryButton(label: String, modifier: Modifier, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier
             .height(42.dp)
             .clip(CircleShape)
-            .background(Wyrm.Ink)
+            .background(wyrmScopedPalette.ink)
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = Wyrm.OnInk) }
+    ) { Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = wyrmScopedPalette.onInk) }
 }
 
 @Composable
 private fun TourTextButton(label: String, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         Modifier
             .height(34.dp)
@@ -536,5 +550,5 @@ private fun TourTextButton(label: String, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = Wyrm.Mute) }
+    ) { Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = wyrmScopedPalette.mute) }
 }

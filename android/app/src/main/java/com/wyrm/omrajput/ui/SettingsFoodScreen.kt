@@ -25,7 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -92,8 +93,8 @@ fun SettingsFoodScreen(
     val colour = named("food_color")
     val drift = named("food_float")
     val flicker = named("food_flicker")
-    val constant = named("const_food_scale")
-    val shown = setOfNotNull(style, scale, uniform, colour, drift, flicker, constant)
+    val texture = named("food_texture")
+    val shown = setOfNotNull(style, scale, uniform, colour, drift, flicker, texture)
     val others = food.filterNot { it in shown }
 
     SettingsDrillScaffold(
@@ -111,6 +112,7 @@ fun SettingsFoodScreen(
                 uniformColour = colour?.channels?.let { Color(it[0], it[1], it[2]) } ?: FOOD_HUES[3],
                 drift = drift?.enabled == true,
                 flicker = flicker?.enabled == true,
+                texture = texture?.index ?: 0,
             )
             Spacer(Modifier.height(12.dp))
             PaperSegmented(
@@ -120,8 +122,36 @@ fun SettingsFoodScreen(
             )
         }
 
-        SettingsSectionLabel("Shape")
-        if (style != null) {
+        // Food texture (OM, 2026-10-25), each mode its own.
+        if (texture != null) {
+            SettingsSectionLabel("Texture")
+            Column(
+                Modifier.padding(horizontal = 16.dp).settingAnchor(texture.id),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                FOOD_TEXTURES.chunked(3).forEachIndexed { row, labels ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        labels.forEachIndexed { column, label ->
+                            val index = row * 3 + column
+                            FoodTile(
+                                style = 0,
+                                label = label,
+                                selected = texture.index == index,
+                                modifier = Modifier.weight(1f),
+                                painter = { drawFoodTexture(index) },
+                            ) { onChange(texture, listOf(index.toFloat())) }
+                        }
+                        repeat(3 - labels.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+            SettingsCaption(FOOD_TEXTURE_NOTE)
+        }
+
+        // Shape belongs to the Wyrm texture only (OM, 2026-10-26).
+        val wyrmTexture = (texture?.index ?: 0) == 0
+        if (wyrmTexture) SettingsSectionLabel("Shape")
+        if (style != null && wyrmTexture) {
             Column(
                 Modifier.padding(horizontal = 16.dp).settingAnchor(style.id),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -142,12 +172,12 @@ fun SettingsFoodScreen(
                 }
             }
         }
-        SettingsCaption("Mixed uses every shape and keeps each morsel the same shape for its whole life.")
+        if (wyrmTexture) SettingsCaption("Mixed uses every shape and keeps each morsel the same shape for its whole life.")
 
         SettingsSectionLabel("Look")
         SettingsCard {
             var first = true
-            listOfNotNull(scale, constant, uniform, colour?.takeIf { uniform?.enabled == true }, drift, flicker)
+            listOfNotNull(scale, uniform, colour?.takeIf { uniform?.enabled == true }, drift, flicker)
                 .plus(others)
                 .forEach { setting ->
                     Box(Modifier.settingAnchor(setting.id)) {
@@ -167,7 +197,9 @@ fun SettingsFoodScreen(
  * arena's hues, drift and flicker. It moves only when the settings say food moves.
  */
 @Composable
-private fun FoodPreview(style: Int, scale: Float, uniform: Boolean, uniformColour: Color, drift: Boolean, flicker: Boolean) {
+private fun FoodPreview(style: Int, scale: Float, uniform: Boolean, uniformColour: Color, drift: Boolean, flicker: Boolean, texture: Int = 0) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val time by rememberInfiniteTransition(label = "food-preview").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -188,7 +220,7 @@ private fun FoodPreview(style: Int, scale: Float, uniform: Boolean, uniformColou
             .height(176.dp)
             .clip(wyrmRounded(22.dp))
             .background(ARENA_FLOOR)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(22.dp)),
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(22.dp)),
     ) {
         Canvas(Modifier.fillMaxSize()) {
             // A faint hex-like dot lattice, as the arena floor has.
@@ -216,7 +248,9 @@ private fun FoodPreview(style: Int, scale: Float, uniform: Boolean, uniformColou
                 val glow = if (flicker) 0.55f + 0.45f * ((sin(phase * 3f + m[3] * 2f) + 1f) / 2f) else 1f
                 val hue = if (uniform) uniformColour else FOOD_HUES[m[4].toInt()]
                 val shape = if (style == 2) m[5].toInt() else shapeOf(style)
-                drawGlowingFood(shape, c, base * size01, hue, glow)
+                // The texture shows here too (OM, 2026-10-26); Wyrm keeps its shapes.
+                if (texture in 1..7) drawFoodPellet(texture, c, base * size01, hue)
+                else drawGlowingFood(shape, c, base * size01, hue, glow)
             }
         }
         Text(
@@ -238,15 +272,24 @@ private fun FoodPreview(style: Int, scale: Float, uniform: Boolean, uniformColou
 
 /** One shape: a small arena tile with the food glowing in it, its name, and a check when chosen. */
 @Composable
-private fun FoodTile(style: Int, label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun FoodTile(
+    style: Int,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier,
+    painter: (DrawScope.() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column(
         modifier
             .scale(pressScale(pressed))
             .clip(wyrmRounded(18.dp))
-            .background(Wyrm.Card)
-            .border(if (selected) 2.dp else 1.dp, if (selected) Wyrm.Ink else Wyrm.Rule, wyrmRounded(18.dp))
+            .background(wyrmScopedPalette.card)
+            .border(if (selected) 2.dp else 1.dp, if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule, wyrmRounded(18.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -254,7 +297,9 @@ private fun FoodTile(style: Int, label: String, selected: Boolean, modifier: Mod
         Box(Modifier.fillMaxWidth().aspectRatio(1.25f).clip(wyrmRounded(12.dp)).background(ARENA_FLOOR)) {
             Canvas(Modifier.fillMaxSize()) {
                 val r = size.minDimension * 0.17f
-                if (style == 2) {
+                if (painter != null) {
+                    painter()
+                } else if (style == 2) {
                     listOf(0, 2, 3, 5).forEachIndexed { spot, shape ->
                         val x = if (spot % 2 == 0) size.width * 0.33f else size.width * 0.67f
                         val y = if (spot < 2) size.height * 0.33f else size.height * 0.67f
@@ -266,10 +311,10 @@ private fun FoodTile(style: Int, label: String, selected: Boolean, modifier: Mod
             }
             if (selected) {
                 Box(
-                    Modifier.align(Alignment.TopEnd).padding(6.dp).size(20.dp).clip(CircleShape).background(Wyrm.Ink),
+                    Modifier.align(Alignment.TopEnd).padding(6.dp).size(20.dp).clip(CircleShape).background(wyrmScopedPalette.ink),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(painterResource(LucideR.drawable.lucide_ic_check), null, tint = Wyrm.OnInk, modifier = Modifier.size(12.dp))
+                    Icon(painterResource(LucideR.drawable.lucide_ic_check), null, tint = wyrmScopedPalette.onInk, modifier = Modifier.size(12.dp))
                 }
             }
         }
@@ -278,16 +323,97 @@ private fun FoodTile(style: Int, label: String, selected: Boolean, modifier: Mod
             fontFamily = Wyrm.Body,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
             fontSize = 12.5.sp,
-            color = if (selected) Wyrm.Ink else Wyrm.Mute,
+            color = if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.mute,
             modifier = Modifier.padding(top = 7.dp, bottom = 2.dp),
             maxLines = 1,
         )
     }
 }
 
+/** Food textures (OM, 2026-10-25), in the engine's order (fd.slang food_texture). */
+private val FOOD_TEXTURES = listOf("Wyrm", "Slither app", "Crisp", "Square", "Glossy", "Gem", "Candy", "Pixel")
+
+internal const val FOOD_TEXTURE_NOTE =
+    "Shape applies to Wyrm. Every texture is drawn solid, so food stays clear on light floors."
+
+/** A texture tile: three pellets the way the arena draws that texture. */
+private fun DrawScope.drawFoodTexture(texture: Int) {
+    val r = size.minDimension * 0.13f
+    val spots = listOf(Offset(size.width * 0.3f, size.height * 0.38f), Offset(size.width * 0.66f, size.height * 0.32f),
+        Offset(size.width * 0.5f, size.height * 0.68f))
+    spots.forEachIndexed { i, c -> drawFoodPellet(texture, c, r, FOOD_HUES[(i * 3 + 1) % FOOD_HUES.size]) }
+}
+
+/** One pellet in [texture] (fd.slang food_texture), for the tiles and the preview. */
+private fun DrawScope.drawFoodPellet(texture: Int, c: Offset, r: Float, colour: Color) {
+    when (texture) {
+        1 -> {
+            drawCircle(Brush.radialGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent),
+                c.copy(y = c.y + r * 0.35f), r * 1.5f), r * 1.5f, c.copy(y = c.y + r * 0.35f))
+            val bright = Color((colour.red * 1.5f).coerceAtMost(1f), (colour.green * 1.5f).coerceAtMost(1f),
+                (colour.blue * 1.5f).coerceAtMost(1f))
+            drawCircle(Brush.radialGradient(0f to bright, 0.5f to colour, 1f to colour.copy(alpha = 0.2f),
+                center = c, radius = r * 1.05f), r * 1.05f, c)
+        }
+        2 -> drawCircle(colour, r * 0.9f, c)
+        3 -> drawRect(colour.copy(alpha = 0.6f), Offset(c.x - r * 0.55f, c.y - r * 0.55f),
+            androidx.compose.ui.geometry.Size(r * 1.1f, r * 1.1f))
+        4 -> {
+            drawCircle(colour, r * 0.95f, c)
+            drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.85f), Color.Transparent),
+                Offset(c.x - r * 0.35f, c.y - r * 0.4f), r * 0.55f), r * 0.55f, Offset(c.x - r * 0.35f, c.y - r * 0.4f))
+            drawCircle(Brush.radialGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.35f)), c, r * 0.95f),
+                r * 0.95f, c)
+        }
+        5 -> {
+            // Gem: a diamond with lit upper facets.
+            fun facet(points: List<Offset>, f: Float) {
+                val path = Path().apply {
+                    moveTo(points[0].x, points[0].y); points.drop(1).forEach { lineTo(it.x, it.y) }; close()
+                }
+                drawPath(path, Color((colour.red * f).coerceAtMost(1f), (colour.green * f).coerceAtMost(1f),
+                    (colour.blue * f).coerceAtMost(1f)))
+            }
+            val top = Offset(c.x, c.y - r); val bottom = Offset(c.x, c.y + r)
+            val left = Offset(c.x - r, c.y); val right = Offset(c.x + r, c.y)
+            facet(listOf(top, c, left), 1.25f); facet(listOf(top, right, c), 1f)
+            facet(listOf(left, c, bottom), 0.8f); facet(listOf(c, right, bottom), 0.62f)
+            drawCircle(Color.White.copy(alpha = 0.35f), r * 0.18f, c)
+        }
+        6 -> {
+            // Candy: white diagonal stripes on the colour.
+            val disc = Path().apply { addOval(androidx.compose.ui.geometry.Rect(c, r * 0.95f)) }
+            drawPath(disc, colour)
+            clipPath(disc) {
+                val pale = Color(colour.red + (1 - colour.red) * 0.6f, colour.green + (1 - colour.green) * 0.6f,
+                    colour.blue + (1 - colour.blue) * 0.6f)
+                val step = r * 0.6f
+                var k = -4
+                while (k <= 4) {
+                    val o = k * step * 2
+                    drawLine(pale, Offset(c.x + o - r * 2, c.y + r * 2), Offset(c.x + o + r * 2, c.y - r * 2), step)
+                    k++
+                }
+            }
+        }
+        7 -> {
+            // Pixel: a 4 x 4 block of pixels, lit at the top left.
+            val side = r * 1.6f
+            val cell = side / 4
+            for (y in 0 until 4) for (x in 0 until 4) {
+                val edge = if (x == 0 || y == 0 || x == 3 || y == 3) 0.85f else 1f
+                val f = (1.22f - 0.1f * (x + y)) * edge
+                drawRect(Color((colour.red * f).coerceAtMost(1f), (colour.green * f).coerceAtMost(1f), (colour.blue * f).coerceAtMost(1f)),
+                    Offset(c.x - side / 2 + x * cell, c.y - side / 2 + y * cell), androidx.compose.ui.geometry.Size(cell + 0.5f, cell + 0.5f))
+            }
+        }
+        else -> drawGlowingFood(0, c, r, colour, 1f)
+    }
+}
+
 internal fun Setting.isFoodSetting(): Boolean {
     val local = id.substringAfter('.')
-    return local.startsWith("food_") || local == "const_food_scale" ||
+    return local.startsWith("food_") || 
         local == "uniform_food_color"
 }
 

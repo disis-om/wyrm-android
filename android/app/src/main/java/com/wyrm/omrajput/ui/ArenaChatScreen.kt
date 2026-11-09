@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -68,7 +68,10 @@ fun ArenaChatScreen(
     onClose: () -> Unit,
     /** The tab the message box was tapped on: team or everyone (OM, 2026-10-14). */
     placeholder: String = "Message the team",
+    sendAllowed: Boolean = true,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
@@ -91,7 +94,7 @@ fun ArenaChatScreen(
         }
     }
     val send = {
-        if (draft.isNotBlank() && !sending) {
+        if (draft.isNotBlank() && !sending && sendAllowed) {
             onSend()
             leave()
         }
@@ -116,8 +119,8 @@ fun ArenaChatScreen(
                     alpha = 1f - rise.value
                 }
                 .clip(wyrmRounded(Wyrm.Pill))
-                .background(Wyrm.Card.copy(alpha = 0.97f))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(Wyrm.Pill))
+                .background(wyrmScopedPalette.card.copy(alpha = 0.97f))
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(Wyrm.Pill))
                 // Taps on the bar stay on the bar.
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -133,15 +136,15 @@ fun ArenaChatScreen(
                         text = placeholder,
                         fontFamily = Wyrm.Body,
                         fontSize = 15.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                     )
                 }
                 BasicTextField(
                     value = draft,
                     onValueChange = { if (it.length <= 280) onDraftChange(it) },
                     singleLine = true,
-                    textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink),
-                    cursorBrush = SolidColor(Wyrm.Ink),
+                    textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink),
+                    cursorBrush = SolidColor(wyrmScopedPalette.ink),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
@@ -149,16 +152,16 @@ fun ArenaChatScreen(
             }
             Spacer(Modifier.width(8.dp))
             Text(
-                text = if (sending) "SENDING" else "SEND",
+                text = if (!sendAllowed) "CONNECT TEAM" else if (sending) "SENDING" else "SEND",
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
                 letterSpacing = 1.2.sp,
-                color = Wyrm.OnInk,
+                color = wyrmScopedPalette.onInk,
                 modifier = Modifier
                     .clip(wyrmRounded(Wyrm.Pill))
-                    .background(if (draft.isBlank()) Wyrm.Ink.copy(alpha = 0.35f) else Wyrm.Ink)
-                    .clickable(enabled = draft.isNotBlank() && !sending) { send() }
+                    .background(if (draft.isBlank()) wyrmScopedPalette.ink else wyrmScopedPalette.ink)
+                    .clickable(enabled = draft.isNotBlank() && !sending && sendAllowed) { send() }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             )
         }

@@ -330,10 +330,13 @@ static void drop_put_int(char* buf, size_t cap, size_t* used, const char* key,
 }
 
 /*
- * A snake the arena ends within this long of spawning was dropped, not beaten:
- * the arena takes it with a 'v' 0.3 to 1 s after it appears (OM, 2026-09-29).
+ * Arena drop reports (OM, 2026-10-25): only a 'v' (death packet) within
+ * one second of the snake spawning is a drop. A close, an error or a refusal
+ * before the spawn, and any death after that second, is never reported and
+ * shows no card: players were shown "The arena dropped you" after ordinary
+ * quick deaths.
  */
-#define WYRM_FAST_DEATH_SEC 1.5
+#define WYRM_FAST_DEATH_SEC 1.0
 
 /* Whether this life can still be reported: once per life, a live arena
    snake, and not the player leaving. */
@@ -359,6 +362,8 @@ static void drop_ends_auto_restart(tenv* env) {
 
 void android_home_arena_drop(tenv* env) {
   if (!env) return;
+  /* Not a drop since 2026-10-25 (see the rule above). */
+  if (env) return;
   /* Evaluated before `android_home_notify_death`: once that has run a death is
      always pending, and a real death (a 'v' first) already made it pending. */
   if (!drop_can_report(&env->usr->gdata)) return;
@@ -469,6 +474,8 @@ static void arena_drop_report(tenv* env, const char* reason, int death_code) {
 
 void android_home_arena_prespawn_close(tenv* env, const char* phase) {
   if (!env || prespawn_reported) return;
+  /* Not a drop since 2026-10-25 (see the rule above). */
+  if (env) return;
   game_data* gdata = &env->usr->gdata;
   user_settings* settings = &env->usr->usrs;
   if (gdata->ai_mode || gdata->join_spawned || gdata->closed_by_us ||

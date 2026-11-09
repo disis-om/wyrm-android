@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -103,6 +103,8 @@ internal fun joystickLaserLabel(length: Float): String = "${(length * 100).toInt
  */
 @Composable
 internal fun JoystickLaserPreview(length: Float, on: Boolean, colour: Color, thicknessPx: Float) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val sway by rememberInfiniteTransition(label = "laser-sway").animateFloat(
         initialValue = -1f,
         targetValue = 1f,
@@ -120,7 +122,7 @@ internal fun JoystickLaserPreview(length: Float, on: Boolean, colour: Color, thi
             text = "Live preview: the line goes where your snake goes, at this length",
             fontFamily = Wyrm.Body,
             fontSize = 12.5.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
         Box(
             Modifier
@@ -129,7 +131,7 @@ internal fun JoystickLaserPreview(length: Float, on: Boolean, colour: Color, thi
                 .height(150.dp)
                 .clip(wyrmRounded(14.dp))
                 .background(Color(0xFF0B0E12))
-                .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp)),
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp)),
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 // The slice is the phone's screen, scaled to fit this box.

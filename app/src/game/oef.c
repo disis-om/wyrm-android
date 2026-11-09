@@ -1,7 +1,10 @@
 #include "oef.h"
 
+#include <math.h>
+
 #include "../user.h"
 #include "../network/arena_protocol.h"
+#include "wyrm_extras.h"
 
 /* Ping (OM, 2026-10-12, from the reference client, as NTL does it). The
    arena socket is read once a frame, so a pong is seen up to a frame late,
@@ -72,6 +75,58 @@ void ping_mark_received(tenv* env) {
   }
 }
 
+/* Display-locked frame time (OM, 2026-11-07;
+   Wyrm iOS/Scripts/engine_frame_timing_2026_11_07.py). The step is taken
+   from a double clock and snapped to whole display periods, with the
+   difference from real time paid back gradually. */
+static double ft_period_ms;  /* learnt display period, 0 = not yet */
+static double ft_hint_ms;    /* from the platform (Swappy / display link) */
+static double ft_debt_ms;    /* real time not yet given to the game */
+static int ft_off_frames;    /* frames in a row that fit no period */
+static double ft_prev_ms = -1;
+static float ft_prev_ltm = -1;
+
+/* Any thread; read on the engine thread. */
+void wyrm_frame_period_hint_ms(double ms) {
+  if (ms < 2.0 || ms > 50.0) return;
+  ft_hint_ms = ms;
+  ft_period_ms = ms;
+  ft_off_frames = 0;
+}
+
+static double ft_step_ms(double raw) {
+  if (raw <= 0.0 || raw > 250.0) {
+    ft_debt_ms = 0;
+    return raw;
+  }
+  if (ft_period_ms <= 0.0) ft_period_ms = ft_hint_ms > 0.0 ? ft_hint_ms : raw;
+  double ratio = raw / ft_period_ms;
+  long n = lround(ratio);
+  if (n < 1 || fabs(ratio - (double)n) > 0.35) {
+    if (++ft_off_frames >= 20) {
+      ft_period_ms = raw; /* the display changed rate: learn it again */
+      ft_off_frames = 0;
+    }
+    /* Not a whole number of periods: the plain step, plus anything still
+       owed, so no real time is ever lost. */
+    double plain = raw + ft_debt_ms;
+    ft_debt_ms = 0;
+    return plain > 0.0 ? plain : 0.0;
+  }
+  ft_off_frames = 0;
+  /* Learn the period from every frame (a frame of two vsyncs counts as two);
+     faster while it is far off, as after a refresh-rate change. */
+  double one = raw / (double)n;
+  ft_period_ms += (one - ft_period_ms) *
+                  (fabs(one - ft_period_ms) > 0.1 * ft_period_ms ? 0.1 : 0.02);
+  double step = (double)n * ft_period_ms;
+  ft_debt_ms += raw - step;
+  double pay = fabs(ft_debt_ms) > 4.0 * ft_period_ms ? ft_debt_ms
+                                                     : ft_debt_ms * 0.1;
+  ft_debt_ms -= pay;
+  return step + pay;
+}
+
 void time_step(tenv* env) {
   tuser_data* usr = env->usr;
   tcontext* ctx = env->ctx;
@@ -84,7 +139,17 @@ void time_step(tenv* env) {
     gdata->data.play_etm = time_sec - gdata->life_started_sec;
 
   gdata->data.fps_etm = (gdata->data.ctm - gdata->data.fps_ltm);
-  gdata->data.vfr = (gdata->data.ctm - gdata->data.ltm) / 8.0f;
+  {
+    /* The float ctm/ltm stay for everything else; the step comes from the
+       double clock unless ltm was reset elsewhere (a new dial, a reset). */
+    double now_ms = time_sec * 1000.0;
+    double raw = gdata->data.ltm == ft_prev_ltm && ft_prev_ms >= 0.0
+                     ? now_ms - ft_prev_ms
+                     : (double)(gdata->data.ctm - gdata->data.ltm);
+    ft_prev_ms = now_ms;
+    ft_prev_ltm = gdata->data.ctm;
+    gdata->data.vfr = (float)(ft_step_ms(raw) / 8.0);
+  }
   if (gdata->data.vfr > 5) gdata->data.vfr = 5;
   if (gdata->data.vfr < 0) gdata->data.vfr = 0;
   gdata->data.avfr = gdata->data.vfr;
@@ -128,10 +193,29 @@ void oef(tenv* env) {
   user_settings* usrs = &usr->usrs;
   gameplay_mode* mode = usrs->modes + usrs->hotkeys[HOTKEY_ASSIST].active;
 
-  gdata->data.gsc = usrs->smooth_zoom
-                        ? glm_lerp(gdata->data.gsc, gdata->data.ms_zoom,
-                                   0.25f * gdata->data.vfr)
-                        : gdata->data.ms_zoom;
+  /* Main.as's zoom (OM, 2026-11-08): as the snake grows the view zooms out,
+     dgsc = 0.35 + 0.35 / max(1, (sct + 16) / 36), moving 0.0002 a frame. It
+     multiplies the player's own zoom, so pinching sets where it starts from
+     and never switches it off. A death keeps the zoom where it was; the
+     lobby (game_data_reset) puts it back to normal (OM). */
+  {
+    snake* me = NULL;
+    int count = (int)tdarray_length(gdata->data.snakes);
+    for (int i = 0; i < count && gdata->data.snake_id >= 0; i++)
+      if (gdata->data.snakes[i].id == gdata->data.snake_id) { me = gdata->data.snakes + i; break; }
+    if (!wyrm_extras_auto_zoom()) {
+      wyrm_air_zoom = 1.0f;  /* Auto zoom off (OM, 2026-11-09). */
+    } else if (me && !me->dead) {
+      float target = (0.35f + 0.35f / fmaxf(1.0f, (me->sct + 16) / 36.0f)) / 0.7f;
+      float step = 0.0002f / 0.7f * fmaxf(gdata->data.vfr, 0.0f);
+      if (wyrm_air_zoom < target) wyrm_air_zoom = fminf(target, wyrm_air_zoom + step);
+      else if (wyrm_air_zoom > target) wyrm_air_zoom = fmaxf(target, wyrm_air_zoom - step);
+    }
+    float want = gdata->data.ms_zoom * wyrm_air_zoom;
+    gdata->data.gsc = usrs->smooth_zoom
+                          ? glm_lerp(gdata->data.gsc, want, 0.25f * gdata->data.vfr)
+                          : want;
+  }
 
   // update flux:
   if (gdata->data.vfrb > 0) {
@@ -330,8 +414,9 @@ void oef(tenv* env) {
       float sent_ang;
       if (eyes_back_eye_angle(&sent_ang)) eye_ang = sent_ang;
     }
-    float wx = cosf(eye_ang) * 2.3f;  // o.pma = 2.3
-    float wy = sinf(eye_ang) * 2.3f;  // o.pma = 2.3
+    /* Main.as `pma`: 4 for the one eye, 3 for the slug (OM, 2026-11-07). */
+    float wx = cosf(eye_ang) * air_looks_pma(o);
+    float wy = sinf(eye_ang) * air_looks_pma(o);
     if (o->rex < wx) {
       o->rex += gdata->data.vfr / 6.0f;
       if (o->rex >= wx) o->rex = wx;

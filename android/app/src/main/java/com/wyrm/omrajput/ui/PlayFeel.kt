@@ -20,6 +20,9 @@ import androidx.compose.runtime.setValue
  * - [knobCentre] (OM, 2026-10-13): the joystick's knob goes back to the centre
  *   instead of following the snake (fixed and dynamic joysticks; Near Original
  *   keeps slither's). Shared document key `joystickKnobCentre`.
+ * - [autoZoom] (OM, 2026-11-09), Settings › Display: on (the default) the view
+ *   zooms out as the snake grows, like slither; off keeps the player's own
+ *   zoom. Shared document key `autoZoom`; engine `nativeSetAutoZoom`.
  *
  * The engine draws and steers (`mobile_controls_set_play_feel`). Saved in
  * `wyrm_play_feel`, synced with the account (AccountSync.FILES) and common to
@@ -32,6 +35,7 @@ object PlayFeelStore {
     private const val KEY_LOOK_AHEAD = "look_ahead"
     private const val KEY_ZOOM_SPRING = "zoom_spring"
     private const val KEY_KNOB_CENTRE = "knob_centre"
+    private const val KEY_AUTO_ZOOM = "auto_zoom"
 
     var customArrow by mutableStateOf(true)
         private set
@@ -41,10 +45,13 @@ object PlayFeelStore {
         private set
     var knobCentre by mutableStateOf(false)
         private set
+    var autoZoom by mutableStateOf(true)
+        private set
 
     private var prefs: android.content.SharedPreferences? = null
     private var sink: ((Boolean, Boolean, Int) -> Unit)? = null
     private var knobSink: ((Boolean) -> Unit)? = null
+    private var autoZoomSink: ((Boolean) -> Unit)? = null
 
     /** Called once by the activity; publishes the saved choices to the engine. */
     @JvmStatic
@@ -55,6 +62,7 @@ object PlayFeelStore {
         lookAhead = store.getBoolean(KEY_LOOK_AHEAD, false)
         zoomSpring = store.getBoolean(KEY_ZOOM_SPRING, false)
         knobCentre = store.getBoolean(KEY_KNOB_CENTRE, false)
+        autoZoom = store.getBoolean(KEY_AUTO_ZOOM, true)
         sink = publish
         publishNow()
     }
@@ -64,6 +72,13 @@ object PlayFeelStore {
     fun attachKnob(publish: (Boolean) -> Unit) {
         knobSink = publish
         publish(knobCentre)
+    }
+
+    /** Auto zoom reaches the engine through its own call (OM, 2026-11-09). */
+    @JvmStatic
+    fun attachAutoZoom(publish: (Boolean) -> Unit) {
+        autoZoomSink = publish
+        publish(autoZoom)
     }
 
     /** After a log in or log out rewrote the file (AccountSync): read it again and republish. */
@@ -96,8 +111,15 @@ object PlayFeelStore {
         knobSink?.invoke(value)
     }
 
+    fun applyAutoZoom(value: Boolean) {
+        autoZoom = value
+        prefs?.edit()?.putBoolean(KEY_AUTO_ZOOM, value)?.apply()
+        autoZoomSink?.invoke(value)
+    }
+
     private fun publishNow() {
         sink?.invoke(!customArrow, lookAhead, if (zoomSpring) 1 else 0)
         knobSink?.invoke(knobCentre)
+        autoZoomSink?.invoke(autoZoom)
     }
 }

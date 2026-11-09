@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +35,7 @@ internal val notificationGroups = listOfNotNull(
         listOf(
             NotificationChoice("invite", "Arena invites", "Someone sends you a server and key."),
             NotificationChoice("dm", "Direct messages", "New thread or reply."),
+            NotificationChoice("mention", "Mentions", "Someone writes your @username in global chat."),
             NotificationChoice("voice_invite", "Voice invitations", "Private invitations to verified voice rooms."),
             NotificationChoice("follow", "New followers", "When another player starts following you."),
         ).filter { it.kind != "voice_invite" || com.wyrm.omrajput.data.VOICE_ENABLED },
@@ -126,6 +127,8 @@ private fun NotificationPaperRow(
     first: Boolean,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(modifier = Modifier.alpha(if (enabled) 1f else 0.46f)) {
         if (!first) SettingsHairline()
         Row(
@@ -137,13 +140,13 @@ private fun NotificationPaperRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(text = choice.title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+                Text(text = choice.title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
                 if (choice.detail.isNotBlank()) {
                     Text(
                         text = choice.detail,
                         fontFamily = Wyrm.Body,
                         fontSize = 12.5.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(top = 1.dp),
                     )
                 }

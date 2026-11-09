@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -49,7 +51,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -142,12 +144,14 @@ fun IosPageChrome(
     onAction: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     if (LocalPageChromeHidden.current) {
         Column(Modifier.fillMaxSize().padding(top = insetTop)) { content() }
         return
     }
-    Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
-        Box(Modifier.fillMaxWidth().height(52.dp).background(Wyrm.Paper).padding(horizontal = 18.dp)) {
+    Column(Modifier.fillMaxSize().background(wyrmScopedPalette.paper).padding(top = insetTop)) {
+        Box(Modifier.fillMaxWidth().height(52.dp).background(wyrmScopedPalette.paper).padding(horizontal = 18.dp)) {
             Row(
                 Modifier
                     .align(Alignment.CenterStart)
@@ -155,15 +159,15 @@ fun IosPageChrome(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Link, size = 15.dp, weight = 2.6f)
-                Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.Link)
+                IosIcon(IosGlyph.CHEVRON_LEFT, wyrmScopedPalette.link, size = 15.dp, weight = 2.6f)
+                Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = wyrmScopedPalette.link)
             }
             Text(
                 title,
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 maxLines = 1,
                 modifier = Modifier.align(Alignment.Center).padding(horizontal = 80.dp),
             )
@@ -173,16 +177,42 @@ fun IosPageChrome(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onAction?.invoke() },
                 )
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         content()
     }
+}
+
+/* ----------------------------------------------------------- list places */
+
+/**
+ * Where a list was (OM, 2026-10-31): kept by the overlay while a page opened
+ * from it (a profile, a trail's replies) is on screen, so Back lands on the
+ * same row instead of the top. The search typed into it stays too.
+ */
+class ListPlace {
+    var index = 0
+    var offset = 0
+    var query = ""
+}
+
+/** A list state that starts where [place] says and keeps it told as it scrolls. */
+@Composable
+internal fun rememberPlacedListState(place: ListPlace?): androidx.compose.foundation.lazy.LazyListState {
+    val state = rememberLazyListState(place?.index ?: 0, place?.offset ?: 0)
+    if (place != null) {
+        LaunchedEffect(state) {
+            androidx.compose.runtime.snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
+                .collect { (index, offset) -> place.index = index; place.offset = offset }
+        }
+    }
+    return state
 }
 
 /* ----------------------------------------------------------- leaderboard */
@@ -199,9 +229,13 @@ fun IosLeaderboardScreen(
     onRefresh: () -> Unit,
     onBack: () -> Unit,
     onOpenPlayer: (String) -> Unit,
+    /** Kept by the overlay: Back from a profile lands on the same row (OM, 2026-10-31). */
+    place: ListPlace? = null,
 ) {
     val rows = if (sort == 0) score else kills
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(place?.query ?: "") }
+    LaunchedEffect(query) { place?.query = query }
+    val listState = rememberPlacedListState(place)
     // Keep the real rank: searching narrows the list, it does not re-rank it.
     val shown = remember(rows, query) {
         rows.withIndex().filter { (_, player) -> leaderboardMatches(player, query) }
@@ -209,7 +243,7 @@ fun IosLeaderboardScreen(
     IosPageChrome("Leaderboard", insetTop, onBack) {
         IosRefreshable(refreshing, onRefresh, Modifier.weight(1f)) {
             // Lazy: only the rows on screen are built, so switching boards is instant.
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState) {
                 item(key = "sort") {
                     LiquidSegmented(listOf("Score", "Kills"), sort, onSort, Modifier.padding(16.dp).fillMaxWidth())
                 }
@@ -283,8 +317,30 @@ private fun Modifier.cardSegment(first: Boolean, last: Boolean): Modifier = this
     }
 }
 
+/**
+ * A board place on one line, always (OM, 2026-10-31): the number shrinks to
+ * its column (13 sp down to 7 sp) for long ranks and large phone text, never
+ * wraps or spills.
+ */
+@Composable
+internal fun RankNumber(rank: Int, modifier: Modifier, weight: FontWeight = FontWeight.Bold, align: TextAlign = TextAlign.Start) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    androidx.compose.foundation.text.BasicText(
+        text = rank.toString(),
+        modifier = modifier,
+        style = androidx.compose.ui.text.TextStyle(fontFamily = Wyrm.Body, fontWeight = weight, fontSize = 13.sp,
+            color = wyrmScopedPalette.quiet, textAlign = align, fontFeatureSettings = "tnum"),
+        maxLines = 1,
+        softWrap = false,
+        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 7.sp, maxFontSize = 13.sp, stepSize = 0.5.sp),
+    )
+}
+
 @Composable
 private fun PlayerRankRow(rank: Int, player: ApiPlayer, value: Long, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box {
         Row(
             modifier = Modifier
@@ -295,13 +351,10 @@ private fun PlayerRankRow(rank: Int, player: ApiPlayer, value: Long, onClick: ()
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("$rank", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold,
-                fontSize = if (rank >= 10000) 9.5.sp else if (rank >= 1000) 11.sp else 13.sp, color = Wyrm.Quiet,
-                maxLines = 1, softWrap = false,
-                textAlign = TextAlign.Center, modifier = Modifier.width(34.dp))
+            RankNumber(rank, Modifier.width(38.dp), FontWeight.Bold, TextAlign.Center)
             WyrmAvatar(player.avatarUrl, player.avatarKey, initialsOf(player.displayName), 35.dp)
             PersonText(player.displayName, player.handle, Modifier.weight(1f))
-            Text(groupedNumber(value), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Wyrm.Ink)
+            Text(groupedNumber(value), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = wyrmScopedPalette.ink)
         }
         RowRule(58.dp, Modifier.align(Alignment.BottomStart))
     }
@@ -315,17 +368,21 @@ private fun PersonText(
     activity: FriendActivity? = null,
     onJoin: ((String) -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = Wyrm.Ink, maxLines = 1)
+        Text(name, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = wyrmScopedPalette.ink, maxLines = 1)
         val shows = activity != null && (activity.online || activity.lastArena != null)
         if (shows) FriendActivityLine(activity, fontSize = 11.sp, onJoin = onJoin)
-        else if (handle.isNotEmpty()) Text(handle, fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = Wyrm.Quiet, maxLines = 1)
+        else if (handle.isNotEmpty()) Text(handle, fontFamily = Wyrm.Body, fontSize = 10.5.sp, color = wyrmScopedPalette.quiet, maxLines = 1)
     }
 }
 
 @Composable
 private fun RowRule(start: Dp, modifier: Modifier = Modifier) {
-    Box(modifier.padding(start = start).fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Box(modifier.padding(start = start).fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
 }
 
 /* -------------------------------------------------------------- messages */
@@ -344,6 +401,8 @@ fun IosMessagesScreen(
     activityOf: (String) -> FriendActivity? = { null },
     onJoin: ((String) -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     IosPageChrome("Messages", insetTop, onBack) {
         IosRefreshable(refreshing, onRefresh, Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -370,13 +429,13 @@ fun IosMessagesScreen(
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(row.player.displayName, fontFamily = Wyrm.Body,
                                     fontWeight = if (unread) FontWeight.Bold else FontWeight.SemiBold,
-                                    fontSize = 15.sp, color = Wyrm.Ink, maxLines = 1)
+                                    fontSize = 15.sp, color = wyrmScopedPalette.ink, maxLines = 1)
                                 if (activity?.playing == true) FriendActivityLine(activity, fontSize = 11.5.sp, onJoin = onJoin)
                                 else Text(
                                     row.lastMessage.ifEmpty { "No messages yet" },
                                     fontFamily = Wyrm.Body, fontSize = 12.5.sp,
                                     fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (unread) Wyrm.Ink else Wyrm.Quiet,
+                                    color = if (unread) wyrmScopedPalette.ink else wyrmScopedPalette.quiet,
                                     maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 )
                             }
@@ -401,7 +460,7 @@ fun IosMessagesScreen(
                                 WyrmAvatar(person.avatarUrl, person.avatarKey, initialsOf(person.displayName), 35.dp,
                                     online = activity?.online == true)
                                 PersonText(person.displayName, person.handle, Modifier.weight(1f), activity, onJoin)
-                                IosIcon(IosGlyph.MESSAGE, Wyrm.Link, size = 20.dp)
+                                IosIcon(IosGlyph.MESSAGE, wyrmScopedPalette.link, size = 20.dp)
                             }
                         }
                     }
@@ -440,10 +499,16 @@ fun IosThreadScreen(
     activity: FriendActivity? = null,
     onJoin: ((String) -> Unit)? = null,
     onDelete: ((ChatMessage) -> Unit)? = null,
+    /** Edit your own message (2026-10-30); [editing] is the one being edited. */
+    onEdit: ((ChatMessage) -> Unit)? = null,
+    editing: ChatMessage? = null,
+    onCancelCompose: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxSize().background(Wyrm.Paper).padding(top = insetTop)) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Column(Modifier.fillMaxSize().background(wyrmScopedPalette.paper).padding(top = insetTop)) {
         Row(
-            Modifier.fillMaxWidth().height(58.dp).background(Wyrm.Paper).padding(horizontal = 10.dp),
+            Modifier.fillMaxWidth().height(58.dp).background(wyrmScopedPalette.paper).padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -452,7 +517,7 @@ fun IosThreadScreen(
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
-                IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Ink, size = 18.dp, weight = 2.6f)
+                IosIcon(IosGlyph.CHEVRON_LEFT, wyrmScopedPalette.ink, size = 18.dp, weight = 2.6f)
             }
             Row(
                 Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPeer),
@@ -468,17 +533,17 @@ fun IosThreadScreen(
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Text(peer?.displayName ?: title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
-                        color = Wyrm.Ink, maxLines = 1)
+                        color = wyrmScopedPalette.ink, maxLines = 1)
                     val handle = peer?.username.orEmpty()
                     if (activity != null && (activity.online || activity.lastArena != null)) {
                         FriendActivityLine(activity, fontSize = 11.5.sp, onJoin = onJoin)
                     } else if (handle.isNotEmpty()) {
-                        Text("@$handle", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet, maxLines = 1)
+                        Text("@$handle", fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet, maxLines = 1)
                     }
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         IosChatPage(
             messages = messages,
             meId = meId,
@@ -497,6 +562,9 @@ fun IosThreadScreen(
             onPeer = onPeer,
             direct = true,
             onDelete = onDelete,
+            onEdit = onEdit,
+            editing = editing,
+            onCancelCompose = onCancelCompose,
         )
     }
 }
@@ -504,6 +572,8 @@ fun IosThreadScreen(
 /** The other player at the head of a direct thread (Instagram's empty chat). */
 @Composable
 private fun DirectIntro(peer: ApiPlayer?, onPeer: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
         WyrmAvatar(
             url = peer?.avatarUrl.orEmpty(),
@@ -512,15 +582,15 @@ private fun DirectIntro(peer: ApiPlayer?, onPeer: () -> Unit) {
             size = 92.dp,
             modifier = Modifier.padding(bottom = 6.dp),
         )
-        Text(peer?.displayName.orEmpty(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Wyrm.Ink, maxLines = 1)
+        Text(peer?.displayName.orEmpty(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = wyrmScopedPalette.ink, maxLines = 1)
         val handle = peer?.username.orEmpty()
-        if (handle.isNotEmpty()) Text("@$handle", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+        if (handle.isNotEmpty()) Text("@$handle", fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet)
         if (peer != null) {
-            Text("${compactCount(peer.followerCount)} followers · Wyrm", fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet)
+            Text("${compactCount(peer.followerCount)} followers · Wyrm", fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
             when {
                 peer.isFollowing && peer.followsYou ->
-                    Text("You follow each other on Wyrm", fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet)
-                peer.followsYou -> Text("Follows you", fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet)
+                    Text("You follow each other on Wyrm", fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
+                peer.followsYou -> Text("Follows you", fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
             }
         }
         Text(
@@ -528,11 +598,11 @@ private fun DirectIntro(peer: ApiPlayer?, onPeer: () -> Unit) {
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier
                 .padding(top = 9.dp)
                 .clip(WyrmCapsule)
-                .background(Wyrm.Track)
+                .background(wyrmScopedPalette.track)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPeer)
                 .padding(horizontal = 16.dp, vertical = 7.dp),
         )
@@ -590,6 +660,12 @@ fun IosGlobalChatScreen(
     onOpenAuthor: (String) -> Unit,
     onReport: (ChatMessage, String) -> Unit,
     onDelete: ((ChatMessage) -> Unit)? = null,
+    /** Swipe or hold to reply, hold to edit your own (2026-10-30). */
+    onReply: ((ChatMessage) -> Unit)? = null,
+    onEdit: ((ChatMessage) -> Unit)? = null,
+    replying: ChatMessage? = null,
+    editing: ChatMessage? = null,
+    onCancelCompose: () -> Unit = {},
 ) {
     var reporting by remember { mutableStateOf<ChatMessage?>(null) }
     Box(Modifier.fillMaxSize()) {
@@ -599,7 +675,7 @@ fun IosGlobalChatScreen(
                 meId = meId,
                 showsAuthors = true,
                 emptyTitle = "Quiet right now",
-                emptyNote = "Messages stay here for 24 hours. Say hello.",
+                emptyNote = "Messages stay here for 7 days. Say hello.",
                 error = error,
                 draft = draft,
                 placeholder = "Message everyone",
@@ -611,6 +687,11 @@ fun IosGlobalChatScreen(
                 onAuthor = onOpenAuthor,
                 onReport = { reporting = it },
                 onDelete = onDelete,
+                onReply = onReply,
+                onEdit = onEdit,
+                replying = replying,
+                editing = editing,
+                onCancelCompose = onCancelCompose,
             )
         }
         reporting?.let { message ->
@@ -647,20 +728,45 @@ internal fun ColumnScope.IosChatPage(
     onPeer: () -> Unit = {},
     direct: Boolean = false,
     onDelete: ((ChatMessage) -> Unit)? = null,
+    onReply: ((ChatMessage) -> Unit)? = null,
+    onEdit: ((ChatMessage) -> Unit)? = null,
+    replying: ChatMessage? = null,
+    editing: ChatMessage? = null,
+    onCancelCompose: () -> Unit = {},
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val backdrop = rememberLayerBackdrop()
     val imeUp = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Column(Modifier.weight(1f).fillMaxWidth().imePadding()) {
         Box(Modifier.weight(1f).fillMaxWidth().layerBackdrop(backdrop)) {
-            IosChatTranscript(messages, meId, showsAuthors, emptyTitle, emptyNote, onAuthor, onReport, peer, onPeer, direct, onDelete)
+            IosChatTranscript(messages, meId, showsAuthors, emptyTitle, emptyNote, onAuthor, onReport, peer, onPeer, direct, onDelete, onReply, onEdit)
+        }
+        (editing ?: replying)?.let { target ->
+            Row(
+                Modifier.fillMaxWidth().background(wyrmScopedPalette.card).padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.width(3.dp).height(30.dp).clip(CircleShape).background(if (editing != null) wyrmScopedPalette.link else wyrmScopedPalette.live))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(if (editing != null) "Editing message" else "Replying to ${target.authorName.ifBlank { "message" }}",
+                        fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (editing != null) wyrmScopedPalette.link else wyrmScopedPalette.live)
+                    Text(target.body, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.quiet, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                Box(Modifier.size(36.dp).clickable(onClick = onCancelCompose), contentAlignment = Alignment.Center) {
+                    IosIcon(IosGlyph.XMARK, wyrmScopedPalette.quiet, size = 14.dp, semibold = true)
+                }
+            }
         }
         AnimatedVisibility(error.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
             Text(
                 error,
                 fontFamily = Wyrm.Body,
                 fontSize = 11.5.sp,
-                color = Wyrm.Badge,
-                modifier = Modifier.fillMaxWidth().background(Wyrm.Paper).padding(horizontal = 18.dp, vertical = 6.dp),
+                color = wyrmScopedPalette.badge,
+                modifier = Modifier.fillMaxWidth().background(wyrmScopedPalette.paper).padding(horizontal = 18.dp, vertical = 6.dp),
             )
         }
         IosChatComposer(
@@ -675,6 +781,15 @@ internal fun ColumnScope.IosChatPage(
         )
     }
 }
+
+/**
+ * Older messages as you scroll up (OM, 2026-10-30), as Instagram does: near the
+ * top the chat asks for the page before its first message. Given by WyrmOverlay
+ * around the global chat and a direct thread.
+ */
+internal class ChatPaging(val hasOlder: Boolean, val loading: Boolean, val onLoadOlder: () -> Unit)
+
+internal val LocalChatPaging = androidx.compose.runtime.compositionLocalOf<ChatPaging?> { null }
 
 /**
  * `WyrmChatTranscript`: consecutive messages from one author share a name
@@ -695,7 +810,11 @@ fun IosChatTranscript(
     onPeer: () -> Unit = {},
     direct: Boolean = false,
     onDelete: ((ChatMessage) -> Unit)? = null,
+    onReply: ((ChatMessage) -> Unit)? = null,
+    onEdit: ((ChatMessage) -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val listState = rememberLazyListState()
     val seen = remember { mutableSetOf<String>() }
     val firstLoad = remember { mutableStateOf(true) }
@@ -711,8 +830,26 @@ fun IosChatTranscript(
         }
     }
     LaunchedEffect(imeBottom > 0) { if (imeBottom > 0 && messages.isNotEmpty()) listState.animateScrollToItem(messages.size) }
+    // Near the top: the page before. The list keeps its place by key while it
+    // grows above, so the message under the finger stays put.
+    val paging = LocalChatPaging.current
+    val latestPaging by androidx.compose.runtime.rememberUpdatedState(paging)
+    LaunchedEffect(listState) {
+        androidx.compose.runtime.snapshotFlow { listState.firstVisibleItemIndex to (latestPaging?.loading == true) }
+            .collect { (first, loading) ->
+                val pages = latestPaging ?: return@collect
+                if (!firstLoad.value && !loading && first <= 3 && pages.hasOlder) pages.onLoadOlder()
+            }
+    }
 
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 10.dp)) {
+        if (paging?.loading == true) {
+            item(key = "older-loading") {
+                Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                    IosSpinner(size = 16.dp, colour = wyrmScopedPalette.quiet)
+                }
+            }
+        }
         if (direct) {
             item(key = "direct-intro") {
                 Box(Modifier.padding(top = if (messages.isEmpty()) 44.dp else 12.dp, bottom = 10.dp)) { DirectIntro(peer, onPeer) }
@@ -728,7 +865,7 @@ fun IosChatTranscript(
             val endsGroup = next?.authorId != message.authorId || (direct && farApart(message, next))
             if (direct) {
                 separatorLabel(message, previous)?.let { stamp ->
-                    Text(stamp, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Wyrm.Quiet,
+                    Text(stamp, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = wyrmScopedPalette.quiet,
                         textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp))
                 }
             }
@@ -742,6 +879,8 @@ fun IosChatTranscript(
                 onAuthor = onAuthor,
                 onReport = onReport,
                 onDelete = onDelete,
+                onReply = onReply,
+                onEdit = onEdit,
                 modifier = Modifier.animateItem(),
                 showTime = !direct,
                 leading = if (direct && !mine) ({
@@ -777,11 +916,19 @@ private fun ChatRow(
     onAuthor: ((String) -> Unit)?,
     onReport: ((ChatMessage) -> Unit)?,
     onDelete: ((ChatMessage) -> Unit)?,
+    onReply: ((ChatMessage) -> Unit)? = null,
+    onEdit: ((ChatMessage) -> Unit)? = null,
     modifier: Modifier = Modifier,
     showTime: Boolean = true,
     leading: (@Composable () -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val appear = remember { Animatable(if (animateIn) 0f else 1f) }
+    // Swipe right to reply (WhatsApp / Instagram): past 56 dp it answers.
+    val swipe = remember { Animatable(0f) }
+    val swipeScope = androidx.compose.runtime.rememberCoroutineScope()
+    val replyAt = with(LocalDensity.current) { 56.dp.toPx() }
     LaunchedEffect(Unit) { if (appear.value < 1f) appear.animateTo(1f, iosSpring(0.42f, 0.78f)) }
     var menu by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
@@ -824,23 +971,56 @@ private fun ChatRow(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 10.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                 )
             }
         }
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        message.replyTo?.let { quote ->
+            Row(
+                Modifier.padding(horizontal = 6.dp).widthIn(max = 270.dp).clip(wyrmRounded(10.dp)).background(wyrmScopedPalette.ink)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.width(2.dp).height(24.dp).clip(CircleShape).background(wyrmScopedPalette.live))
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(quote.name, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, color = wyrmScopedPalette.live, maxLines = 1)
+                    Text(quote.body, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .graphicsLayer { translationX = swipe.value }
+                .then(if (onReply == null) Modifier else Modifier.pointerInput(message.id) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (swipe.value >= replyAt) { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onReply(message) }
+                            swipeScope.launch { swipe.animateTo(0f, iosSpring(0.3f, 0.8f)) }
+                        },
+                        onDragCancel = { swipeScope.launch { swipe.animateTo(0f) } },
+                        onHorizontalDrag = { change, dx ->
+                            change.consume()
+                            swipeScope.launch { swipe.snapTo((swipe.value + dx).coerceIn(0f, replyAt * 1.3f)) }
+                        },
+                    )
+                }),
+        ) {
         leading?.invoke()
         Box {
             Text(
                 text = message.body,
                 fontFamily = Wyrm.Body,
                 fontSize = 14.5.sp,
-                color = if (mine) Wyrm.OnInk else Wyrm.Ink,
+                color = if (mine) wyrmScopedPalette.onInk else wyrmScopedPalette.ink,
                 modifier = Modifier
                     .widthIn(max = 290.dp)
                     .clip(shape)
-                    .background(if (mine) Wyrm.Ink else Wyrm.Card)
-                    .then(if (mine) Modifier else Modifier.border(1.dp, Wyrm.Rule, shape))
+                    .background(if (mine) wyrmScopedPalette.ink else wyrmScopedPalette.card)
+                    .then(if (mine) Modifier else Modifier.border(1.dp, wyrmScopedPalette.rule, shape))
                     .combinedClickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -856,15 +1036,27 @@ private fun ChatRow(
                 expanded = menu,
                 onDismissRequest = { menu = false },
                 shape = wyrmRounded(13.dp),
-                containerColor = Wyrm.Card,
+                containerColor = wyrmScopedPalette.card,
             ) {
+                if (onReply != null) {
+                    DropdownMenuItem(
+                        text = { Text("Reply", fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink) },
+                        onClick = { menu = false; onReply(message) },
+                    )
+                }
                 DropdownMenuItem(
-                    text = { Text("Copy", fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink) },
+                    text = { Text("Copy", fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink) },
                     onClick = {
                         clipboard.setText(AnnotatedString(message.body))
                         menu = false
                     },
                 )
+                if (mine && onEdit != null && !message.body.startsWith("##invite:")) {
+                    DropdownMenuItem(
+                        text = { Text("Edit", fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink) },
+                        onClick = { menu = false; onEdit(message) },
+                    )
+                }
                 if (mine && onDelete != null) {
                     DropdownMenuItem(
                         text = { Text("Delete", fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Blood) },
@@ -885,8 +1077,10 @@ private fun ChatRow(
         }
         if (endsGroup && showTime) {
             shortTime(message.createdAt)?.let {
-                Text(it, fontFamily = Wyrm.Body, fontSize = 9.5.sp, color = Wyrm.Quiet, modifier = Modifier.padding(horizontal = 6.dp))
+                Text(if (message.editedAt.isNotBlank()) "$it · edited" else it, fontFamily = Wyrm.Body, fontSize = 9.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(horizontal = 6.dp))
             }
+        } else if (message.editedAt.isNotBlank()) {
+            Text("edited", fontFamily = Wyrm.Body, fontSize = 9.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(horizontal = 6.dp))
         }
     }
 }
@@ -932,6 +1126,8 @@ fun IosChatComposer(
     backdrop: com.kyant.backdrop.Backdrop,
     onSend: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val trimmed = text.trim()
     val canSend = trimmed.isNotEmpty() && !sending && text.length <= limit
     val haptics = LocalHapticFeedback.current
@@ -953,35 +1149,35 @@ fun IosChatComposer(
             .liquidGlass(
                 backdrop = backdrop,
                 shape = wyrmRounded(0.dp),
-                tint = Wyrm.Paper.copy(alpha = 0.35f),
+                tint = wyrmScopedPalette.paper.copy(alpha = 0.35f),
                 blur = 18.dp,
                 refraction = 0.dp,
                 depth = 0.dp,
                 shadow = null,
-                fallback = Wyrm.Paper,
+                fallback = wyrmScopedPalette.paper,
             )
             .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 10.dp + bottomInset),
         horizontalAlignment = Alignment.End,
     ) {
-        Box(Modifier.fillMaxWidth().height(1.dp).offset(y = (-8).dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).offset(y = (-8).dp).background(wyrmScopedPalette.rule))
         AnimatedVisibility(text.length > limit - 40, enter = fadeIn(), exit = fadeOut()) {
             Text(
                 "${maxOf(0, limit - text.length)}",
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.5.sp,
-                color = if (text.length > limit) Wyrm.Badge else Wyrm.Quiet,
+                color = if (text.length > limit) wyrmScopedPalette.badge else wyrmScopedPalette.quiet,
                 modifier = Modifier.padding(end = 64.dp, bottom = 4.dp),
             )
         }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            val style = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink)
+            val style = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink)
             BasicTextField(
                 value = text,
                 onValueChange = onText,
                 textStyle = style,
                 maxLines = 5,
-                cursorBrush = SolidColor(Wyrm.Link),
+                cursorBrush = SolidColor(wyrmScopedPalette.link),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { send() }),
                 modifier = Modifier
@@ -991,17 +1187,17 @@ fun IosChatComposer(
                     .liquidGlass(
                         backdrop = backdrop,
                         shape = wyrmRounded(22.dp),
-                        tint = Wyrm.Card.copy(alpha = 0.55f),
+                        tint = wyrmScopedPalette.card.copy(alpha = 0.55f),
                         blur = 6.dp,
                         refraction = 10.dp,
                         depth = 16.dp,
                         shadow = null,
-                        fallback = Wyrm.Card,
+                        fallback = wyrmScopedPalette.card,
                     )
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
-                        if (text.isEmpty()) Text(placeholder, style = style.copy(color = Wyrm.Quiet.copy(alpha = 0.8f)), maxLines = 1)
+                        if (text.isEmpty()) Text(placeholder, style = style.copy(color = wyrmScopedPalette.quiet), maxLines = 1)
                         inner()
                     }
                 },
@@ -1020,22 +1216,22 @@ fun IosChatComposer(
                         .liquidGlass(
                             backdrop = backdrop,
                             shape = CircleShape,
-                            tint = Wyrm.Ink.copy(alpha = 0.92f),
+                            tint = wyrmScopedPalette.ink,
                             blur = 4.dp,
                             refraction = 8.dp,
                             depth = 12.dp,
                             shadow = null,
-                            fallback = Wyrm.Ink,
+                            fallback = wyrmScopedPalette.ink,
                         )
                         .clickable(interactionSource = interaction, indication = null, enabled = canSend) { send() },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (sending) {
-                        IosSpinner(size = 17.dp, colour = Wyrm.OnInk)
+                        IosSpinner(size = 17.dp, colour = wyrmScopedPalette.onInk)
                     } else {
                         IosIcon(
                             IosGlyph.ARROW_UP,
-                            Wyrm.OnInk,
+                            wyrmScopedPalette.onInk,
                             size = 20.dp,
                             weight = 2.6f,
                             modifier = Modifier.graphicsLayer {
@@ -1061,16 +1257,18 @@ class IosSheetAction(val title: String, val destructive: Boolean = false, val on
 /** SwiftUI `confirmationDialog`: a titled group of actions and a separate Cancel. */
 @Composable
 fun IosActionSheet(title: String, actions: List<IosSheetAction>, insetBottom: Dp, onDismiss: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     if (LocalCentredDialogs.current) {
         val confirm = actions.singleOrNull()?.onClick
         CentredDialog(onDismiss, confirm?.let { action -> { onDismiss(); action() } }) {
             Column {
-                Text(title, fontFamily = Wyrm.Display, fontSize = 23.sp, color = Wyrm.Ink, modifier = Modifier.padding(bottom = 16.dp))
+                Text(title, fontFamily = Wyrm.Display, fontSize = 23.sp, color = wyrmScopedPalette.ink, modifier = Modifier.padding(bottom = 16.dp))
                 actions.forEach { action ->
-                    Text(action.title, fontFamily = Wyrm.Body, color = if (action.destructive) Wyrm.Badge else Wyrm.Link,
+                    Text(action.title, fontFamily = Wyrm.Body, color = if (action.destructive) wyrmScopedPalette.badge else wyrmScopedPalette.link,
                         modifier = Modifier.fillMaxWidth().clickable { onDismiss(); action.onClick() }.padding(vertical = 16.dp))
                 }
-                Text("Cancel · Esc", fontFamily = Wyrm.Body, color = Wyrm.Quiet,
+                Text("Cancel · Esc", fontFamily = Wyrm.Body, color = wyrmScopedPalette.quiet,
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onDismiss).padding(vertical = 12.dp))
             }
         }
@@ -1101,23 +1299,23 @@ fun IosActionSheet(title: String, actions: List<IosSheetAction>, insetBottom: Dp
                 .graphicsLayer { translationY = size.height * (1f - appear.value) },
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(Modifier.fillMaxWidth().clip(wyrmRounded(14.dp)).background(Wyrm.Card)) {
+            Column(Modifier.fillMaxWidth().clip(wyrmRounded(14.dp)).background(wyrmScopedPalette.card)) {
                 Text(
                     title,
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
                 )
                 actions.forEach { action ->
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
                     Text(
                         action.title,
                         fontFamily = Wyrm.Body,
                         fontSize = 17.sp,
-                        color = if (action.destructive) Color(0xFFFF3B30) else Wyrm.Link,
+                        color = if (action.destructive) Color(0xFFFF3B30) else wyrmScopedPalette.link,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1131,12 +1329,12 @@ fun IosActionSheet(title: String, actions: List<IosSheetAction>, insetBottom: Dp
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 17.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(wyrmRounded(14.dp))
-                    .background(Wyrm.Card)
+                    .background(wyrmScopedPalette.card)
                     .clickable { close() }
                     .padding(vertical = 17.dp),
             )
@@ -1158,6 +1356,8 @@ fun IosConnectionsScreen(
     activityOf: (String) -> FriendActivity? = { null },
     onJoin: ((String) -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val pager = rememberPagerState(initialPage = initialPage) { 2 }
     val scope = rememberCoroutineScope()
     IosPageChrome("Connections", insetTop, onBack) {
@@ -1193,7 +1393,7 @@ fun IosConnectionsScreen(
                             WyrmAvatar(person.avatarUrl, person.avatarKey, initialsOf(person.displayName), 36.dp,
                                 online = activity?.online == true)
                             PersonText(person.displayName, person.handle, Modifier.weight(1f), activity, onJoin)
-                            IosIcon(IosGlyph.CHEVRON_RIGHT, Wyrm.Chevron, size = 12.dp, weight = 2.6f)
+                            IosIcon(IosGlyph.CHEVRON_RIGHT, wyrmScopedPalette.chevron, size = 12.dp, weight = 2.6f)
                         }
                     }
                 }
@@ -1234,6 +1434,8 @@ fun IosEditProfileScreen(
     onDeleteAccount: () -> Unit,
     draft: ProfileEditDraft? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val form = draft ?: remember { ProfileEditDraft(displayName, ingameName, username, bio) }
     var name by form.name
     var arena by form.arena
@@ -1255,13 +1457,13 @@ fun IosEditProfileScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                         Text(
                             if (avatarUrl.isNotEmpty()) "Change photo" else "Add photo",
-                            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Link,
+                            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = wyrmScopedPalette.link,
                             modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPickPhoto),
                         )
                         if (avatarUrl.isNotEmpty()) {
                             Text(
                                 "Remove",
-                                fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Wyrm.Badge,
+                                fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = wyrmScopedPalette.badge,
                                 modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onRemovePhoto),
                             )
                         }
@@ -1274,7 +1476,7 @@ fun IosEditProfileScreen(
                 EditField("Username", user) { user = it }
                 EditField("Bio", about) { about = it }
                 if (renames.isNotEmpty()) {
-                    Text(renames, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = Wyrm.Quiet, modifier = Modifier.fillMaxWidth())
+                    Text(renames, fontFamily = Wyrm.Body, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.fillMaxWidth())
                 }
                 if (error.isNotEmpty()) Text(error, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Color(0xFFFF3B30))
                 val shape = wyrmRounded(13.dp)
@@ -1305,25 +1507,27 @@ fun IosEditProfileScreen(
 
 @Composable
 private fun EditField(label: String, value: String, onValue: (String) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Text(label.uppercase(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, letterSpacing = 1.sp, color = Wyrm.Quiet)
-        val style = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink)
+        Text(label.uppercase(), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, letterSpacing = 1.sp, color = wyrmScopedPalette.quiet)
+        val style = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink)
         BasicTextField(
             value = value,
             onValueChange = onValue,
             singleLine = true,
             textStyle = style,
-            cursorBrush = SolidColor(Wyrm.Link),
+            cursorBrush = SolidColor(wyrmScopedPalette.link),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp)
                 .clip(wyrmRounded(13.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(13.dp))
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(13.dp))
                 .padding(horizontal = 14.dp),
             decorationBox = { inner ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
-                    if (value.isEmpty()) Text(label, style = style.copy(color = Wyrm.Quiet.copy(alpha = 0.7f)))
+                    if (value.isEmpty()) Text(label, style = style.copy(color = wyrmScopedPalette.quiet))
                     inner()
                 }
             },
@@ -1357,6 +1561,8 @@ fun IosVoiceDirectory(
     onRefresh: () -> Unit,
     onOpenRoom: (com.wyrm.omrajput.data.VoiceRoom) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val official = rooms.filter { it.managedPublic }
     val mine = rooms.filter { it.mine && !it.managedPublic }
     val live = rooms.filter { !it.managedPublic && !it.mine && it.active }
@@ -1371,11 +1577,11 @@ fun IosVoiceDirectory(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    VoiceLiveBars(if (talking > 0) Wyrm.Live else Wyrm.Quiet, playing = talking > 0, height = 13.dp)
+                    VoiceLiveBars(if (talking > 0) wyrmScopedPalette.live else wyrmScopedPalette.quiet, playing = talking > 0, height = 13.dp)
                     Text(
                         if (talking > 0) "$talking ${if (talking == 1) "person" else "people"} talking now" else "No one is talking yet",
                         fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                        color = if (talking > 0) Wyrm.Live else Wyrm.Quiet,
+                        color = if (talking > 0) wyrmScopedPalette.live else wyrmScopedPalette.quiet,
                     )
                 }
                 if (!verified) {
@@ -1384,20 +1590,20 @@ fun IosVoiceDirectory(
                             .padding(start = 16.dp, end = 16.dp, top = 14.dp)
                             .fillMaxWidth()
                             .clip(wyrmRounded(20.dp))
-                            .background(Wyrm.Ink)
+                            .background(wyrmScopedPalette.ink)
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onVerify)
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(13.dp),
                     ) {
-                        IosIcon(IosGlyph.CHECKMARK_SHIELD, Wyrm.OnInk, size = 26.dp)
+                        IosIcon(IosGlyph.CHECKMARK_SHIELD, wyrmScopedPalette.onInk, size = 26.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("Verify once, talk anywhere", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = Wyrm.OnInk)
+                            Text("Verify once, talk anywhere", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = wyrmScopedPalette.onInk)
                             Text("One email code unlocks player rooms. Official rooms are open now.", fontFamily = Wyrm.Body,
-                                fontSize = 11.5.sp, color = Wyrm.OnInk.copy(alpha = 0.72f))
+                                fontSize = 11.5.sp, color = wyrmScopedPalette.onInk.copy(alpha = 0.72f))
                         }
-                        Box(Modifier.clip(CircleShape).background(Wyrm.OnInk).padding(horizontal = 13.dp, vertical = 7.dp)) {
-                            Text("Verify", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Wyrm.Ink)
+                        Box(Modifier.clip(CircleShape).background(wyrmScopedPalette.onInk).padding(horizontal = 13.dp, vertical = 7.dp)) {
+                            Text("Verify", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = wyrmScopedPalette.ink)
                         }
                     }
                 }
@@ -1412,7 +1618,7 @@ fun IosVoiceDirectory(
                 if (live.isEmpty()) {
                     Text(
                         if (quiet.isEmpty()) "No player rooms yet. Tap New to start one." else "No player room is live. Start one, or wake a quiet one.",
-                        fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet,
+                        fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp),
                     )
                 }

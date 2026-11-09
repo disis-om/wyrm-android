@@ -47,7 +47,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -242,6 +242,8 @@ internal fun ShedScreen(
     insetBottom: Dp,
     onBack: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val context = LocalContext.current
     val density = LocalDensity.current
     val focus = LocalFocusManager.current
@@ -335,6 +337,7 @@ internal fun ShedScreen(
         if (busy || !ready) return
         busy = true
         scope.launch {
+          try {
             val history = ShedStore.history(context)
             val (batch, _) = withContext(Dispatchers.Default) { ShedGenerator.generate(recipe, history.toHashSet()) }
             ShedStore.saveHistory(context, history + batch.map { it.key })
@@ -368,14 +371,24 @@ internal fun ShedScreen(
             launch { delay(450); composerAway = false }
             setRecipe(recipe.copy(seed = (Integer.toUnsignedLong(ShedGenerator.mixSeed(recipe.seed, 77)) % 999999).toInt() + 1))
             sheds++
+          } finally {
+            // Never left veiled (2026-11-08): if the run stops part way (the
+            // page recomposed, an error), the blur and the dim still go and the
+            // composer comes back.
+            if (phase == ShedPhase.RUN || phase == ShedPhase.LEAVING)
+                phase = if (skins.isEmpty()) ShedPhase.REST else ShedPhase.RESULTS
+            composerAway = false
+            stageOn = phase == ShedPhase.REST
+            runStart = null
             busy = false
+          }
         }
     }
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper)
+            .background(wyrmScopedPalette.paper)
             .onGloballyPositioned { rootTop = it.positionInRoot().y; rootW = it.size.width.toFloat(); rootH = it.size.height.toFloat() },
     ) {
         // ---------------------------------------------------------- the page (what the glass sees)
@@ -383,9 +396,9 @@ internal fun ShedScreen(
             Modifier
                 .fillMaxSize()
                 .layerBackdrop(backdrop)
-                .background(Wyrm.Paper)
+                .background(wyrmScopedPalette.paper)
                 .graphicsLayer { alpha = 1f - 0.75f * veil; scaleX = 1f - 0.04f * veil; scaleY = 1f - 0.04f * veil }
-                .blur((16 * veil).dp)
+                .then(if (veil > 0.01f) Modifier.blur((16 * veil).dp) else Modifier)
                 .padding(top = insetTop),
         ) {
             ShedHeader(onBack = onBack, sub = if (phase == ShedPhase.RESULTS || skins.isNotEmpty()) "${skins.size} skins · best first" else null)
@@ -404,9 +417,9 @@ internal fun ShedScreen(
                                     restScale = it.size.width / with(density) { STAGE_W.dp.toPx() }
                                 },
                         )
-                        Text("What should your Wyrm shed into?", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, color = Wyrm.Ink, textAlign = TextAlign.Center)
+                        Text("What should your Wyrm shed into?", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, color = wyrmScopedPalette.ink, textAlign = TextAlign.Center)
                         Spacer(Modifier.height(6.dp))
-                        Text("Write your recipe below, then shed.", fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet, textAlign = TextAlign.Center)
+                        Text("Write your recipe below, then shed.", fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet, textAlign = TextAlign.Center)
                     }
                 }
             } else {
@@ -436,7 +449,7 @@ internal fun ShedScreen(
         // ---------------------------------------------------------- the one W
         if (ready && stageOn) {
             val dark = Wyrm.currentPalette.dark
-            val ink = Wyrm.Ink
+            val ink = wyrmScopedPalette.ink
             Canvas(
                 Modifier
                     .size(STAGE_W.dp, STAGE_H.dp)
@@ -474,7 +487,7 @@ internal fun ShedScreen(
                 Text(
                     SHED_STEPS[k].second,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                    fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Wyrm.Mute, textAlign = TextAlign.Center,
+                    fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = wyrmScopedPalette.mute, textAlign = TextAlign.Center,
                 )
             }
         }
@@ -508,12 +521,12 @@ internal fun ShedScreen(
                 .liquidGlass(
                     backdrop = backdrop,
                     shape = wyrmRounded(30.dp),
-                    tint = Wyrm.Card.copy(alpha = 0.55f),
+                    tint = wyrmScopedPalette.card.copy(alpha = 0.55f),
                     blur = 6.dp,
                     refraction = 10.dp,
                     depth = 16.dp,
                     shadow = null,
-                    fallback = Wyrm.Card,
+                    fallback = wyrmScopedPalette.card,
                 )
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 .animateContentSize(tween(600, easing = ShedEase), alignment = Alignment.BottomCenter)
@@ -536,20 +549,20 @@ internal fun ShedScreen(
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.shedMorph(morphParts[1]), verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        Modifier.size(44.dp).clip(CircleShape).background(Wyrm.Ink.copy(alpha = 0.07f))
+                        Modifier.size(44.dp).clip(CircleShape).background(wyrmScopedPalette.ink)
                             .clickable { openSheet(ShedSheet.TUNE) },
                         contentAlignment = Alignment.Center,
-                    ) { SlidersIcon(Wyrm.Ink) }
+                    ) { SlidersIcon(wyrmScopedPalette.ink) }
                     Spacer(Modifier.weight(1f))
                     Row(
-                        Modifier.height(48.dp).clip(WyrmCapsule).background(Wyrm.Ink)
+                        Modifier.height(48.dp).clip(WyrmCapsule).background(wyrmScopedPalette.ink)
                             .clickable(enabled = !busy && !morphing && sheet == null && !composerAway) { shed() }
                             .padding(start = 24.dp, end = 20.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(if (sheds > 0) "Shed again" else "Shed", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = Wyrm.OnInk)
+                        Text(if (sheds > 0) "Shed again" else "Shed", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = wyrmScopedPalette.onInk)
                         Spacer(Modifier.width(8.dp))
-                        ArrowIcon(Wyrm.OnInk)
+                        ArrowIcon(wyrmScopedPalette.onInk)
                     }
                 }
                 }
@@ -565,19 +578,21 @@ internal fun ShedScreen(
 
 @Composable
 private fun ShedHeader(onBack: () -> Unit, sub: String?) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
         Box(
-            Modifier.align(Alignment.CenterStart).size(40.dp).clip(CircleShape).background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, CircleShape).clickable(onClick = onBack),
+            Modifier.align(Alignment.CenterStart).size(40.dp).clip(CircleShape).background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, CircleShape).clickable(onClick = onBack),
             contentAlignment = Alignment.Center,
-        ) { ChevronIcon(Wyrm.Ink) }
+        ) { ChevronIcon(wyrmScopedPalette.ink) }
         Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("WYRM", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, letterSpacing = 2.6.sp, color = Wyrm.Quiet)
-            Text("Shed", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, letterSpacing = (-0.6).sp, color = Wyrm.Ink)
+            Text("WYRM", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, letterSpacing = 2.6.sp, color = wyrmScopedPalette.quiet)
+            Text("Shed", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, letterSpacing = (-0.6).sp, color = wyrmScopedPalette.ink)
         }
         if (sub != null) Text(
             sub, modifier = Modifier.align(Alignment.BottomEnd),
-            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Wyrm.Quiet,
+            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = wyrmScopedPalette.quiet,
         )
     }
 }
@@ -587,6 +602,8 @@ private fun ShedHeader(onBack: () -> Unit, sub: String?) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ShedSentence(recipe: ShedRecipe, textures: SkinTextures?, onOpen: (ShedSheet) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val sourceLabel: String
     val sourceBeads: List<Char>
     when {
@@ -596,24 +613,26 @@ private fun ShedSentence(recipe: ShedRecipe, textures: SkinTextures?, onOpen: (S
     }
     FlowRow(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         ShedWord(recipe.count.toString(), emptyList(), textures) { onOpen(ShedSheet.COUNT) }
-        SentenceText(" ", Wyrm.Quiet, FontWeight.SemiBold)
+        SentenceText(" ", wyrmScopedPalette.quiet, FontWeight.SemiBold)
         ShedWord(ShedGenerator.MOODS.getValue(recipe.mood).label.lowercase(), emptyList(), textures) { onOpen(ShedSheet.MOOD) }
         PlainWords(" skins in ")
         ShedWord(recipe.tone.let { if (it == "mix") "mixed" else it }, emptyList(), textures) { onOpen(ShedSheet.TONE) }
         PlainWords(" tones,")
         ShedWord(sourceLabel, sourceBeads, textures) { onOpen(ShedSheet.SOURCE) }
-        SentenceText(", ", Wyrm.Quiet, FontWeight.SemiBold)
+        SentenceText(", ", wyrmScopedPalette.quiet, FontWeight.SemiBold)
         ShedWord(if (recipe.style == "auto") "any" else ShedGenerator.STYLES.getValue(recipe.style).lowercase(), emptyList(), textures) { onOpen(ShedSheet.STYLE) }
         PlainWords(" style,")
         ShedWord(recipe.size, emptyList(), textures) { onOpen(ShedSheet.SIZE) }
-        SentenceText(" bands.", Wyrm.Quiet, FontWeight.SemiBold)
+        SentenceText(" bands.", wyrmScopedPalette.quiet, FontWeight.SemiBold)
     }
 }
 
 /** Plain words of the sentence, each its own piece so the line wraps between words. */
 @Composable
 private fun PlainWords(text: String) {
-    for (w in text.split(' ').filter { it.isNotEmpty() }) SentenceText("$w ", Wyrm.Quiet, FontWeight.SemiBold)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    for (w in text.split(' ').filter { it.isNotEmpty() }) SentenceText("$w ", wyrmScopedPalette.quiet, FontWeight.SemiBold)
 }
 
 @Composable
@@ -624,7 +643,9 @@ private fun SentenceText(text: String, color: Color, weight: FontWeight) {
 /** A tappable word: bold, with a dashed ink underline (and its beads for colours). */
 @Composable
 private fun ShedWord(label: String, beads: List<Char>, textures: SkinTextures?, onTap: () -> Unit) {
-    val line = Wyrm.Ink.copy(alpha = 0.35f)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val line = wyrmScopedPalette.ink
     Row(
         Modifier
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap)
@@ -641,7 +662,7 @@ private fun ShedWord(label: String, beads: List<Char>, textures: SkinTextures?, 
                 beads.take(5).forEachIndexed { i, ch -> BeadDot(ch, textures, 17.dp, Modifier.offset(x = (-5 * i).dp)) }
             }
         }
-        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, lineHeight = 30.sp, letterSpacing = (-0.3).sp, color = Wyrm.Ink)
+        Text(label, fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp, lineHeight = 30.sp, letterSpacing = (-0.3).sp, color = wyrmScopedPalette.ink)
     }
 }
 
@@ -666,6 +687,8 @@ private fun ShedCard(
     onToggle: () -> Unit,
     onCopy: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val appear = remember { Animatable(if (alreadyShown) 1f else 0f) }
     val grow = remember { Animatable(if (alreadyShown) 1f else 0f) }
     LaunchedEffect(skin.key) {
@@ -688,10 +711,10 @@ private fun ShedCard(
                 val s = 0.97f + 0.03f * appear.value
                 scaleX = s; scaleY = s
             }
-            .blur((10 * (1f - appear.value)).dp)
+            .then(if (appear.value < 0.99f) Modifier.blur((10 * (1f - appear.value)).dp) else Modifier)
             .clip(wyrmRounded(24.dp))
-            .background(Wyrm.Card)
-            .then(if (open) Modifier.border(2.dp, Wyrm.Ink, wyrmRounded(24.dp)) else Modifier),
+            .background(wyrmScopedPalette.card)
+            .then(if (open) Modifier.border(2.dp, wyrmScopedPalette.ink, wyrmRounded(24.dp)) else Modifier),
     ) {
         Column(
             Modifier
@@ -703,17 +726,17 @@ private fun ShedCard(
                     (index + 1).toString().padStart(2, '0'),
                     modifier = Modifier.widthIn(min = 34.dp),
                     fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, letterSpacing = (-1).sp,
-                    color = if (open) Wyrm.Ink else Wyrm.Quiet,
+                    color = if (open) wyrmScopedPalette.ink else wyrmScopedPalette.quiet,
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         "${ShedGenerator.MOODS.getValue(skin.mood).label} ${ShedGenerator.STYLES.getValue(skin.style).lowercase()}",
-                        fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Wyrm.Ink,
+                        fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = wyrmScopedPalette.ink,
                     )
                     Text(
                         "${skin.colours.size} colours · ${skin.code.length} beads a pattern",
-                        fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Quiet,
+                        fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.quiet,
                     )
                 }
                 Row { skin.colours.forEachIndexed { i, ch -> BeadDot(ch, textures, 16.dp, Modifier.offset(x = (-5 * i).dp)) } }
@@ -723,7 +746,7 @@ private fun ShedCard(
                 val bead = (maxWidth - 28.dp) / (1f + 127f * (8f / 48f))
                 Canvas(
                     Modifier.fillMaxWidth().height(bead * 2.16f + 24.dp + 6.dp)
-                        .clip(wyrmRounded(14.dp)).background(Wyrm.Paper),
+                        .clip(wyrmRounded(14.dp)).background(wyrmScopedPalette.paper),
                 ) {
                     val t = textures ?: return@Canvas
                     drawShedSnake(t, skin.code, grow.value, density)
@@ -738,27 +761,27 @@ private fun ShedCard(
             Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
                 Text(
                     skin.code,
-                    modifier = Modifier.fillMaxWidth().clip(wyrmRounded(14.dp)).background(Wyrm.Well).padding(horizontal = 12.dp, vertical = 10.dp),
-                    fontFamily = Wyrm.Body, fontSize = 12.5.sp, lineHeight = 19.sp, color = Wyrm.Mute,
+                    modifier = Modifier.fillMaxWidth().clip(wyrmRounded(14.dp)).background(wyrmScopedPalette.well).padding(horizontal = 12.dp, vertical = 10.dp),
+                    fontFamily = Wyrm.Body, fontSize = 12.5.sp, lineHeight = 19.sp, color = wyrmScopedPalette.mute,
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        Modifier.height(32.dp).clip(WyrmCapsule).background(Wyrm.Well).padding(horizontal = 12.dp),
+                        Modifier.height(32.dp).clip(WyrmCapsule).background(wyrmScopedPalette.well).padding(horizontal = 12.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("${skin.runs} / ${ShedGenerator.MAX_RUNS} runs · fits", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Wyrm.Mute)
+                        Text("${skin.runs} / ${ShedGenerator.MAX_RUNS} runs · fits", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = wyrmScopedPalette.mute)
                     }
                     Spacer(Modifier.weight(1f))
                     Row(
-                        Modifier.height(38.dp).clip(WyrmCapsule).background(Wyrm.Ink)
+                        Modifier.height(38.dp).clip(WyrmCapsule).background(wyrmScopedPalette.ink)
                             .clickable { onCopy(); copied = true }
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        CopyIcon(Wyrm.OnInk)
+                        CopyIcon(wyrmScopedPalette.onInk)
                         Spacer(Modifier.width(6.dp))
-                        Text(if (copied) "Copied" else "Copy code", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = Wyrm.OnInk)
+                        Text(if (copied) "Copied" else "Copy code", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = wyrmScopedPalette.onInk)
                     }
                 }
             }
@@ -832,6 +855,8 @@ private fun ShedComposerChoices(
     onRecipe: (ShedRecipe) -> Unit,
     onClose: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val (title, sub) = when (sheet) {
         ShedSheet.COUNT -> "How many skins" to "From $COUNT_MIN to $COUNT_MAX. Every one is checked before you see it."
         ShedSheet.MOOD -> "Mood" to "Sets the colours, the style and how they repeat."
@@ -842,9 +867,9 @@ private fun ShedComposerChoices(
         ShedSheet.TUNE -> "Fine tune" to "Small changes to how the skins come out."
     }
     Column(Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(start = 2.dp, end = 2.dp, top = 4.dp, bottom = 2.dp)) {
-        Text(title, modifier = Modifier.shedMorph(parts[0]), fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, letterSpacing = (-0.4).sp, color = Wyrm.Ink)
+        Text(title, modifier = Modifier.shedMorph(parts[0]), fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, letterSpacing = (-0.4).sp, color = wyrmScopedPalette.ink)
         Spacer(Modifier.height(4.dp))
-        Text(sub, modifier = Modifier.shedMorph(parts[1]), fontFamily = Wyrm.Body, fontSize = 13.sp, color = Wyrm.Quiet)
+        Text(sub, modifier = Modifier.shedMorph(parts[1]), fontFamily = Wyrm.Body, fontSize = 13.sp, color = wyrmScopedPalette.quiet)
         Spacer(Modifier.height(12.dp))
         Column(
             Modifier.weight(1f, fill = false).heightIn(max = maxBodyHeight)
@@ -854,9 +879,9 @@ private fun ShedComposerChoices(
         }
         Spacer(Modifier.height(12.dp))
         Box(
-            Modifier.fillMaxWidth().shedMorph(parts[3]).height(52.dp).clip(WyrmCapsule).background(Wyrm.Ink).clickable(onClick = onClose),
+            Modifier.fillMaxWidth().shedMorph(parts[3]).height(52.dp).clip(WyrmCapsule).background(wyrmScopedPalette.ink).clickable(onClick = onClose),
             contentAlignment = Alignment.Center,
-        ) { Text("Done", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = Wyrm.OnInk) }
+        ) { Text("Done", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = wyrmScopedPalette.onInk) }
     }
 }
 
@@ -864,6 +889,8 @@ private class Opt(val key: String, val label: String, val sub: String)
 
 @Composable
 private fun OptGrid(options: List<Opt>, selected: (String) -> Boolean, extra: @Composable (Opt) -> Unit = {}, onPick: (String) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.chunked(2).forEach { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -873,13 +900,13 @@ private fun OptGrid(options: List<Opt>, selected: (String) -> Boolean, extra: @C
                         Modifier
                             .weight(1f)
                             .clip(wyrmRounded(18.dp))
-                            .background(if (on) Wyrm.Card else Wyrm.Well)
-                            .then(if (on) Modifier.border(2.dp, Wyrm.Ink, wyrmRounded(18.dp)) else Modifier)
+                            .background(if (on) wyrmScopedPalette.card else wyrmScopedPalette.well)
+                            .then(if (on) Modifier.border(2.dp, wyrmScopedPalette.ink, wyrmRounded(18.dp)) else Modifier)
                             .clickable { onPick(o.key) }
                             .padding(12.dp),
                     ) {
-                        Text(o.label, fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = Wyrm.Ink)
-                        if (o.sub.isNotEmpty()) Text(o.sub, fontFamily = Wyrm.Body, fontSize = 12.sp, lineHeight = 16.sp, color = Wyrm.Quiet)
+                        Text(o.label, fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = wyrmScopedPalette.ink)
+                        if (o.sub.isNotEmpty()) Text(o.sub, fontFamily = Wyrm.Body, fontSize = 12.sp, lineHeight = 16.sp, color = wyrmScopedPalette.quiet)
                         extra(o)
                     }
                 }
@@ -891,8 +918,10 @@ private fun OptGrid(options: List<Opt>, selected: (String) -> Boolean, extra: @C
 
 @Composable
 private fun GroupTitle(text: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Spacer(Modifier.height(16.dp))
-    Text(text.uppercase(), fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, letterSpacing = 1.6.sp, color = Wyrm.Quiet)
+    Text(text.uppercase(), fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, letterSpacing = 1.6.sp, color = wyrmScopedPalette.quiet)
     Spacer(Modifier.height(8.dp))
 }
 
@@ -904,12 +933,14 @@ private fun ShedSheetBody(
     onRecipe: (ShedRecipe) -> Unit,
     onClose: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     when (sheet) {
         ShedSheet.COUNT -> {
             Text(
                 "${recipe.count} ${if (recipe.count == 1) "skin" else "skins"}",
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
-                fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 40.sp, letterSpacing = (-1.5).sp, color = Wyrm.Ink,
+                fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 40.sp, letterSpacing = (-1.5).sp, color = wyrmScopedPalette.ink,
             )
             Spacer(Modifier.height(14.dp))
             LiquidSlider(
@@ -919,9 +950,9 @@ private fun ShedSheetBody(
                 modifier = Modifier.fillMaxWidth(),
             )
             Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                Text("$COUNT_MIN", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Wyrm.Quiet)
+                Text("$COUNT_MIN", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
                 Spacer(Modifier.weight(1f))
-                Text("$COUNT_MAX", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Wyrm.Quiet)
+                Text("$COUNT_MAX", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = wyrmScopedPalette.quiet)
             }
         }
         ShedSheet.MOOD -> {
@@ -971,7 +1002,7 @@ private fun ShedSheetBody(
                                 val on = b.ch in recipe.colours
                                 Box(
                                     Modifier.weight(1f).aspectRatio(1f)
-                                        .then(if (on) Modifier.border(2.5.dp, Wyrm.Ink, CircleShape) else Modifier)
+                                        .then(if (on) Modifier.border(2.5.dp, wyrmScopedPalette.ink, CircleShape) else Modifier)
                                         .padding(3.dp)
                                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                                             val mine = if (on) recipe.colours - b.ch else recipe.colours + b.ch
@@ -981,8 +1012,8 @@ private fun ShedSheetBody(
                                     BeadDot(b.ch, textures, 40.dp, Modifier.fillMaxSize())
                                     Text(
                                         b.ch.toString(),
-                                        modifier = Modifier.align(Alignment.BottomEnd).clip(wyrmRounded(6.dp)).background(Wyrm.Card).padding(horizontal = 3.dp),
-                                        fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, color = Wyrm.Ink,
+                                        modifier = Modifier.align(Alignment.BottomEnd).clip(wyrmRounded(6.dp)).background(wyrmScopedPalette.card).padding(horizontal = 3.dp),
+                                        fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, color = wyrmScopedPalette.ink,
                                     )
                                 }
                             }
@@ -1010,7 +1041,7 @@ private fun ShedSheetBody(
                         modifier = Modifier.width(140.dp),
                     )
                     Text("${(recipe.wildness * 100).roundToInt()}", modifier = Modifier.width(34.dp), textAlign = TextAlign.End,
-                        fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Wyrm.Quiet)
+                        fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = wyrmScopedPalette.quiet)
                 }
             }
             TuneRow("Lucky number", last = true) {
@@ -1024,16 +1055,16 @@ private fun ShedSheetBody(
                         },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        textStyle = TextStyle(fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Wyrm.Ink, textAlign = TextAlign.Center),
-                        cursorBrush = SolidColor(Wyrm.Ink),
-                        modifier = Modifier.width(110.dp).height(36.dp).clip(wyrmRounded(12.dp)).background(Wyrm.Well).padding(top = 8.dp),
+                        textStyle = TextStyle(fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = wyrmScopedPalette.ink, textAlign = TextAlign.Center),
+                        cursorBrush = SolidColor(wyrmScopedPalette.ink),
+                        modifier = Modifier.width(110.dp).height(36.dp).clip(wyrmRounded(12.dp)).background(wyrmScopedPalette.well).padding(top = 8.dp),
                     )
                     Spacer(Modifier.width(8.dp))
                     Box(
-                        Modifier.size(36.dp).clip(CircleShape).background(Wyrm.Ink.copy(alpha = 0.07f))
+                        Modifier.size(36.dp).clip(CircleShape).background(wyrmScopedPalette.ink)
                             .clickable { onRecipe(recipe.copy(seed = 1 + (Math.random() * 999999).toInt())) },
                         contentAlignment = Alignment.Center,
-                    ) { DiceIcon(Wyrm.Ink) }
+                    ) { DiceIcon(wyrmScopedPalette.ink) }
                 }
             }
         }
@@ -1042,13 +1073,15 @@ private fun ShedSheetBody(
 
 @Composable
 private fun TuneRow(title: String, last: Boolean = false, content: @Composable () -> Unit) {
-    val rule = Wyrm.Rule
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val rule = wyrmScopedPalette.rule
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp)
             .then(if (last) Modifier else Modifier.drawBehind { drawLine(rule, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx()) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, modifier = Modifier.weight(1f), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+        Text(title, modifier = Modifier.weight(1f), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = wyrmScopedPalette.ink)
         content()
     }
 }
@@ -1060,6 +1093,8 @@ private fun TuneRow(title: String, last: Boolean = false, content: @Composable (
  */
 @Composable
 internal fun ShedHomeCard(onOpen: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(
         Modifier
             .fillMaxWidth()
@@ -1068,13 +1103,13 @@ internal fun ShedHomeCard(onOpen: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Shed", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = Wyrm.Ink)
+            Text("Shed", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = wyrmScopedPalette.ink)
             Spacer(Modifier.height(4.dp))
-            Text("Pick a mood and shed fresh skins. Every one fits the arena.", fontFamily = Wyrm.Body, fontSize = 13.sp, lineHeight = 18.sp, color = Wyrm.Quiet)
+            Text("Pick a mood and shed fresh skins. Every one fits the arena.", fontFamily = Wyrm.Body, fontSize = 13.sp, lineHeight = 18.sp, color = wyrmScopedPalette.quiet)
         }
         Spacer(Modifier.width(14.dp))
-        Box(Modifier.clip(WyrmCapsule).background(Wyrm.Ink).padding(horizontal = 14.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text("Shed →", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = Wyrm.OnInk)
+        Box(Modifier.clip(WyrmCapsule).background(wyrmScopedPalette.ink).padding(horizontal = 14.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+            Text("Shed →", fontFamily = Wyrm.Body, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = wyrmScopedPalette.onInk)
         }
     }
 }

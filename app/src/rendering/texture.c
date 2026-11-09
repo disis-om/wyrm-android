@@ -160,6 +160,20 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
     using_fallback = true;
   }
 #endif
+  /* The original's baked art (OM, 2026-11-01): Stage3D keeps textures
+     premultiplied, so its mip levels average colour by coverage. The PNG
+     is straight alpha with black under every clear pixel: mipped as it
+     is, a glyph's white face greys and its outline grows as it shrinks.
+     Premultiply once here; the ospr pipelines blend that way. */
+  const bool premultiply = strstr(filename, "original_art") != NULL;
+  if (premultiply && !using_fallback) {
+    const size_t count = (size_t)w * (size_t)h;
+    for (size_t i = 0; i < count; ++i) {
+      unsigned a = data[i * 4 + 3];
+      for (int k = 0; k < 3; ++k)
+        data[i * 4 + k] = (stbi_uc)((data[i * 4 + k] * a + 127) / 255);
+    }
+  }
   /* The game atlas is mipmapped too since 2026-10-18 (renderer.c
      bead_sampler), but only the levels whose cells stay clean. */
   const bool is_atlas = strstr(filename, "tex_atlas") != NULL;
@@ -204,7 +218,11 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
                          (uint64_t)w * (uint64_t)h <= TEXTURE_CPU_MIP_MAX_PIXELS;
   const bool cpu_atlas = is_atlas &&
                          (uint64_t)w * (uint64_t)h <= TEXTURE_CPU_MIP_ATLAS_MAX_PIXELS;
-  if (wants_mips && mip_levels == 1 && !using_fallback && (cpu_floor || cpu_atlas)) {
+  /* Mali: the sheet gets its chain from the CPU as well (premultiplied). */
+  const bool cpu_art = premultiply &&
+                       (uint64_t)w * (uint64_t)h <= TEXTURE_CPU_MIP_MAX_PIXELS;
+  if (wants_mips && mip_levels == 1 && !using_fallback &&
+      (cpu_floor || cpu_atlas || cpu_art)) {
     const int levels =
         GLM_MIN(texture_full_levels(w, h),
                 cpu_atlas ? (int)BEAD_ATLAS_MAX_LOD + 1 : 16);
@@ -214,6 +232,10 @@ texture* create_mipmap_texture(tcontext* ctx, const char* filename) {
       cpu_mips = true;
       mip_levels = levels;
       image_size = total;
+      /* The chain owns its base level too. Release the decoded PNG before
+         allocating another full upload copy (about 48 MiB for the atlas). */
+      stbi_image_free(data);
+      data = NULL;
       texture_startup_step(filename, "mip chain made on the CPU");
     } else {
       free(chain);
@@ -662,7 +684,6 @@ texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
               .usage = VMA_MEMORY_USAGE_AUTO},
           &up->staging, &up->staging_memory, &info) != VK_SUCCESS ||
       !info.pMappedData) {
-    up->staging = VK_NULL_HANDLE;
     texture_upload_drop_image(ctx, up);
     texture_upload_release(ctx, up);
     free(chain);
@@ -670,7 +691,11 @@ texture_upload* texture_upload_begin(tcontext* ctx, const unsigned char* rgba,
   }
   memcpy(info.pMappedData, cpu_mips ? chain : rgba, (size_t)bytes);
   free(chain);
-  vmaFlushAllocation(ctx->allocator, up->staging_memory, 0, bytes);
+  if (vmaFlushAllocation(ctx->allocator, up->staging_memory, 0, bytes) != VK_SUCCESS) {
+    texture_upload_drop_image(ctx, up);
+    texture_upload_release(ctx, up);
+    return NULL;
+  }
 
   texture* t = up->tex;
   if (vmaCreateImage(

@@ -20,7 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -45,10 +46,17 @@ fun SettingsAccessibilityScreen(
     insetBottom: Dp,
     onBack: () -> Unit,
     onTheme: (WyrmThemeId) -> Unit,
+    mode: WyrmThemeMode = Wyrm.themeMode,
+    onMode: (WyrmThemeMode) -> Unit = {},
     onIntensityChange: (Float) -> Unit,
     onResetIntensity: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var advancedOpen by remember { mutableStateOf(SettingsFocus.wants("app.theme-intensity")) }
+    val themes = listOf(WyrmThemeId.SAND, WyrmThemeId.LINEN, WyrmThemeId.GRAPE, WyrmThemeId.CYAN, WyrmThemeId.METAL3, WyrmThemeId.MIDNIGHT, WyrmThemeId.COLONIAL3,
+        WyrmThemeId.CLASSIC_PAPER, WyrmThemeId.CLASSIC_GRAPHITE, WyrmThemeId.CLASSIC_BLUSH, WyrmThemeId.CLASSIC_SUN,
+        WyrmThemeId.CLASSIC_SLATE, WyrmThemeId.CLASSIC_LILAC, WyrmThemeId.CLASSIC_FOREST, WyrmThemeId.CLASSIC_MIDNIGHT)
     SettingsDrillScaffold(
         title = "Accessibility",
         insetTop = insetTop,
@@ -56,23 +64,41 @@ fun SettingsAccessibilityScreen(
         onBack = onBack,
     ) {
         SettingsSectionLabel("Themes", top = 18.dp)
-        Box(Modifier.settingAnchor("app.theme")) { SettingsCard {
-            WyrmThemeId.entries.forEachIndexed { index, theme ->
-                ThemeChoiceRow(
-                    theme = theme,
-                    selected = theme == selected,
-                    intensity = intensity,
-                    first = index == 0,
-                    onClick = { onTheme(theme) },
-                )
-            }
-        } }
+        Box(Modifier.settingAnchor("app.theme").padding(horizontal = 16.dp)) {
+            PaperSegmented(
+                options = listOf("Light", "Dark", "Auto"),
+                selected = mode.ordinal,
+                onSelect = { index ->
+                    onMode(WyrmThemeMode.entries[index])
+                },
+            )
+        }
+        Text(
+            text = "Light and Dark use that version of the theme. Auto follows the phone's light and dark setting.",
+            fontFamily = Wyrm.Body,
+            fontSize = 12.5.sp,
+            lineHeight = 18.sp,
+            color = wyrmScopedPalette.quiet,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp),
+        )
+        SettingsCard {
+                themes.forEachIndexed { index, theme ->
+                    ThemeChoiceRow(
+                        theme = theme,
+                        selected = theme == selected,
+                        intensity = intensity,
+                        mode = mode,
+                        first = index == 0,
+                        onClick = { onTheme(theme) },
+                    )
+                }
+        }
         Text(
             text = "Themes colour the app and arena interface only. Skins, arena background and gameplay stay untouched.",
             fontFamily = Wyrm.Body,
             fontSize = 12.5.sp,
             lineHeight = 18.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
         )
         AdvancedFold(
@@ -85,7 +111,7 @@ fun SettingsAccessibilityScreen(
                 Box(Modifier.settingAnchor("app.theme-intensity")) { SettingsSliderRow(
                     title = "Theme intensity",
                     valueText = "${(intensity * 100f).roundToInt()}%",
-                    detail = "50% is the original theme look. Lower moves towards Paper; higher is richer.",
+                    detail = "50% is this theme as designed. Lower washes towards its own paper. Higher is richer. Text stays readable.",
                     value = intensity,
                     range = 0f..1f,
                     steps = 0,
@@ -111,12 +137,15 @@ private fun ThemeChoiceRow(
     theme: WyrmThemeId,
     selected: Boolean,
     intensity: Float,
+    mode: WyrmThemeMode,
     first: Boolean,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val palette = theme.palette.withIntensity(intensity)
+    val palette = theme.side(mode, Wyrm.systemDark).withIntensity(intensity)
     Column {
         if (!first) SettingsHairline()
         Row(
@@ -149,8 +178,8 @@ private fun ThemeChoiceRow(
                         .padding(bottom = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    listOf(palette.ink, palette.live, palette.link).forEach { colour ->
-                        Box(Modifier.size(5.dp).clip(CircleShape).background(colour))
+                    theme.swatches.forEach { swatch ->
+                        Box(Modifier.size(5.dp).clip(CircleShape).background(Color(swatch)))
                     }
                 }
             }
@@ -160,13 +189,13 @@ private fun ThemeChoiceRow(
                     fontFamily = Wyrm.Body,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                     fontSize = 15.5.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                 )
                 Text(
                     text = theme.description,
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 1.dp),
                 )
             }
@@ -174,10 +203,10 @@ private fun ThemeChoiceRow(
                 modifier = Modifier
                     .size(22.dp)
                     .clip(CircleShape)
-                    .border(1.5.dp, if (selected) Wyrm.Ink else Wyrm.Chevron, CircleShape),
+                    .border(1.5.dp, if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.chevron, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                if (selected) Box(Modifier.size(12.dp).clip(CircleShape).background(Wyrm.Ink))
+                if (selected) Box(Modifier.size(12.dp).clip(CircleShape).background(wyrmScopedPalette.ink))
             }
         }
     }

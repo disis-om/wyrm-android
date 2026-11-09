@@ -2,6 +2,7 @@
 
 #include "../user.h"
 #include "../network/server.h"
+#include "wyrm_extras.h"
 
 #include <SDL3/SDL.h>
 #include <string.h>
@@ -414,6 +415,9 @@ void set_default_skin_data(default_skin_data* dfs) {
   // yellow eyes (cv = 64):
   dfs[1 + 64].ec = (vec3s){1, 1, 0.50196f};
 
+  // slug pupils (cv = 41, Main.as pr = 4.5):
+  dfs[1 + 41].pr = 4.5f;
+
   // orange eyes (cv = 25):
   dfs[1 + 25].ec = (vec3s){1, 0.3373f, 0.0353f};
 
@@ -557,7 +561,8 @@ static const game_data k_default_game_data = {
            [62] = {10, 17, 17, 17, 17, 17, 39, 39, 39, 39, 39},
            [63] = {6, 7, 7, 7, 11, 11, 11},
            [64] = {4, 16, 16, 11, 11},
-           [65] = {8, 4, 4, 4, 4, 9, 9, 9, 9}},
+           /* Main.as preset 65 (OM, 2026-11-08). */
+           [65] = {8, 9, 9, 9, 9, 32, 32, 32, 32}},
 
       .ntl_cg_map =
           {
@@ -757,6 +762,11 @@ void game_data_reset(tenv* env) {
   gdata->data.kd_l_frb = 0;
   gdata->data.kd_r_frb = 0;
   gdata->data.lkstm = 0;
+  /* Main.as's auto zoom stays through the death (oef.c never resets it)
+     and goes back to normal here, when the match ends for the lobby or a
+     restart, so the next game starts at the player's own zoom
+     (OM, 2026-11-08). */
+  wyrm_air_zoom = 1.0f;
   gdata->data.gsc = gdata->data.ms_zoom;
 
   memset(gdata->data.lb.entries, 0,

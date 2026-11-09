@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -97,12 +97,14 @@ fun SocialScreen(
     onTabSkin: (Rect) -> Unit,
     onTabSettings: (Rect) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     LaunchedEffect(Unit) { onAppear() }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         // Wyrm iOS pulls Social to refresh leaderboards, chats, rooms and alerts.
         var pulling by remember { mutableStateOf(false) }
@@ -129,21 +131,21 @@ fun SocialScreen(
                     title = "Messages",
                     detail = if (unreadMessages == 0L) "No unread messages" else "$unreadMessages unread",
                     glyph = IosGlyph.MESSAGE,
-                    tint = Wyrm.Link,
+                    tint = wyrmScopedPalette.link,
                     badge = unreadMessages.toInt(),
                 ) { onOpenMessages(Rect.Zero) }
                 IosListRow(
                     title = "Global chat",
                     detail = if (unreadGlobal > 0) "$unreadGlobal new · last 24 hours" else "Everyone in Wyrm · last 24 hours",
                     glyph = IosGlyph.BUBBLES,
-                    tint = Wyrm.Link,
+                    tint = wyrmScopedPalette.link,
                     badge = unreadGlobal,
                 ) { onOpenGlobalChat(Rect.Zero) }
                 if (com.wyrm.omrajput.data.VOICE_ENABLED) IosListRow(
                     title = "Voice rooms",
                     detail = if (voiceBadge > 0) "$voiceBadge invitation${if (voiceBadge == 1) "" else "s"} · $liveRooms live" else "$liveRooms live",
                     glyph = IosGlyph.MIC,
-                    tint = Wyrm.Live,
+                    tint = wyrmScopedPalette.live,
                     badge = voiceBadge,
                 ) { onOpenVoice(Rect.Zero) }
                 IosListRow(
@@ -159,7 +161,9 @@ fun SocialScreen(
                 ) { onOpenProfile(Rect.Zero) }
             }
             IosSectionLabel("Recently played with")
-            IosPaperCard {
+            WyrmHeroTheme(2) {
+ val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+IosPaperCard {
                 if (recents.isEmpty()) {
                     IosEmptyPanel(
                         title = "Your arena circle starts here",
@@ -171,6 +175,7 @@ fun SocialScreen(
                     }
                 }
             }
+}
             Spacer(Modifier.height(LocalRootTabClearance.current))
         }
         }
@@ -191,13 +196,15 @@ fun SocialScreen(
 
 @Composable
 private fun IndexCard(content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
     ) {
         content()
     }
@@ -215,6 +222,8 @@ private fun IndexRow(
     wellContent: (@Composable () -> Unit)? = null,
     badge: Long = 0,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -224,7 +233,7 @@ private fun IndexRow(
                 Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Wyrm.RowRule),
+                    .background(wyrmScopedPalette.rowRule),
             )
         }
         Row(
@@ -261,7 +270,7 @@ private fun IndexRow(
                     text = title,
                     fontFamily = Wyrm.Body,
                     fontSize = 15.5.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -269,7 +278,7 @@ private fun IndexRow(
                     text = detail,
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 1.dp),
@@ -281,7 +290,7 @@ private fun IndexRow(
                         .height(20.dp)
                         .padding(end = 6.dp)
                         .clip(wyrmRounded(99.dp))
-                        .background(Wyrm.Badge)
+                        .background(wyrmScopedPalette.badge)
                         .padding(horizontal = 6.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -290,7 +299,7 @@ private fun IndexRow(
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.5.sp,
-                        color = Wyrm.contentOn(Wyrm.Badge),
+                        color = Wyrm.contentOn(wyrmScopedPalette.badge),
                     )
                 }
             }
@@ -298,7 +307,7 @@ private fun IndexRow(
                 text = "›",
                 fontFamily = Wyrm.Body,
                 fontSize = 17.sp,
-                color = Wyrm.Chevron,
+                color = wyrmScopedPalette.chevron,
             )
         }
     }
@@ -306,6 +315,8 @@ private fun IndexRow(
 
 @Composable
 private fun RecentRow(person: SocialRecent, first: Boolean, onOpen: (String, Rect) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -316,7 +327,7 @@ private fun RecentRow(person: SocialRecent, first: Boolean, onOpen: (String, Rec
                 Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Wyrm.RowRule),
+                    .background(wyrmScopedPalette.rowRule),
             )
         }
         Row(
@@ -344,7 +355,7 @@ private fun RecentRow(person: SocialRecent, first: Boolean, onOpen: (String, Rec
                     text = person.name,
                     fontFamily = Wyrm.Body,
                     fontSize = 15.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -352,7 +363,7 @@ private fun RecentRow(person: SocialRecent, first: Boolean, onOpen: (String, Rec
                     text = person.handle,
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -362,7 +373,7 @@ private fun RecentRow(person: SocialRecent, first: Boolean, onOpen: (String, Rec
                     text = person.whenLabel,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                 )
             }
         }

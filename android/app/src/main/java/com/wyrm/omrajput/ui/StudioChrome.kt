@@ -26,7 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,6 +72,8 @@ import kotlin.math.roundToInt
  */
 @Composable
 internal fun StudioColorPicker(color: Int, onChange: (Int) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val hsv = remember(color) { FloatArray(3).also { android.graphics.Color.colorToHSV(color, it) } }
     fun emit(h: Float = hsv[0], s: Float = hsv[1], v: Float = hsv[2]) =
         onChange(android.graphics.Color.HSVToColor(0xFF, floatArrayOf(h, s, v)))
@@ -80,17 +82,17 @@ internal fun StudioColorPicker(color: Int, onChange: (Int) -> Unit) {
         Modifier
             .fillMaxWidth()
             .clip(wyrmRounded(20.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(20.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(20.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(38.dp).clip(CircleShape).background(opaque).border(2.dp, Wyrm.Rule, CircleShape))
+            Box(Modifier.size(38.dp).clip(CircleShape).background(opaque).border(2.dp, wyrmScopedPalette.rule, CircleShape))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("COLOUR", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, letterSpacing = 1.1.sp, color = Wyrm.Quiet)
-                Text("#%06X".format(color and 0xFFFFFF), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.Ink)
+                Text("COLOUR", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, letterSpacing = 1.1.sp, color = wyrmScopedPalette.quiet)
+                Text("#%06X".format(color and 0xFFFFFF), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = wyrmScopedPalette.ink)
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -101,7 +103,7 @@ internal fun StudioColorPicker(color: Int, onChange: (Int) -> Unit) {
                         .size(22.dp)
                         .clip(CircleShape)
                         .background(Color(swatch))
-                        .border(if (selected) 2.5.dp else 1.dp, if (selected) Wyrm.Ink else Wyrm.Rule, CircleShape)
+                        .border(if (selected) 2.5.dp else 1.dp, if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule, CircleShape)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onChange(swatch) },
                 )
             }
@@ -125,6 +127,8 @@ internal fun StudioColorTrack(
     knob: Color,
     onPick: (Float) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val density = LocalDensity.current
     var width by remember { mutableFloatStateOf(1f) }
     val knobSize = 26.dp
@@ -134,8 +138,8 @@ internal fun StudioColorTrack(
     val position = fraction.coerceIn(0f, 1f)
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Wyrm.Ink, modifier = Modifier.weight(1f))
-            Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Wyrm.Quiet)
+            Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = wyrmScopedPalette.ink, modifier = Modifier.weight(1f))
+            Text(value, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = wyrmScopedPalette.quiet)
         }
         Spacer(Modifier.height(6.dp))
         Box(
@@ -162,7 +166,7 @@ internal fun StudioColorTrack(
                     .height(12.dp)
                     .clip(WyrmCapsule)
                     .background(Brush.horizontalGradient(colors))
-                    .border(1.dp, Wyrm.Rule, WyrmCapsule),
+                    .border(1.dp, wyrmScopedPalette.rule, WyrmCapsule),
             )
             Box(
                 Modifier
@@ -182,7 +186,9 @@ internal fun StudioColorTrack(
 /** A small quiet line: what a touch and hold does here. */
 @Composable
 internal fun StudioCaption(text: String, modifier: Modifier = Modifier) {
-    Text(text, fontFamily = Wyrm.Body, fontSize = 11.5.sp, lineHeight = 15.sp, color = Wyrm.Quiet,
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Text(text, fontFamily = Wyrm.Body, fontSize = 11.5.sp, lineHeight = 15.sp, color = wyrmScopedPalette.quiet,
         modifier = modifier.padding(horizontal = 20.dp, vertical = 2.dp))
 }
 
@@ -209,6 +215,8 @@ internal fun StudioActionSheet(
     insetBottom: Dp,
     onDismiss: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val appear = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { appear.animateTo(1f, iosSpring(0.42f, 0.84f)) }
@@ -245,23 +253,23 @@ internal fun StudioActionSheet(
                         .fillMaxWidth()
                         .shadow(18.dp, wyrmRounded(30.dp))
                         .clip(wyrmRounded(30.dp))
-                        .background(Wyrm.Paper)
-                        .border(1.dp, Wyrm.Rule, wyrmRounded(30.dp))
+                        .background(wyrmScopedPalette.paper)
+                        .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(30.dp))
                         .padding(bottom = 8.dp),
                 ) {
                     Box(Modifier.fillMaxWidth().padding(top = 10.dp), contentAlignment = Alignment.Center) {
-                        Box(Modifier.width(40.dp).height(5.dp).clip(WyrmCapsule).background(Wyrm.Rule))
+                        Box(Modifier.width(40.dp).height(5.dp).clip(WyrmCapsule).background(wyrmScopedPalette.rule))
                     }
                     Column(Modifier.padding(start = 22.dp, end = 22.dp, top = 14.dp, bottom = 10.dp)) {
-                        Text(title, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Wyrm.Ink, maxLines = 1)
+                        Text(title, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = wyrmScopedPalette.ink, maxLines = 1)
                         if (subtitle.isNotBlank()) {
-                            Text(subtitle, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, modifier = Modifier.padding(top = 2.dp))
+                            Text(subtitle, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 2.dp))
                         }
                     }
                     actions.forEach { action ->
                         val interaction = remember { MutableInteractionSource() }
                         val pressed by interaction.collectIsPressedAsState()
-                        val tint = if (action.destructive) Wyrm.Badge else Wyrm.Ink
+                        val tint = if (action.destructive) wyrmScopedPalette.badge else wyrmScopedPalette.ink
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -274,8 +282,8 @@ internal fun StudioActionSheet(
                                 Modifier
                                     .size(40.dp)
                                     .clip(CircleShape)
-                                    .background(if (action.destructive) Wyrm.Badge.copy(alpha = 0.12f) else Wyrm.Card)
-                                    .border(1.dp, Wyrm.Rule, CircleShape),
+                                    .background(if (action.destructive) wyrmScopedPalette.badge.copy(alpha = 0.12f) else wyrmScopedPalette.card)
+                                    .border(1.dp, wyrmScopedPalette.rule, CircleShape),
                                 contentAlignment = Alignment.Center,
                             ) { Icon(painterResource(action.icon), null, tint = tint, modifier = Modifier.size(19.dp)) }
                             Spacer(Modifier.width(14.dp))
@@ -291,12 +299,12 @@ internal fun StudioActionSheet(
                         .height(54.dp)
                         .scale(pressScale(pressed))
                         .clip(WyrmCapsule)
-                        .background(Wyrm.Paper)
-                        .border(1.dp, Wyrm.Rule, WyrmCapsule)
+                        .background(wyrmScopedPalette.paper)
+                        .border(1.dp, wyrmScopedPalette.rule, WyrmCapsule)
                         .clickable(interactionSource = interaction, indication = null) { close() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("Cancel", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Wyrm.Ink)
+                    Text("Cancel", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = wyrmScopedPalette.ink)
                 }
             }
         }
@@ -310,6 +318,8 @@ internal fun StudioActionSheet(
  */
 @Composable
 internal fun StudioDialog(title: String, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val appear = remember { Animatable(0f) }
     LaunchedEffect(Unit) { appear.animateTo(1f, iosSpring(0.4f, 0.82f)) }
     Box(
@@ -333,13 +343,13 @@ internal fun StudioDialog(title: String, onDismiss: () -> Unit, content: @Compos
                 }
                 .shadow(20.dp, wyrmRounded(28.dp))
                 .clip(wyrmRounded(28.dp))
-                .background(Wyrm.Paper)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(28.dp))
+                .background(wyrmScopedPalette.paper)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(28.dp))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 .padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(title, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Wyrm.Ink)
+            Text(title, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = wyrmScopedPalette.ink)
             content()
         }
     }

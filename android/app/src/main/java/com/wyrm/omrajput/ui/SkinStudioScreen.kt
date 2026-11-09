@@ -38,7 +38,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -95,6 +95,8 @@ internal fun SkinStudioScreen(
     onWear: (String) -> Unit,
     onTakeOff: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val textures by rememberSkinTextures()
     val beads = SkinStudio.beads
     val skins = SkinStudio.skins
@@ -130,7 +132,7 @@ internal fun SkinStudioScreen(
         editingBead = null
     }
 
-    Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
+    Box(Modifier.fillMaxSize().background(wyrmScopedPalette.paper)) {
         Column(Modifier.fillMaxSize().padding(top = insetTop)) {
             IosScreenHeader(kicker = "WYRM", title = "Skin Studio") {
                 StudioCapsule("Default skin editor", icon = LucideR.drawable.lucide_ic_shirt, filled = false, onClick = onOpenClassic)
@@ -155,9 +157,9 @@ internal fun SkinStudioScreen(
                     item(key = "new") {
                         ShelfCard(selected = false, onClick = { SkinStudio.newSkin(); tab = StudioTab.SNAKE }, onLongClick = {}) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(painterResource(LucideR.drawable.lucide_ic_plus), null, tint = Wyrm.Ink, modifier = Modifier.size(22.dp))
+                                Icon(painterResource(LucideR.drawable.lucide_ic_plus), null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(22.dp))
                                 Spacer(Modifier.height(4.dp))
-                                Text("New snake", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Wyrm.Ink)
+                                Text("New snake", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = wyrmScopedPalette.ink)
                             }
                         }
                     }
@@ -171,9 +173,9 @@ internal fun SkinStudioScreen(
                                 Canvas(Modifier.fillMaxWidth().weight(1f)) { drawStudioStrip(item, image) }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(item.name, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp,
-                                        color = Wyrm.Ink, maxLines = 1, modifier = Modifier.weight(1f))
+                                        color = wyrmScopedPalette.ink, maxLines = 1, modifier = Modifier.weight(1f))
                                     if (SkinStudio.worn == item.id) {
-                                        Box(Modifier.size(7.dp).clip(CircleShape).background(Wyrm.Live))
+                                        Box(Modifier.size(7.dp).clip(CircleShape).background(wyrmScopedPalette.live))
                                     }
                                 }
                             }
@@ -186,7 +188,7 @@ internal fun SkinStudioScreen(
                 }
                 Spacer(Modifier.height(14.dp))
                 if (notice.isNotEmpty()) {
-                    Text(notice, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Badge,
+                    Text(notice, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.badge,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
                     LaunchedEffect(notice) { kotlinx.coroutines.delay(2600); notice = "" }
                 }
@@ -357,6 +359,8 @@ private fun StudioStage(
     onTakeOff: () -> Unit,
     onRename: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var time by remember { mutableFloatStateOf(0f) }
     var boost by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
@@ -386,8 +390,8 @@ private fun StudioStage(
             .height(250.dp)
             .padding(horizontal = 16.dp)
             .clip(wyrmRounded(26.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(26.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(26.dp))
             .pointerInput(Unit) { detectTapGestures { boost = 1f } },
     ) {
         Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value; translationX = (1f - appear.value) * -60f }) {
@@ -410,8 +414,8 @@ private fun StudioStage(
         }
         Column(Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 14.dp)) {
             Text(if (worn) "WORN" else "STUDIO SNAKE", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp,
-                letterSpacing = 1.2.sp, color = if (worn) Wyrm.Live else Wyrm.Quiet)
-            Text(skin.name, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 26.sp, color = Wyrm.Ink,
+                letterSpacing = 1.2.sp, color = if (worn) wyrmScopedPalette.live else wyrmScopedPalette.quiet)
+            Text(skin.name, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 26.sp, color = wyrmScopedPalette.ink,
                 modifier = Modifier.combinedClickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                     onClick = onRename))
         }
@@ -425,13 +429,15 @@ private fun StudioStage(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ShelfCard(selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit, content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         Modifier
             .width(132.dp)
             .height(78.dp)
             .clip(wyrmRounded(18.dp))
-            .background(Wyrm.Card)
-            .border(if (selected) 2.dp else 1.dp, if (selected) Wyrm.Ink else Wyrm.Rule, wyrmRounded(18.dp))
+            .background(wyrmScopedPalette.card)
+            .border(if (selected) 2.dp else 1.dp, if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule, wyrmRounded(18.dp))
             .combinedClickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                 onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
@@ -448,6 +454,8 @@ private fun PatternWorkshop(
     onTooMany: () -> Unit,
     onNewBead: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val history = remember(skin.id) { mutableStateListOf<List<String>>() }
     var selected by remember(skin.id) { mutableStateOf<Int?>(null) }
     val pattern = skin.pattern
@@ -464,7 +472,7 @@ private fun PatternWorkshop(
 
     Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("${pattern.size} / ${SkinStudio.MAX_PATTERN} beads · ${pattern.distinct().size} kinds",
-            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = Wyrm.Quiet, modifier = Modifier.weight(1f))
+            fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp, color = wyrmScopedPalette.quiet, modifier = Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StudioRoundButton(LucideR.drawable.lucide_ic_undo_2, enabled = history.isNotEmpty(), size = 34.dp) {
                 val last = history.removeAt(history.lastIndex)
@@ -492,14 +500,14 @@ private fun PatternWorkshop(
                     Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .border(if (chosen) 2.5.dp else 0.dp, if (chosen) Wyrm.Ink else Color.Transparent, CircleShape)
+                        .border(if (chosen) 2.5.dp else 0.dp, if (chosen) wyrmScopedPalette.ink else Color.Transparent, CircleShape)
                         .clickableNoRipple { selected = if (chosen) null else index },
                     contentAlignment = Alignment.Center,
                 ) {
                     Canvas(Modifier.size(38.dp)) { image(id)?.let { drawImageInto(it, 0f, 0f, size.width, size.height) } }
                 }
                 Text("${index + 1}", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 8.5.sp,
-                    color = if (chosen) Wyrm.Ink else Wyrm.Quiet)
+                    color = if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.quiet)
             }
         }
     }
@@ -526,9 +534,9 @@ private fun PatternWorkshop(
     TileGrid(minimum = 54.dp, count = beads.size + 1, fixedColumns = 6) { index ->
         if (index == 0) {
             Box(
-                Modifier.fillMaxSize().clip(CircleShape).background(Wyrm.Card).border(1.dp, Wyrm.Rule, CircleShape).clickableNoRipple(onNewBead),
+                Modifier.fillMaxSize().clip(CircleShape).background(wyrmScopedPalette.card).border(1.dp, wyrmScopedPalette.rule, CircleShape).clickableNoRipple(onNewBead),
                 contentAlignment = Alignment.Center,
-            ) { Icon(painterResource(LucideR.drawable.lucide_ic_plus), null, tint = Wyrm.Ink, modifier = Modifier.size(20.dp)) }
+            ) { Icon(painterResource(LucideR.drawable.lucide_ic_plus), null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(20.dp)) }
         } else {
             val bead = beads[index - 1]
             Canvas(Modifier.fillMaxSize().clickableNoRipple {
@@ -549,14 +557,16 @@ private fun BeadWorkshop(
     onLongPress: (String) -> Unit,
     onNew: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     IosSectionLabel("Your beads")
     StudioCaption("Tap a bead to edit it. Touch and hold a bead to copy or delete it.", Modifier.padding(bottom = 8.dp))
     TileGrid(minimum = 64.dp, count = beads.size + 1, fixedColumns = 5) { index ->
         if (index == 0) {
             Box(
-                Modifier.fillMaxSize().clip(CircleShape).background(Wyrm.Card).border(1.dp, Wyrm.Rule, CircleShape).clickableNoRipple(onNew),
+                Modifier.fillMaxSize().clip(CircleShape).background(wyrmScopedPalette.card).border(1.dp, wyrmScopedPalette.rule, CircleShape).clickableNoRipple(onNew),
                 contentAlignment = Alignment.Center,
-            ) { Icon(painterResource(LucideR.drawable.lucide_ic_plus), null, tint = Wyrm.Ink, modifier = Modifier.size(22.dp)) }
+            ) { Icon(painterResource(LucideR.drawable.lucide_ic_plus), null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(22.dp)) }
         } else {
             val bead = beads[index - 1]
             BeadTile(bead.id, image, onClick = { onOpen(bead.id) }, onLongClick = { onLongPress(bead.id) })
@@ -574,14 +584,14 @@ private fun BeadWorkshop(
                 Modifier
                     .width(150.dp)
                     .clip(wyrmRounded(16.dp))
-                    .background(Wyrm.Card)
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(16.dp))
+                    .background(wyrmScopedPalette.card)
+                    .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(16.dp))
                     .clickableNoRipple { studioFromPreset(index, groups) }
                     .padding(10.dp),
             ) {
                 MiniSnake(textures, groups, Modifier.fillMaxWidth().height(30.dp))
                 Text("Preset %02d".format(index + 1), fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp,
-                    color = Wyrm.Quiet, modifier = Modifier.padding(top = 6.dp))
+                    color = wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 6.dp))
             }
         }
     }
@@ -614,14 +624,16 @@ private fun studioFromPreset(index: Int, groups: List<Int>) {
 
 @Composable
 private fun EyeWorkshop(skin: StudioSkin, image: (String) -> ImageBitmap?, onOpenEditor: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .height(150.dp)
             .clip(wyrmRounded(22.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(22.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(22.dp))
             .clickableNoRipple(onOpenEditor),
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -657,8 +669,8 @@ private fun EyeWorkshop(skin: StudioSkin, image: (String) -> ImageBitmap?, onOpe
                 Modifier
                     .size(76.dp)
                     .clip(wyrmRounded(20.dp))
-                    .background(Wyrm.Card)
-                    .border(if (chosen) 2.dp else 1.dp, if (chosen) Wyrm.Ink else Wyrm.Rule, wyrmRounded(20.dp))
+                    .background(wyrmScopedPalette.card)
+                    .border(if (chosen) 2.dp else 1.dp, if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.rule, wyrmRounded(20.dp))
                     .clickableNoRipple { SkinStudio.setEyes(skin.id, eyes) }
                     .semantics { contentDescription = name },
             ) {
@@ -680,6 +692,8 @@ internal fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
 
 @Composable
 internal fun StudioRenameSheet(start: String, insetBottom: Dp, onDone: (String?) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var text by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(start, androidx.compose.ui.text.TextRange(start.length))) }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(120); runCatching { focus.requestFocus() } }
@@ -688,16 +702,16 @@ internal fun StudioRenameSheet(start: String, insetBottom: Dp, onDone: (String?)
             value = text,
             onValueChange = { text = it.copy(text = it.text.take(28)) },
             singleLine = true,
-            textStyle = TextStyle(fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = Wyrm.Ink),
-            cursorBrush = SolidColor(Wyrm.Link),
+            textStyle = TextStyle(fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = wyrmScopedPalette.ink),
+            cursorBrush = SolidColor(wyrmScopedPalette.link),
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
             keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (text.text.isNotBlank()) onDone(text.text) }),
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focus)
                 .clip(wyrmRounded(14.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp))
                 .padding(14.dp),
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {

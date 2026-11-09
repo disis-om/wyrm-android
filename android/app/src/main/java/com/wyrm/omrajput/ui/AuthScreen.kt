@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -54,10 +54,12 @@ fun AuthScreen(
     onLogIn: () -> Unit,
     onReadPrivacy: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         DottedHero(
             modifier = Modifier
@@ -77,7 +79,7 @@ fun AuthScreen(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.5.sp,
                 letterSpacing = 1.1.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
             Text(
                 text = "The arena\nand people in it.",
@@ -86,7 +88,7 @@ fun AuthScreen(
                 fontSize = 31.sp,
                 lineHeight = 35.sp,
                 letterSpacing = (-0.7).sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.padding(top = 8.dp),
             )
             Text(
@@ -94,7 +96,7 @@ fun AuthScreen(
                 fontFamily = Wyrm.Body,
                 fontSize = 15.5.sp,
                 lineHeight = 23.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 modifier = Modifier.padding(top = 11.dp),
             )
             if (state.error.isNotEmpty()) {
@@ -102,7 +104,7 @@ fun AuthScreen(
                     text = state.error,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
-                    color = Wyrm.Badge,
+                    color = wyrmScopedPalette.badge,
                     modifier = Modifier.padding(top = 14.dp),
                 )
             }
@@ -127,7 +129,7 @@ fun AuthScreen(
                     text = "Use email",
                     fontFamily = Wyrm.Body,
                     fontSize = 14.5.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .clickable(enabled = !state.busy, onClick = onLogIn)
                         .padding(8.dp),
@@ -137,13 +139,13 @@ fun AuthScreen(
                         .padding(horizontal = 6.dp)
                         .width(1.dp)
                         .height(14.dp)
-                        .background(Wyrm.Rule),
+                        .background(wyrmScopedPalette.rule),
                 )
                 Text(
                     text = "Play as guest",
                     fontFamily = Wyrm.Body,
                     fontSize = 14.5.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .clickable(enabled = !state.busy, onClick = onGuest)
                         .padding(8.dp),
@@ -154,7 +156,7 @@ fun AuthScreen(
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
                 lineHeight = 18.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             )
@@ -162,7 +164,7 @@ fun AuthScreen(
                 text = "Privacy",
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 modifier = Modifier
                     .clickable(onClick = onReadPrivacy)
                     .padding(8.dp),
@@ -173,6 +175,8 @@ fun AuthScreen(
 
 @Composable
 internal fun GoogleInkButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = wyrmRounded(13.dp)
@@ -182,7 +186,7 @@ internal fun GoogleInkButton(label: String, enabled: Boolean, onClick: () -> Uni
             .height(54.dp)
             .scale(pressScale(pressed, enabled))
             .clip(shape)
-            .background(if (enabled) Wyrm.Ink else Wyrm.Ink.copy(alpha = 0.4f))
+            .background(if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.ink)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -213,7 +217,7 @@ internal fun GoogleInkButton(label: String, enabled: Boolean, onClick: () -> Uni
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 16.5.sp,
-            color = Wyrm.OnInk,
+            color = wyrmScopedPalette.onInk,
             modifier = Modifier
                 .weight(1f)
                 .padding(start = 12.dp),
@@ -223,6 +227,8 @@ internal fun GoogleInkButton(label: String, enabled: Boolean, onClick: () -> Uni
 
 @Composable
 internal fun GoogleOutlineButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = wyrmRounded(13.dp)
@@ -232,7 +238,7 @@ internal fun GoogleOutlineButton(label: String, enabled: Boolean, onClick: () ->
             .height(52.dp)
             .scale(pressScale(pressed, enabled))
             .clip(shape)
-            .background(Wyrm.Card)
+            .background(wyrmScopedPalette.card)
             .border(1.dp, Color(0x2937352F), shape)
             .clickable(
                 interactionSource = interaction,
@@ -247,7 +253,7 @@ internal fun GoogleOutlineButton(label: String, enabled: Boolean, onClick: () ->
             modifier = Modifier
                 .size(26.dp)
                 .clip(wyrmRounded(7.dp))
-                .background(Wyrm.Well),
+                .background(wyrmScopedPalette.well),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -255,7 +261,7 @@ internal fun GoogleOutlineButton(label: String, enabled: Boolean, onClick: () ->
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
             )
         }
         Text(
@@ -263,7 +269,7 @@ internal fun GoogleOutlineButton(label: String, enabled: Boolean, onClick: () ->
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 16.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier
                 .weight(1f)
                 .padding(start = 12.dp),
@@ -273,6 +279,8 @@ internal fun GoogleOutlineButton(label: String, enabled: Boolean, onClick: () ->
 
 @Composable
 internal fun DottedHero(modifier: Modifier = Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val dot = Color(0x1A37352F)
     Box(
         modifier = modifier.drawBehind {
@@ -289,6 +297,6 @@ internal fun DottedHero(modifier: Modifier = Modifier) {
         },
         contentAlignment = Alignment.Center,
     ) {
-        WyrmMark(size = 108.dp, ink = Wyrm.Ink, unfilled = Color.Transparent)
+        WyrmMark(size = 108.dp, ink = wyrmScopedPalette.ink, unfilled = Color.Transparent)
     }
 }

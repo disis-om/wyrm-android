@@ -48,7 +48,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -136,6 +136,8 @@ fun CinematicAuthScreen(
     onComplete: () -> Unit,
     onPrivacy: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -224,26 +226,46 @@ fun CinematicAuthScreen(
         focusManager.clearFocus()
         keyboardController?.hide()
         errorMessage = ""
+        logoDissolved = false
         stage = if (create) AuthStage.CREATING else AuthStage.SIGNING_IN
         authJob = scope.launch {
-            val failure = if (create) signUp(username, password) else logIn(username, password)
-            if (failure != null) {
-                val usernameFailure = create && failure.contains("username", ignoreCase = true)
-                enter(
-                    if (usernameFailure) AuthStage.CREATE_USERNAME else if (create) AuthStage.CREATE_CONFIRMATION else AuthStage.LOGIN_PASSWORD,
-                    if (usernameFailure) AuthField.USERNAME else if (create) AuthField.CONFIRMATION else AuthField.PASSWORD,
-                )
-                errorMessage = failure
-                return@launch
+            var authenticated = false
+            try {
+                val failure = kotlinx.coroutines.withTimeout(30_000L) {
+                    if (create) signUp(username, password) else logIn(username, password)
+                }
+                if (failure != null) {
+                    val usernameFailure = create && failure.contains("username", ignoreCase = true)
+                    enter(
+                        if (usernameFailure) AuthStage.CREATE_USERNAME else if (create) AuthStage.CREATE_CONFIRMATION else AuthStage.LOGIN_PASSWORD,
+                        if (usernameFailure) AuthField.USERNAME else if (create) AuthField.CONFIRMATION else AuthField.PASSWORD,
+                    )
+                    errorMessage = failure
+                    return@launch
+                }
+                authenticated = true
+                // The W stays on screen until every account surface has a fresh
+                // snapshot, so Home never draws an empty or previous account.
+                kotlinx.coroutines.withTimeout(30_000L) { bootstrap() }
+                stage = AuthStage.SUCCESS
+                delay(700)
+                logoDissolved = true
+                delay(520)
+                onComplete()
+            } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                enter(if (create && !authenticated) AuthStage.CREATE_CONFIRMATION else AuthStage.LOGIN_PASSWORD,
+                      if (create && !authenticated) AuthField.CONFIRMATION else AuthField.PASSWORD)
+                errorMessage = "Signing in took too long. Please try again."
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // A failed restore/bootstrap must return to a retryable form.
+                enter(if (create && !authenticated) AuthStage.CREATE_CONFIRMATION else AuthStage.LOGIN_PASSWORD,
+                      if (create && !authenticated) AuthField.CONFIRMATION else AuthField.PASSWORD)
+                errorMessage = "Could not finish signing in. Please try again."
+            } finally {
+                authJob = null
             }
-            // The W stays on screen until every account surface has a fresh
-            // snapshot, so Home never draws an empty or previous account.
-            bootstrap()
-            stage = AuthStage.SUCCESS
-            delay(700)
-            logoDissolved = true
-            delay(520)
-            onComplete()
         }
     }
 
@@ -272,7 +294,7 @@ fun CinematicAuthScreen(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         val height = maxHeight
         val width = maxWidth
@@ -398,12 +420,12 @@ fun CinematicAuthScreen(
                     .then(blurFade())
                     .size(46.dp)
                     .clip(CircleShape)
-                    .background(Wyrm.Card.copy(alpha = 0.88f))
-                    .border(1.dp, Wyrm.Rule, CircleShape)
+                    .background(wyrmScopedPalette.card.copy(alpha = 0.88f))
+                    .border(1.dp, wyrmScopedPalette.rule, CircleShape)
                     .clickable(onClick = ::goBack),
                 contentAlignment = Alignment.Center,
             ) {
-                IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Ink, size = 18.dp, weight = 2.4f)
+                IosIcon(IosGlyph.CHEVRON_LEFT, wyrmScopedPalette.ink, size = 18.dp, weight = 2.4f)
             }
         }
 
@@ -444,6 +466,8 @@ internal fun Landing(
     onLogin: () -> Unit,
     onPrivacy: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -457,7 +481,7 @@ internal fun Landing(
             fontWeight = FontWeight.SemiBold,
             fontSize = 11.5.sp,
             letterSpacing = 1.1.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
         Text(
             text = "The arena\nand people in it.",
@@ -466,7 +490,7 @@ internal fun Landing(
             fontSize = 31.sp,
             letterSpacing = (-0.7).sp,
             lineHeight = 41.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.padding(top = 8.dp),
         )
         Text(
@@ -474,7 +498,7 @@ internal fun Landing(
             fontFamily = Wyrm.Body,
             fontSize = 15.5.sp,
             lineHeight = 26.sp,
-            color = Wyrm.Mute,
+            color = wyrmScopedPalette.mute,
             modifier = Modifier.padding(top = 11.dp),
         )
         Spacer(Modifier.weight(1f).heightIn(min = 18.dp))
@@ -487,13 +511,13 @@ internal fun Landing(
         Text(
             text = androidx.compose.ui.text.buildAnnotatedString {
                 append("By continuing, you agree to Wyrm's ")
-                pushStyle(androidx.compose.ui.text.SpanStyle(color = Wyrm.Link, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))
+                pushStyle(androidx.compose.ui.text.SpanStyle(color = wyrmScopedPalette.link, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))
                 append("Privacy Policy")
                 pop()
             },
             fontFamily = Wyrm.Body,
             fontSize = 12.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
@@ -523,6 +547,8 @@ internal fun CredentialStage(
     focusTarget: AuthField?,
     focusPulse: Int,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val lift by animateDpAsState(
         targetValue = if (keyboardHeight > 0.dp) min(116f, max(78f, keyboardHeight.value * 0.28f)).dp else 0.dp,
         animationSpec = iosSpring<Dp>(0.58f, 0.86f),
@@ -581,10 +607,10 @@ internal fun CredentialStage(
     ) {
         Spacer(Modifier.weight(1f).heightIn(min = 150.dp))
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(kicker, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, letterSpacing = 1.35.sp, color = Wyrm.Quiet)
+            Text(kicker, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, letterSpacing = 1.35.sp, color = wyrmScopedPalette.quiet)
             when (stage) {
                 AuthStage.CREATE_USERNAME, AuthStage.LOGIN_USERNAME -> ComposerShell {
-                    Text("@", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 22.sp, color = Wyrm.Quiet)
+                    Text("@", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 22.sp, color = wyrmScopedPalette.quiet)
                     Spacer(Modifier.width(5.dp))
                     AuthField(
                         value = username,
@@ -645,7 +671,7 @@ internal fun CredentialStage(
                             Box(Modifier.then(blurFade())) {
                                 when (state) {
                                     ConfirmationState.CHECKING -> IosSpinner(size = 17.dp)
-                                    ConfirmationState.MATCHED -> MatchLabel("Password matched, continue!", IosGlyph.CHECKMARK, Wyrm.Live)
+                                    ConfirmationState.MATCHED -> MatchLabel("Password matched, continue!", IosGlyph.CHECKMARK, wyrmScopedPalette.live)
                                     ConfirmationState.MISMATCHED -> MatchLabel("Password didn't match, recheck!", IosGlyph.XMARK, Color(0xFFFF3B30))
                                     ConfirmationState.IDLE -> Spacer(Modifier.size(1.dp))
                                 }
@@ -660,7 +686,7 @@ internal fun CredentialStage(
                 fontFamily = Wyrm.Body,
                 fontSize = 12.5.sp,
                 lineHeight = 21.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.widthIn(max = 330.dp),
             )
@@ -678,7 +704,7 @@ internal fun CredentialStage(
                             fontFamily = Wyrm.Body,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = if (isError) 12.sp else 11.5.sp,
-                            color = if (isError) Color(0xFFFF3B30) else Wyrm.Quiet,
+                            color = if (isError) Color(0xFFFF3B30) else wyrmScopedPalette.quiet,
                             textAlign = TextAlign.Center,
                         )
                     }
@@ -692,15 +718,16 @@ internal fun CredentialStage(
 /** The white composer every credential sits in: 60 tall, 17 continuous corners. */
 @Composable
 internal fun ComposerShell(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(17.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .iosShadow(Wyrm.Ink.copy(alpha = 0.045f), radius = 22.dp, y = 9.dp, corner = 17.dp)
             .height(60.dp)
             .clip(shape)
-            .background(Wyrm.Card.copy(alpha = 0.94f))
-            .border(1.dp, Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.card.copy(alpha = 0.94f))
+            .border(1.dp, wyrmScopedPalette.rule, shape)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
@@ -720,13 +747,15 @@ internal fun AuthField(
     modifier: Modifier = Modifier,
     secure: Boolean = false,
 ) {
-    val style = TextStyle(fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = fontSize.sp, color = Wyrm.Ink)
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    val style = TextStyle(fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = fontSize.sp, color = wyrmScopedPalette.ink)
     BasicTextField(
         value = value,
         onValueChange = onValue,
         singleLine = true,
         textStyle = style,
-        cursorBrush = SolidColor(Wyrm.Link),
+        cursorBrush = SolidColor(wyrmScopedPalette.link),
         visualTransformation = if (secure) PasswordVisualTransformation('•') else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(
             capitalization = KeyboardCapitalization.None,
@@ -738,7 +767,7 @@ internal fun AuthField(
         modifier = modifier.focusRequester(requester),
         decorationBox = { inner ->
             Box(contentAlignment = Alignment.CenterStart) {
-                if (value.isEmpty()) Text(placeholder, style = style.copy(color = Wyrm.Quiet.copy(alpha = 0.55f)))
+                if (value.isEmpty()) Text(placeholder, style = style.copy(color = wyrmScopedPalette.quiet))
                 inner()
             }
         },
@@ -747,17 +776,19 @@ internal fun AuthField(
 
 @Composable
 internal fun AvailabilityIndicator(state: UsernameAvailability) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     when (state) {
         UsernameAvailability.CHECKING -> IosSpinner(size = 17.dp)
         UsernameAvailability.AVAILABLE -> Box(
-            Modifier.size(25.dp).clip(CircleShape).background(Wyrm.Live),
+            Modifier.size(25.dp).clip(CircleShape).background(wyrmScopedPalette.live),
             contentAlignment = Alignment.Center,
-        ) { IosIcon(IosGlyph.CHECKMARK, Wyrm.OnInk, size = 15.dp, weight = 3.4f) }
+        ) { IosIcon(IosGlyph.CHECKMARK, wyrmScopedPalette.onInk, size = 15.dp, weight = 3.4f) }
         UsernameAvailability.TAKEN -> Box(
             Modifier.size(25.dp).clip(CircleShape).background(Color(0xFFFF3B30).copy(alpha = 0.88f)),
             contentAlignment = Alignment.Center,
         ) { IosIcon(IosGlyph.XMARK, Color.White, size = 13.dp, weight = 3.6f) }
-        UsernameAvailability.UNAVAILABLE -> IosIcon(IosGlyph.ARROW_CLOCKWISE, Wyrm.Quiet, size = 15.dp, weight = 2.4f)
+        UsernameAvailability.UNAVAILABLE -> IosIcon(IosGlyph.ARROW_CLOCKWISE, wyrmScopedPalette.quiet, size = 15.dp, weight = 2.4f)
         UsernameAvailability.IDLE -> Unit
     }
 }
@@ -779,50 +810,57 @@ internal fun MatchLabel(text: String, glyph: IosGlyph, colour: Color) {
  */
 @Composable
 internal fun KeyboardAction(title: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
         modifier = modifier
             .graphicsLayer { val s = if (pressed) 0.96f else 1f; scaleX = s; scaleY = s }
-            .iosShadow(Wyrm.Ink.copy(alpha = if (enabled) 0.14f else 0f), radius = 12.dp, y = 5.dp, corner = 23.dp)
             .height(46.dp)
             .clip(CircleShape)
-            .background(if (enabled) Wyrm.Ink else Wyrm.Well)
+            .background(if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.well)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
             .padding(start = 20.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
-            color = if (enabled) Wyrm.OnInk else Wyrm.Quiet)
-        IosIcon(IosGlyph.ARROW_RIGHT, if (enabled) Wyrm.OnInk else Wyrm.Quiet, size = 15.dp, weight = 2.2f)
+            color = if (enabled) wyrmScopedPalette.onInk else wyrmScopedPalette.quiet)
+        IosIcon(IosGlyph.ARROW_RIGHT, if (enabled) wyrmScopedPalette.onInk else wyrmScopedPalette.quiet, size = 15.dp, weight = 2.2f)
     }
 }
 
 /** The welcome screen's buttons: a solid ink capsule, or a ghost one with a hairline. */
 @Composable
 internal fun WelcomeCapsule(title: String, filled: Boolean, onClick: () -> Unit) {
+    WyrmHeroTheme(1, enabled = filled) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer { val s = if (pressed) 0.975f else 1f; scaleX = s; scaleY = s }
-            .then(if (filled) Modifier.iosShadow(Wyrm.Ink.copy(alpha = 0.16f), radius = 14.dp, y = 6.dp, corner = 26.dp) else Modifier)
             .height(52.dp)
             .clip(CircleShape)
-            .then(if (filled) Modifier.background(Wyrm.Ink) else Modifier.border(1.5.dp, Wyrm.Ink.copy(alpha = 0.22f), CircleShape))
+            .then(if (filled) Modifier.background(wyrmScopedPalette.paper) else Modifier.border(1.5.dp, wyrmScopedPalette.ink.copy(alpha = 0.35f), CircleShape))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(title, fontFamily = Wyrm.Body, fontWeight = if (filled) FontWeight.Bold else FontWeight.SemiBold, fontSize = 16.sp,
-            color = if (filled) Wyrm.OnInk else Wyrm.Ink)
+            color = wyrmScopedPalette.ink)
+    }
+
     }
 }
 
 /** `WyrmPrimaryAction`: title left, glyph right, 52 tall, 13 corners, ink. */
 @Composable
 fun IosPrimaryAction(title: String, glyph: IosGlyph? = null, enabled: Boolean = true, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
@@ -831,19 +869,21 @@ fun IosPrimaryAction(title: String, glyph: IosGlyph? = null, enabled: Boolean = 
             .graphicsLayer { val s = if (pressed) 0.975f else 1f; scaleX = s; scaleY = s }
             .height(52.dp)
             .clip(wyrmRounded(13.dp))
-            .background(if (enabled) Wyrm.Ink else Wyrm.Ink.copy(alpha = 0.35f))
+            .background(if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.ink)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 17.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Wyrm.OnInk, modifier = Modifier.weight(1f))
-        if (glyph != null) IosIcon(glyph, Wyrm.OnInk, size = 18.dp, weight = 2.4f)
+        Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = wyrmScopedPalette.onInk, modifier = Modifier.weight(1f))
+        if (glyph != null) IosIcon(glyph, wyrmScopedPalette.onInk, size = 18.dp, weight = 2.4f)
     }
 }
 
 /** `WyrmAuthWorkingStatus`: quiet caps with an ink shimmer sweeping through. */
 @Composable
 fun WorkingStatus(title: String, modifier: Modifier = Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val transition = rememberInfiniteTransition(label = "shimmer")
     val sweep by transition.animateFloat(
         initialValue = -1.4f,
@@ -855,14 +895,14 @@ fun WorkingStatus(title: String, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     val base = TextStyle(fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 0.55.sp)
     Box(modifier.onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }) {
-        Text(title, style = base.copy(color = Wyrm.Quiet.copy(alpha = 0.58f)))
+        Text(title, style = base.copy(color = wyrmScopedPalette.quiet))
         val band = max(with(density) { 72.dp.toPx() }, widthPx * 0.58f)
         val start = sweep * widthPx
         Text(
             title,
             style = base.copy(
                 brush = Brush.horizontalGradient(
-                    colors = listOf(Color.Transparent, Wyrm.Ink.copy(alpha = 0.96f), Color.Transparent),
+                    colors = listOf(Color.Transparent, wyrmScopedPalette.ink, Color.Transparent),
                     startX = start,
                     endX = start + band,
                     tileMode = TileMode.Clamp,
@@ -882,6 +922,8 @@ fun WorkingStatus(title: String, modifier: Modifier = Modifier) {
  */
 @Composable
 fun WyrmBrandMark(size: Dp, modifier: Modifier = Modifier, layer: androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit = {}) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
     Canvas(Modifier.requiredSize(size * 1.6f).graphicsLayer(layer)) {
         val w = size.toPx()
@@ -901,7 +943,7 @@ fun WyrmBrandMark(size: Dp, modifier: Modifier = Modifier, layer: androidx.compo
         drawPath(
             path = path,
             brush = Brush.linearGradient(
-                colors = listOf(Wyrm.Ink.copy(alpha = 0.76f), Wyrm.Ink),
+                colors = listOf(wyrmScopedPalette.ink, wyrmScopedPalette.ink),
                 start = Offset(left, top),
                 end = Offset(left + w, top + h),
             ),
@@ -913,10 +955,12 @@ fun WyrmBrandMark(size: Dp, modifier: Modifier = Modifier, layer: androidx.compo
 
 @Composable
 internal fun WyrmDotField(modifier: Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Canvas(modifier) {
         val spacing = 19.dp.toPx()
         val r = 1.2.dp.toPx()
-        val colour = Wyrm.Ink.copy(alpha = 0.10f)
+        val colour = wyrmScopedPalette.ink
         var y = spacing / 2f
         while (y < size.height) {
             var x = spacing / 2f
@@ -932,9 +976,11 @@ internal fun WyrmDotField(modifier: Modifier) {
 /** `WyrmSessionTransition`: the W and a shimmer line, for sync and sign-out. */
 @Composable
 fun WyrmSessionTransition(title: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val appear = remember { Animatable(0f) }
     LaunchedEffect(Unit) { appear.animateTo(1f, iosSpring(0.56f, 0.86f)) }
-    Box(Modifier.fillMaxSize().background(Wyrm.Paper), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(wyrmScopedPalette.paper), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(22.dp)) {
             WyrmBrandMark(
                 size = 118.dp,
@@ -962,9 +1008,11 @@ fun WyrmSessionTransition(title: String) {
 /** `WyrmDesignLaunch`: the W, WYRM in wide caps, a spinner. */
 @Composable
 fun WyrmDesignLaunch() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val appear = remember { Animatable(0f) }
     LaunchedEffect(Unit) { appear.animateTo(1f, tween(550, easing = FastOutSlowInEasing)) }
-    Box(Modifier.fillMaxSize().background(Wyrm.Paper), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(wyrmScopedPalette.paper), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             WyrmBrandMark(
                 size = 108.dp,
@@ -974,9 +1022,9 @@ fun WyrmDesignLaunch() {
                 },
             )
             Spacer(Modifier.height(18.dp))
-            Text("WYRM", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 3.sp, color = Wyrm.Quiet)
+            Text("WYRM", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 3.sp, color = wyrmScopedPalette.quiet)
             Spacer(Modifier.height(18.dp + 16.dp))
-            IosSpinner(size = 20.dp, colour = Wyrm.Ink)
+            IosSpinner(size = 20.dp, colour = wyrmScopedPalette.ink)
         }
     }
 }

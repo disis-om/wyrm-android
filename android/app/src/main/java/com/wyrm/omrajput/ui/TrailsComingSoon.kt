@@ -26,7 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -55,7 +55,9 @@ import kotlin.math.sin
  */
 @Composable
 internal fun TrailsComingSoonScreen(insetTop: Dp, insetBottom: Dp, onBack: (() -> Unit)? = null) {
-    Box(Modifier.fillMaxSize().background(Wyrm.Paper)) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Box(Modifier.fillMaxSize().background(wyrmScopedPalette.paper)) {
         Column(Modifier.fillMaxSize().padding(top = insetTop)) {
             Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 16.dp)) {
                 // A tab of its own (OM, 2026-10-04): no Back there.
@@ -64,10 +66,10 @@ internal fun TrailsComingSoonScreen(insetTop: Dp, insetBottom: Dp, onBack: (() -
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IosIcon(IosGlyph.CHEVRON_LEFT, Wyrm.Link, size = 16.dp, semibold = true)
-                    Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Wyrm.Link)
+                    IosIcon(IosGlyph.CHEVRON_LEFT, wyrmScopedPalette.link, size = 16.dp, semibold = true)
+                    Text("Back", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = wyrmScopedPalette.link)
                 }
-                Text("Trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Wyrm.Ink,
+                Text("Trails", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center))
             }
             Column(
@@ -81,31 +83,31 @@ internal fun TrailsComingSoonScreen(insetTop: Dp, insetBottom: Dp, onBack: (() -
                 Spacer(Modifier.height(6.dp))
                 TrailsComingSoonHero()
                 Spacer(Modifier.height(22.dp))
-                WyrmLabel("In development", color = Wyrm.Quiet)
+                WyrmLabel("In development", color = wyrmScopedPalette.quiet)
                 Spacer(Modifier.height(6.dp))
-                Text("Trails is still growing.", fontFamily = Wyrm.Display, fontSize = 34.sp, lineHeight = 38.sp, color = Wyrm.Ink)
+                Text("Trails is still growing.", fontFamily = Wyrm.Display, fontSize = 34.sp, lineHeight = 38.sp, color = wyrmScopedPalette.ink)
                 Spacer(Modifier.height(10.dp))
                 Text(
                     "Trails is where your best runs will live: the moment, the skin and the numbers, shared with " +
                         "everyone who plays Wyrm. We've switched it off for a little while so we can finish it " +
                         "properly instead of handing you something half-baked.",
-                    fontFamily = Wyrm.Body, fontSize = 15.sp, lineHeight = 22.sp, color = Wyrm.Mute,
+                    fontFamily = Wyrm.Body, fontSize = 15.sp, lineHeight = 22.sp, color = wyrmScopedPalette.mute,
                 )
 
                 Spacer(Modifier.height(24.dp))
-                WyrmLabel("Where it is", color = Wyrm.Quiet)
+                WyrmLabel("Where it is", color = wyrmScopedPalette.quiet)
                 Spacer(Modifier.height(10.dp))
                 TrailsStages()
 
                 Spacer(Modifier.height(26.dp))
-                WyrmLabel("What's coming", color = Wyrm.Quiet)
+                WyrmLabel("What's coming", color = wyrmScopedPalette.quiet)
                 Spacer(Modifier.height(10.dp))
                 Column(
                     Modifier
                         .fillMaxWidth()
                         .clip(wyrmRounded(18.dp))
-                        .background(Wyrm.Card)
-                        .border(1.dp, Wyrm.Rule, wyrmRounded(18.dp)),
+                        .background(wyrmScopedPalette.card)
+                        .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(18.dp)),
                 ) {
                     TrailsComingRow(LucideR.drawable.lucide_ic_share_2, "Share a run from the lobby",
                         "Your score, kills and time, right on top of the moment you went down.")
@@ -125,18 +127,18 @@ internal fun TrailsComingSoonScreen(insetTop: Dp, insetBottom: Dp, onBack: (() -
                     Modifier
                         .fillMaxWidth()
                         .clip(wyrmRounded(18.dp))
-                        .background(Wyrm.Well)
+                        .background(wyrmScopedPalette.well)
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(painterResource(LucideR.drawable.lucide_ic_bell), contentDescription = null, tint = Wyrm.Ink,
+                    Icon(painterResource(LucideR.drawable.lucide_ic_bell), contentDescription = null, tint = wyrmScopedPalette.ink,
                         modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(14.dp))
                     Column {
                         Text("We'll tell you the moment it's ready.", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp, color = Wyrm.Ink)
+                            fontSize = 14.sp, color = wyrmScopedPalette.ink)
                         Text("Until then, go make a run worth sharing.", fontFamily = Wyrm.Body, fontSize = 13.sp,
-                            color = Wyrm.Mute)
+                            color = wyrmScopedPalette.mute)
                     }
                 }
             }
@@ -147,15 +149,17 @@ internal fun TrailsComingSoonScreen(insetTop: Dp, insetBottom: Dp, onBack: (() -
 /** A snake of beads gliding along a dotted trail, forever. */
 @Composable
 private fun TrailsComingSoonHero() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val t by rememberInfiniteTransition(label = "trails-soon").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(5200, easing = LinearEasing), RepeatMode.Restart),
         label = "trails-soon-t",
     )
-    val well = Wyrm.Well
-    val ink = Wyrm.Ink
-    val quiet = Wyrm.Quiet
+    val well = wyrmScopedPalette.well
+    val ink = wyrmScopedPalette.ink
+    val quiet = wyrmScopedPalette.quiet
     Canvas(
         Modifier
             .fillMaxWidth()
@@ -217,6 +221,8 @@ private fun TrailsComingSoonHero() {
 /** Sketched ✓ · Built ✓ · Polishing (now) · In your hands. */
 @Composable
 private fun TrailsStages() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val pulse by rememberInfiniteTransition(label = "trails-stage").animateFloat(
         initialValue = 0.35f,
         targetValue = 1f,
@@ -231,16 +237,16 @@ private fun TrailsStages() {
                 Modifier
                     .weight(if (name == "In your hands") 1.35f else 1f)
                     .clip(shape)
-                    .background(if (state == 2) Wyrm.Ink else Wyrm.Card)
-                    .border(1.dp, if (state == 1) Wyrm.Ink else Wyrm.Rule, shape)
+                    .background(if (state == 2) wyrmScopedPalette.ink else wyrmScopedPalette.card)
+                    .border(1.dp, if (state == 1) wyrmScopedPalette.ink else wyrmScopedPalette.rule, shape)
                     .padding(vertical = 9.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 when (state) {
                     2 -> Icon(painterResource(LucideR.drawable.lucide_ic_check), contentDescription = null,
-                        tint = Wyrm.OnInk, modifier = Modifier.size(12.dp))
-                    1 -> Box(Modifier.size(7.dp).clip(CircleShape).background(Wyrm.Ink.copy(alpha = pulse)))
+                        tint = wyrmScopedPalette.onInk, modifier = Modifier.size(12.dp))
+                    1 -> Box(Modifier.size(7.dp).clip(CircleShape).background(wyrmScopedPalette.ink.copy(alpha = pulse)))
                 }
                 if (state != 0) Spacer(Modifier.width(5.dp))
                 Text(
@@ -248,7 +254,7 @@ private fun TrailsStages() {
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
-                    color = when (state) { 2 -> Wyrm.OnInk; 1 -> Wyrm.Ink; else -> Wyrm.Quiet },
+                    color = when (state) { 2 -> wyrmScopedPalette.onInk; 1 -> wyrmScopedPalette.ink; else -> wyrmScopedPalette.quiet },
                     maxLines = 1,
                 )
             }
@@ -258,23 +264,27 @@ private fun TrailsStages() {
 
 @Composable
 private fun TrailsComingRow(icon: Int, title: String, detail: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.Top) {
         Box(
-            Modifier.size(36.dp).clip(wyrmRounded(10.dp)).background(Wyrm.Well),
+            Modifier.size(36.dp).clip(wyrmRounded(10.dp)).background(wyrmScopedPalette.well),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(painterResource(icon), contentDescription = null, tint = Wyrm.Ink, modifier = Modifier.size(18.dp))
+            Icon(painterResource(icon), contentDescription = null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Wyrm.Ink)
+            Text(title, fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = wyrmScopedPalette.ink)
             Spacer(Modifier.height(2.dp))
-            Text(detail, fontFamily = Wyrm.Body, fontSize = 13.sp, lineHeight = 18.sp, color = Wyrm.Mute)
+            Text(detail, fontFamily = Wyrm.Body, fontSize = 13.sp, lineHeight = 18.sp, color = wyrmScopedPalette.mute)
         }
     }
 }
 
 @Composable
 private fun TrailsComingRule() {
-    Box(Modifier.padding(start = 66.dp).fillMaxWidth().height(1.dp).background(Wyrm.RowRule))
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
+    Box(Modifier.padding(start = 66.dp).fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rowRule))
 }

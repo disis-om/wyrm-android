@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +48,8 @@ fun ArenaUiScreen(
     onWorkspaceTab: (ControlsWorkspaceTab) -> Unit,
     contentOnly: Boolean = false,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val appearance = listOf(
         "general.minimap_size",
         "general.lb_font",
@@ -73,7 +75,7 @@ fun ArenaUiScreen(
                 fontWeight = FontWeight.Medium,
                 fontSize = 15.5.sp,
                 lineHeight = 21.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.padding(14.dp),
             )
         }

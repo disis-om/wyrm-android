@@ -41,7 +41,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -104,6 +104,8 @@ fun WhatsNewSheet(
     onClosing: () -> Unit,
     onAcknowledged: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var arrived by remember { mutableStateOf(false) }
     var expandedMedia by remember { mutableStateOf<ReleaseMedia?>(null) }
     val scope = rememberCoroutineScope()
@@ -135,7 +137,7 @@ fun WhatsNewSheet(
                     .heightIn(min = 360.dp)
                     .fillMaxHeight(0.96f)
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(Wyrm.Paper),
+                    .background(wyrmScopedPalette.paper),
             ) {
                 Box(
                     Modifier
@@ -143,7 +145,7 @@ fun WhatsNewSheet(
                         .align(Alignment.CenterHorizontally)
                         .size(width = 38.dp, height = 4.dp)
                         .clip(wyrmRounded(99.dp))
-                        .background(Wyrm.Chevron)
+                        .background(wyrmScopedPalette.chevron)
                 )
 
                 Column(
@@ -162,7 +164,7 @@ fun WhatsNewSheet(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 11.5.sp,
                         letterSpacing = 0.92.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                     )
                     Spacer(Modifier.height(7.dp))
                     Text(
@@ -172,7 +174,7 @@ fun WhatsNewSheet(
                         fontSize = 28.sp,
                         lineHeight = 33.sp,
                         letterSpacing = (-0.5).sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                     )
                     Spacer(Modifier.height(18.dp))
 
@@ -183,8 +185,8 @@ fun WhatsNewSheet(
                                 Modifier
                                     .fillMaxWidth()
                                     .clip(wyrmRounded(14.dp))
-                                    .background(Wyrm.Card)
-                                    .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
+                                    .background(wyrmScopedPalette.card)
+                                    .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp))
                                     .padding(16.dp),
                             ) {
                                 Text(
@@ -192,7 +194,7 @@ fun WhatsNewSheet(
                                     fontFamily = Wyrm.Body,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 15.sp,
-                                    color = Wyrm.Ink,
+                                    color = wyrmScopedPalette.ink,
                                 )
                                 Spacer(Modifier.height(7.dp))
                                 Text(
@@ -200,7 +202,7 @@ fun WhatsNewSheet(
                                     fontFamily = Wyrm.Body,
                                     fontSize = 13.sp,
                                     lineHeight = 19.sp,
-                                    color = Wyrm.Mute,
+                                    color = wyrmScopedPalette.mute,
                                 )
                             }
                             Spacer(Modifier.height(14.dp))
@@ -247,19 +249,21 @@ fun WhatsNewSheet(
 
 @Composable
 private fun ReleaseNotesLoading() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .height(150.dp)
             .clip(wyrmRounded(14.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp)),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp)),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         CircularProgressIndicator(
             modifier = Modifier.size(28.dp),
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             strokeWidth = 2.dp,
         )
         Spacer(Modifier.height(13.dp))
@@ -269,7 +273,7 @@ private fun ReleaseNotesLoading() {
             fontWeight = FontWeight.SemiBold,
             fontSize = 11.sp,
             letterSpacing = 0.8.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
     }
 }
@@ -285,6 +289,8 @@ fun ReleaseMediaCard(media: ReleaseMedia, onOpen: () -> Unit) {
 
 @Composable
 private fun ReleaseImageCard(media: ReleaseMedia, onOpen: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val bitmap by rememberReleaseBitmap(media.url)
     val portrait = bitmap?.let { it.height > it.width } == true
     val ratio = bitmap?.let { it.width.toFloat() / it.height.coerceAtLeast(1) } ?: (16f / 9f)
@@ -299,8 +305,8 @@ private fun ReleaseImageCard(media: ReleaseMedia, onOpen: () -> Unit) {
                 .heightIn(min = 160.dp, max = if (portrait) 340.dp else 310.dp)
                 .aspectRatio(ratio)
                 .clip(wyrmRounded(14.dp))
-                .background(Wyrm.Well)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
+                .background(wyrmScopedPalette.well)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp))
                 .clickable(onClick = onOpen),
             contentAlignment = Alignment.Center,
         ) {
@@ -312,7 +318,7 @@ private fun ReleaseImageCard(media: ReleaseMedia, onOpen: () -> Unit) {
                     modifier = Modifier.fillMaxSize().blur(2.dp),
                 )
             } else {
-                CircularProgressIndicator(color = Wyrm.Ink, strokeWidth = 2.dp, modifier = Modifier.size(26.dp))
+                CircularProgressIndicator(color = wyrmScopedPalette.ink, strokeWidth = 2.dp, modifier = Modifier.size(26.dp))
             }
             MediaOpenPrompt(label = "TAP TO EXPAND")
         }
@@ -321,18 +327,20 @@ private fun ReleaseImageCard(media: ReleaseMedia, onOpen: () -> Unit) {
 
 @Composable
 private fun ReleaseVideoCard(media: ReleaseMedia, onOpen: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .height(210.dp)
             .clip(wyrmRounded(14.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp))
             .clickable(onClick = onOpen),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("▶", fontFamily = Wyrm.Body, fontSize = 36.sp, color = Wyrm.Ink)
+        Text("▶", fontFamily = Wyrm.Body, fontSize = 36.sp, color = wyrmScopedPalette.ink)
         Spacer(Modifier.height(12.dp))
         MediaOpenPrompt(label = "TAP TO EXPAND")
     }
@@ -340,17 +348,19 @@ private fun ReleaseVideoCard(media: ReleaseMedia, onOpen: () -> Unit) {
 
 @Composable
 private fun MediaOpenPrompt(label: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         label,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.SemiBold,
         fontSize = 10.sp,
         letterSpacing = 1.1.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
         modifier = Modifier
             .clip(wyrmRounded(99.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(99.dp))
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(99.dp))
             .padding(horizontal = 14.dp, vertical = 9.dp),
     )
 }
@@ -400,17 +410,19 @@ private fun ExpandedReleaseMedia(media: ReleaseMedia, onDismiss: () -> Unit) {
 
 @Composable
 private fun ExpandedImage(media: ReleaseMedia) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val bitmap by rememberReleaseBitmap(media.url)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 220.dp, max = 680.dp)
             .clip(wyrmRounded(14.dp))
-            .background(Wyrm.Card),
+            .background(wyrmScopedPalette.card),
         contentAlignment = Alignment.Center,
     ) {
             if (bitmap == null) {
-                CircularProgressIndicator(color = Wyrm.Ink, strokeWidth = 2.dp)
+                CircularProgressIndicator(color = wyrmScopedPalette.ink, strokeWidth = 2.dp)
             } else {
                 Image(
                     bitmap = bitmap!!.asImageBitmap(),
@@ -424,6 +436,8 @@ private fun ExpandedImage(media: ReleaseMedia) {
 
 @Composable
 private fun WyrmVideoPlayer(url: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val context = LocalContext.current
     var player by remember(url) { mutableStateOf<MediaPlayer?>(null) }
     var duration by remember(url) { mutableIntStateOf(0) }
@@ -451,12 +465,12 @@ private fun WyrmVideoPlayer(url: String) {
             .fillMaxWidth()
             .heightIn(min = 280.dp, max = 680.dp)
             .clip(wyrmRounded(14.dp))
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp)),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp)),
     ) {
             Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
                 if (error.isNotBlank()) {
-                    Text(error, fontFamily = Wyrm.Body, fontSize = 12.sp, color = Wyrm.Mute)
+                    Text(error, fontFamily = Wyrm.Body, fontSize = 12.sp, color = wyrmScopedPalette.mute)
                 } else {
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
@@ -530,16 +544,18 @@ private fun WyrmVideoPlayer(url: String) {
 
 @Composable
 private fun VideoTextControl(label: String, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         label,
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.SemiBold,
         fontSize = 10.sp,
-        color = Wyrm.Ink,
+        color = wyrmScopedPalette.ink,
         modifier = Modifier
             .clip(wyrmRounded(99.dp))
-            .background(Wyrm.Well)
-            .border(1.dp, Wyrm.Rule, wyrmRounded(99.dp))
+            .background(wyrmScopedPalette.well)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(99.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 9.dp),
     )

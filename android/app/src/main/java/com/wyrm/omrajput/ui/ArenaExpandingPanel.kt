@@ -32,6 +32,8 @@ fun ArenaExpandingPanel(
     behind: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val progress = remember { Animatable(if (expanded) 0f else 1f) }
 
     LaunchedEffect(expanded) {
@@ -76,7 +78,7 @@ fun ArenaExpandingPanel(
                 .fillMaxWidth()
                 .height(with(density) { targetHeight.toDp() })
                 .clip(shape)
-                .background(Wyrm.Paper),
+                .background(wyrmScopedPalette.paper),
         ) {
             content()
         }

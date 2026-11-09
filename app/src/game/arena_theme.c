@@ -8,6 +8,7 @@ static _Atomic uint32_t colours[ARENA_THEME_ROLE_COUNT] = {
     0xFFF7F6F3u, 0xFFFFFFFFu, 0xFF37352Fu, 0xFFFFFFFFu,
     0xFF787774u, 0xFF6B6660u, 0x1437352Fu, 0xFF448361u,
     0xFF2F6FDEu, 0xFFF0EEE9u, 0xFFEFEDE8u, 0xFFC4554Du,
+    0xFFDDC1A6u, 0xFF000000u, 0xFF000000u, 0xFFE5E5E5u,
 };
 static _Atomic bool dark_theme = false;
 

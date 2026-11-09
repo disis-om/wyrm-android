@@ -36,7 +36,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -125,11 +125,17 @@ fun SettingsScreen(
     onOpenFood: (Rect) -> Unit,
     onOpenBackup: (Rect) -> Unit,
     onOpenAbout: (Rect) -> Unit = {},
+    /** Settings › Language (OM, 2026-10-31): the shown language's own name. */
+    languageName: String = "",
+    onOpenLanguage: (Rect) -> Unit = {},
     /** "n new" when Wyrm has replied to a report the player has not opened. */
     helpValue: String = "",
     /** The same count as the Settings tab's badge, on the row that leads to it. */
     helpBadge: Int = 0,
     onOpenHelp: (Rect) -> Unit = {},
+    /** Settings › Developer (OM, 2026-11-07, as on iOS): the phone app passes
+     *  DeveloperSettingsSection; Wyrm Desktop, which shares this file, none. */
+    developerSection: (@Composable () -> Unit)? = null,
     onResetAll: () -> Unit,
     /** Very bottom of Settings (OM, 2026-10-01): asks first, then saves and wipes. */
     onLogOut: () -> Unit = {},
@@ -138,10 +144,12 @@ fun SettingsScreen(
     onTabSocial: (Rect) -> Unit,
     onTabSkin: (Rect) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var confirming by remember { mutableStateOf(false) }
     val steering = settings.named("controls.joystick_mode")
     // Upright always steers with the arrow (OM, 2026-10-02).
-    val controlsValue = if (com.wyrm.omrajput.data.PlayOrientation.portrait || (steering?.index ?: 0) == 2) "Arrow" else "Joystick"
+    val controlsValue = if (steering?.index == 3) "Classic" else if (com.wyrm.omrajput.data.PlayOrientation.portrait || (steering?.index ?: 0) == 2) "Arrow" else "Joystick"
     val buttonsOn = hotkeys.count { it.visible }
     val groups = listOf(
         SettingsHubGroup(
@@ -193,9 +201,15 @@ fun SettingsScreen(
             listOf(
                 SettingsHubRow(
                     "Themes",
-                    "Paper, dark and colour appearances",
+                    "Light, dark and colour appearances",
                     themeName,
                     onOpenAccessibility,
+                ),
+                SettingsHubRow(
+                    "Language",
+                    "Wyrm in your language, or your phone's",
+                    languageName,
+                    onOpenLanguage,
                 ),
             ),
         ),
@@ -223,7 +237,7 @@ fun SettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
@@ -239,7 +253,7 @@ fun SettingsScreen(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.5.sp,
                     letterSpacing = 0.92.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                 )
                 Text(
                     text = "Settings",
@@ -247,7 +261,7 @@ fun SettingsScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 30.sp,
                     letterSpacing = (-0.5).sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.padding(top = 3.dp),
                 )
             }
@@ -277,6 +291,11 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(22.dp))
             }
+            // Developer (OM, 2026-11-07): as on iOS, above the reset.
+            if (developerSection != null) {
+                developerSection()
+                Spacer(Modifier.height(22.dp))
+            }
             SettingsCard {
                 SettingsActionRow(
                     title = if (confirming) {
@@ -297,14 +316,6 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(22.dp))
-            SettingsCard {
-                SettingsActionRow(
-                    title = "Log out",
-                    first = true,
-                    danger = true,
-                    onClick = onLogOut,
-                )
-            }
             Text(
                 text = if (settingsVersion.isNotBlank()) {
                     "Wyrm · settings format v$settingsVersion"
@@ -313,12 +324,20 @@ fun SettingsScreen(
                 },
                 fontFamily = Wyrm.Body,
                 fontSize = 12.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp, bottom = 12.dp),
             )
+            }
+            SettingsCard {
+                SettingsActionRow(
+                    title = "Log out",
+                    first = true,
+                    danger = true,
+                    onClick = onLogOut,
+                )
             }
             Spacer(Modifier.height(LocalRootTabClearance.current))
         }
@@ -339,6 +358,8 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingsHubLine(row: SettingsHubRow, first: Boolean) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -355,24 +376,24 @@ private fun SettingsHubLine(row: SettingsHubRow, first: Boolean) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                Text(text = row.title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+                Text(text = row.title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
                 Text(
                     text = row.sub,
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 1.dp),
                 )
             }
             if (row.value.isNotBlank()) {
-                Text(text = row.value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Quiet)
+                Text(text = row.value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.quiet)
                 Spacer(Modifier.width(6.dp))
             }
             if (row.badge > 0) {
                 WyrmCountBadge(row.badge)
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = Wyrm.Chevron)
+            Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = wyrmScopedPalette.chevron)
         }
     }
 }
@@ -396,6 +417,8 @@ fun SettingsGroupScreen(
     header: @Composable (() -> Unit)? = null,
     footer: @Composable (() -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val visible = settings.filter { setting -> groups.any { setting.group == it || setting.group.startsWith("$it.") } }
     val blocks = visible.groupBy { it.group }.toList().sortedBy { (group, _) ->
         groups.indexOfFirst { group == it || group.startsWith("$it.") } * 100 + group.length
@@ -404,7 +427,7 @@ fun SettingsGroupScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Box(
             modifier = Modifier
@@ -417,7 +440,7 @@ fun SettingsGroupScreen(
                 text = "‹ Settings",
                 fontFamily = Wyrm.Body,
                 fontSize = 16.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .clickable(onClick = onBack)
@@ -428,11 +451,11 @@ fun SettingsGroupScreen(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
         Column(
             modifier = Modifier
                 .fillMaxSize()

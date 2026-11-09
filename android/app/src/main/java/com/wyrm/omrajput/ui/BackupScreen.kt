@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +62,8 @@ fun BackupScreen(
     onOpenAvailableNotes: () -> Unit = {},
     onResetAll: (() -> Unit)? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val updateLabel = when {
         update.busy -> update.title.ifBlank { "Checking…" }
         update.available -> "Update available"
@@ -85,21 +87,23 @@ fun BackupScreen(
         val updating = update.busy && update.status != 1
         if (update.available || updating) {
             SettingsSectionLabel("Update")
-            SettingsCard {
+            WyrmHeroTheme(1) {
+ val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+SettingsCard {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = if (update.version.isNotBlank()) "Wyrm ${update.version} is ready" else "A new Wyrm is ready",
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 18.sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                     )
                     if (update.detail.isNotBlank()) {
                         Text(
                             text = update.detail,
                             fontFamily = Wyrm.Body,
                             fontSize = 13.sp,
-                            color = Wyrm.Quiet,
+                            color = wyrmScopedPalette.quiet,
                             modifier = Modifier.padding(top = 3.dp),
                         )
                     }
@@ -111,6 +115,7 @@ fun BackupScreen(
                     )
                 }
             }
+}
         }
 
         SettingsSectionLabel("Version")
@@ -178,6 +183,8 @@ fun BackupScreen(
 
 @Composable
 private fun BackupLoadingState(title: String, fraction: Float) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val transition = rememberInfiniteTransition(label = "backup-mark")
     val markFill by transition.animateFloat(
         initialValue = 0.08f,
@@ -193,7 +200,7 @@ private fun BackupLoadingState(title: String, fraction: Float) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(wyrmRounded(14.dp))
-            .background(Wyrm.Well)
+            .background(wyrmScopedPalette.well)
             .padding(16.dp),
     ) {
             Row(
@@ -204,8 +211,8 @@ private fun BackupLoadingState(title: String, fraction: Float) {
                     modifier = Modifier.size(38.dp),
                     size = 32.dp,
                     fill = markFill,
-                    ink = Wyrm.Ink,
-                    unfilled = Wyrm.Track,
+                    ink = wyrmScopedPalette.ink,
+                    unfilled = wyrmScopedPalette.track,
                 )
                 Column {
                     Text(
@@ -214,7 +221,7 @@ private fun BackupLoadingState(title: String, fraction: Float) {
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 11.sp,
                         letterSpacing = 0.8.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
@@ -222,7 +229,7 @@ private fun BackupLoadingState(title: String, fraction: Float) {
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                     )
                 }
             }
@@ -233,6 +240,8 @@ private fun BackupLoadingState(title: String, fraction: Float) {
 
 @Composable
 private fun RestoreProgress(fraction: Float) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val progress by animateFloatAsState(
         targetValue = fraction.coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 360),
@@ -243,14 +252,14 @@ private fun RestoreProgress(fraction: Float) {
             .fillMaxWidth()
             .height(5.dp)
             .clip(wyrmRounded(99.dp))
-            .background(Wyrm.Track),
+            .background(wyrmScopedPalette.track),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth(progress)
                 .height(5.dp)
                 .clip(wyrmRounded(99.dp))
-                .background(Wyrm.Ink),
+                .background(wyrmScopedPalette.ink),
         )
     }
 }

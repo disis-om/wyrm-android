@@ -3,7 +3,7 @@ package com.wyrm.omrajput.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -128,10 +128,12 @@ internal fun GradientTrack(fraction: Float, brush: Brush, onPick: (Float) -> Uni
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IosRefreshable(refreshing: Boolean, onRefresh: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     if (LocalCentredDialogs.current) {
         Column(modifier) {
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), contentAlignment = Alignment.CenterEnd) {
-                Text(if (refreshing) "Refreshing…" else "Refresh · F5", fontFamily = Wyrm.Body, color = Wyrm.Link,
+                Text(if (refreshing) "Refreshing…" else "Refresh · F5", fontFamily = Wyrm.Body, color = wyrmScopedPalette.link,
                     modifier = Modifier.clickable(enabled = !refreshing, onClick = onRefresh).padding(8.dp))
             }
             Box(Modifier.weight(1f).fillMaxWidth()) { content() }

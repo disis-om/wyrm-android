@@ -38,7 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -616,6 +616,8 @@ internal fun ColourStudio(
     paper: Boolean = false,
     onAdd: (group: Int, argb: Int) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var hue by remember { mutableFloatStateOf(0f) }
     var saturation by remember { mutableFloatStateOf(0.85f) }
     var value by remember { mutableFloatStateOf(1f) }
@@ -637,7 +639,7 @@ internal fun ColourStudio(
                     .clip(wyrmRounded(Wyrm.Corner))
                     .border(
                         1.dp,
-                        if (paper) SolidColor(Wyrm.Rule) else glassEdge(),
+                        if (paper) SolidColor(wyrmScopedPalette.rule) else glassEdge(),
                         wyrmRounded(Wyrm.Corner),
                     ),
             ) {
@@ -692,7 +694,7 @@ internal fun ColourStudio(
                         .background(mixed)
                         .border(
                             1.dp,
-                            if (paper) SolidColor(Wyrm.Rule) else glassEdge(1.4f),
+                            if (paper) SolidColor(wyrmScopedPalette.rule) else glassEdge(1.4f),
                             CircleShape,
                         )
                         .clickable(enabled = enabled) { onAdd(group, mixed.packed()) },
@@ -705,7 +707,7 @@ internal fun ColourStudio(
                     fontSize = 9.sp,
                     letterSpacing = 1.sp,
                     color = if (paper) {
-                        if (enabled) Wyrm.Ink else Wyrm.TabIdle
+                        if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.tabIdle
                     } else if (enabled) Wyrm.White else Wyrm.Faint,
                     textAlign = TextAlign.Center,
                 )
@@ -714,7 +716,7 @@ internal fun ColourStudio(
                     text = mixed.hex(),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp,
-                    color = if (paper) Wyrm.Quiet else Wyrm.Faint,
+                    color = if (paper) wyrmScopedPalette.quiet else Wyrm.Faint,
                 )
                 Spacer(Modifier.height(2.dp))
                 // The one honest line on this screen: the wire carries a group,
@@ -724,7 +726,7 @@ internal fun ColourStudio(
                         ?.toInt()?.toChar()?.uppercase().orEmpty()}",
                     fontFamily = Wyrm.Body,
                     fontSize = 9.sp,
-                    color = if (paper) Wyrm.Quiet else Wyrm.Faint,
+                    color = if (paper) wyrmScopedPalette.quiet else Wyrm.Faint,
                     textAlign = TextAlign.Center,
                 )
             }
@@ -783,6 +785,8 @@ private fun StudioSlider(
     paper: Boolean = false,
     onValue: (Float) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         Text(
             text = label.uppercase(),
@@ -790,7 +794,7 @@ private fun StudioSlider(
             fontWeight = FontWeight.Bold,
             fontSize = 9.sp,
             letterSpacing = 1.5.sp,
-            color = if (paper) Wyrm.Quiet else Wyrm.Faint,
+            color = if (paper) wyrmScopedPalette.quiet else Wyrm.Faint,
         )
         Spacer(Modifier.height(6.dp))
         var width by remember { mutableFloatStateOf(0f) }
@@ -804,7 +808,7 @@ private fun StudioSlider(
                 .background(track)
                 .border(
                     1.dp,
-                    if (paper) SolidColor(Wyrm.Rule) else glassEdge(),
+                    if (paper) SolidColor(wyrmScopedPalette.rule) else glassEdge(),
                     wyrmRounded(Wyrm.Pill),
                 )
                 /* Only the knob moves it (OM, 2026-10-05): a tap on the track or a

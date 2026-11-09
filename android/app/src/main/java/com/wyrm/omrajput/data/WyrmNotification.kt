@@ -13,6 +13,8 @@ enum class NotificationKind {
     INVITE, VOICE_INVITE, FOLLOW, ACHIEVEMENT, RANK, BACKUP,
     // Trails and Help & feedback (OM, 2026-09-29).
     TRAIL_LIKE, TRAIL_REPLY, SUPPORT,
+    // Someone wrote your @username in global chat (2026-10-30).
+    MENTION,
 }
 
 data class BackupCategory(val name: String, val ok: Boolean)
@@ -96,6 +98,7 @@ private fun kindOf(raw: String): NotificationKind = when (raw) {
     "trail_like" -> NotificationKind.TRAIL_LIKE
     "trail_reply" -> NotificationKind.TRAIL_REPLY
     "support" -> NotificationKind.SUPPORT
+    "mention" -> NotificationKind.MENTION
     else -> NotificationKind.BROADCAST
 }
 

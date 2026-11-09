@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,7 +67,11 @@ fun UpdatePrompt(
     onChooseFolder: () -> Unit,
     beta: Boolean = false,
     onBetaSettings: () -> Unit = {},
+    /** A required update (OM, 2026-10-30): no Later, no Close; only Update / Try again. */
+    required: Boolean = false,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     // The card arrives rather than appears: a short spring on scale and a fade,
     // the way a phone raises an alert.
     var arrived by remember { mutableStateOf(false) }
@@ -106,8 +110,8 @@ fun UpdatePrompt(
                 .scale(0.94f + 0.06f * springing)
                 .alpha(entrance)
                 .clip(shape)
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, shape)
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, shape)
                 .padding(horizontal = 22.dp, vertical = 24.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
@@ -127,7 +131,7 @@ fun UpdatePrompt(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.5.sp,
                 letterSpacing = 0.92.sp,
-                color = if (failed || backupFailed) Wyrm.Badge else Wyrm.Quiet,
+                color = if (failed || backupFailed) wyrmScopedPalette.badge else wyrmScopedPalette.quiet,
             )
             Spacer(Modifier.height(10.dp))
 
@@ -149,7 +153,7 @@ fun UpdatePrompt(
                 fontSize = 26.sp,
                 lineHeight = 31.sp,
                 letterSpacing = (-0.4).sp,
-                color = if (failed || backupFailed) Wyrm.Badge else Wyrm.Ink,
+                color = if (failed || backupFailed) wyrmScopedPalette.badge else wyrmScopedPalette.ink,
             )
 
             Spacer(Modifier.height(10.dp))
@@ -168,7 +172,7 @@ fun UpdatePrompt(
                 fontFamily = Wyrm.Body,
                 fontSize = 14.sp,
                 lineHeight = 21.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
             )
 
             val offering = !failed && !backupFailed && !choosingFolder && !backingUp &&
@@ -180,7 +184,7 @@ fun UpdatePrompt(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(wyrmRounded(12.dp))
-                        .background(Wyrm.Well)
+                        .background(wyrmScopedPalette.well)
                         .padding(14.dp),
                 ) {
                     Text(
@@ -188,7 +192,7 @@ fun UpdatePrompt(
                         fontFamily = Wyrm.Body,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -197,7 +201,7 @@ fun UpdatePrompt(
                         fontFamily = Wyrm.Body,
                         fontSize = 13.sp,
                         lineHeight = 19.sp,
-                        color = Wyrm.Mute,
+                        color = wyrmScopedPalette.mute,
                     )
                     Spacer(Modifier.height(10.dp))
                     Text(
@@ -206,8 +210,8 @@ fun UpdatePrompt(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
                         lineHeight = 19.sp,
-                        color = Wyrm.Link,
-                        modifier = Modifier.clickable(onClick = onBetaSettings),
+                        color = wyrmScopedPalette.link,
+                        modifier = if (required) Modifier else Modifier.clickable(onClick = onBetaSettings),
                     )
                 }
             }
@@ -230,7 +234,7 @@ fun UpdatePrompt(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.sp,
                     letterSpacing = 0.8.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -238,13 +242,28 @@ fun UpdatePrompt(
                     fontFamily = Wyrm.Body,
                     fontSize = 12.sp,
                     lineHeight = 18.sp,
-                    color = Wyrm.Mute,
+                    color = wyrmScopedPalette.mute,
                 )
             }
 
             if (choosingFolder) {
                 Spacer(Modifier.height(22.dp))
                 PaperPrimaryButton(label = "OK", onClick = onChooseFolder)
+            } else if (required && !backingUp && !preparingBackup && !downloading && !installing) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = "This update is needed to keep playing Wyrm.",
+                    fontFamily = Wyrm.Body,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    color = wyrmScopedPalette.ink,
+                )
+                Spacer(Modifier.height(14.dp))
+                PaperPrimaryButton(
+                    label = if (failed || backupFailed) "Try again" else "Update now",
+                    onClick = onUpdate,
+                )
             } else if (!backingUp && !preparingBackup && !downloading && !installing) {
                 Spacer(Modifier.height(22.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -271,6 +290,8 @@ fun UpdatePrompt(
 /** The bar that fills as the download arrives. */
 @Composable
 private fun ProgressTrack(fraction: Float, complete: Boolean) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val settling by animateFloatAsState(
         targetValue = if (complete) 1f else fraction.coerceIn(0f, 1f),
         animationSpec = spring(dampingRatio = 1f, stiffness = 180f),
@@ -284,14 +305,14 @@ private fun ProgressTrack(fraction: Float, complete: Boolean) {
             .fillMaxWidth()
             .height(4.dp)
             .clip(wyrmRounded(99.dp))
-            .background(Wyrm.Track),
+            .background(wyrmScopedPalette.track),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth(filled)
                 .height(4.dp)
                 .clip(wyrmRounded(99.dp))
-                .background(Wyrm.Ink)
+                .background(wyrmScopedPalette.ink)
         )
     }
 }
@@ -313,6 +334,8 @@ fun BackupRestorePrompt(
     onRestore: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val restoring = state.restoring
     val finished = state.restored || state.partial || state.failed
     val shape = wyrmRounded(16.dp)
@@ -329,8 +352,8 @@ fun BackupRestorePrompt(
                 .widthIn(max = 420.dp)
                 .heightIn(max = 620.dp)
                 .clip(shape)
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, shape)
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, shape)
                 .padding(horizontal = 22.dp, vertical = 24.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
@@ -345,7 +368,7 @@ fun BackupRestorePrompt(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.5.sp,
                 letterSpacing = 0.92.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
             )
             Spacer(Modifier.height(10.dp))
             Text(
@@ -360,7 +383,7 @@ fun BackupRestorePrompt(
                 fontWeight = FontWeight.Bold,
                 fontSize = 24.sp,
                 lineHeight = 29.sp,
-                color = if (state.partial || state.failed) Wyrm.Badge else Wyrm.Ink,
+                color = if (state.partial || state.failed) wyrmScopedPalette.badge else wyrmScopedPalette.ink,
             )
             Spacer(Modifier.height(10.dp))
             Text(
@@ -374,7 +397,7 @@ fun BackupRestorePrompt(
                 fontFamily = Wyrm.Body,
                 fontSize = 14.sp,
                 lineHeight = 21.sp,
-                color = Wyrm.Mute,
+                color = wyrmScopedPalette.mute,
             )
             if (restoring) {
                 Spacer(Modifier.height(20.dp))

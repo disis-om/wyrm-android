@@ -44,6 +44,10 @@ class SkinTextures(
     val wyrmSkins: Map<Int, ImageBitmap> = emptyMap(),
 ) {
     companion object {
+        /** The AIR drawn styles' 224 px half-cells (row, column), base then shine (generate-air-styles.py). */
+        private val AIR_STYLE_CELLS = listOf(
+            (12 to 3) to (15 to 0), (13 to 3) to (15 to 1), (14 to 3) to (15 to 2), (15 to 3) to (16 to 8),
+        )
         private val lock = Mutex()
         @Volatile private var loaded: SkinTextures? = null
 
@@ -126,6 +130,7 @@ class SkinTextures(
         }
 
         private fun build(context: Context): SkinTextures? {
+            WyrmExtras.load(context)
             // Half the 8K sheet: every bead is still 224 px, more than it is ever drawn.
             val atlas = decode(context, "textures/tex_atlas_8k.png", 2016) ?: return null
             val tagAtlas = decode(context, "textures/wyrm_tags.png", 4096) ?: return null
@@ -134,6 +139,12 @@ class SkinTextures(
             }.toMap()
             val airBeads = (0 until 2).mapNotNull { kind ->
                 crop(atlas, (2 + kind) / 7.0, 6.0 / 9, 1.0 / 7, 1.0 / 9)?.let { kind to it.asImageBitmap() }
+            }.toMap() + AIR_STYLE_CELLS.flatMapIndexed { index, (base, shine) ->
+                // The drawn styles (OM, 2026-10-26): kind 2..5 its picture, 12..15 its shine.
+                listOfNotNull(
+                    crop(atlas, base.second / 14.0, base.first / 18.0, 1.0 / 14, 1.0 / 18)?.let { (2 + index) to it.asImageBitmap() },
+                    crop(atlas, shine.second / 14.0, shine.first / 18.0, 1.0 / 14, 1.0 / 18)?.let { (12 + index) to it.asImageBitmap() },
+                )
             }.toMap()
             val airShadow = crop(atlas, 4.0 / 7, 6.0 / 9, 102.0 / 64 / 7, 102.0 / 64 / 9)?.asImageBitmap()
             val wyrmBeads = (0 until WyrmBeads.COUNT).mapNotNull { kind ->

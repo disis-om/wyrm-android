@@ -27,7 +27,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -84,6 +84,8 @@ internal fun StudioBeadEditor(
     insetBottom: Dp,
     onDone: (saved: Boolean) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val textures by rememberSkinTextures()
     val start = remember(beadId) { SkinStudio.bead(beadId) ?: StudioBead(beadId) }
     var draft by remember(beadId) { mutableStateOf(start) }
@@ -168,7 +170,7 @@ internal fun StudioBeadEditor(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper)
+            .background(wyrmScopedPalette.paper)
             .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false) } }, // nothing falls through
     ) {
         Column(Modifier.fillMaxSize().padding(top = insetTop)) {
@@ -177,8 +179,8 @@ internal fun StudioBeadEditor(
                 // The working painting is a copy: closing simply drops it.
                 StudioRoundButton(LucideR.drawable.lucide_ic_x, size = 38.dp) { onDone(false) }
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text("BEAD", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, letterSpacing = 1.2.sp, color = Wyrm.Quiet)
-                    Text(StudioArt.FINISHES.getOrElse(draft.finish) { "Bead" }, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Wyrm.Ink)
+                    Text("BEAD", fontFamily = Wyrm.Body, fontWeight = FontWeight.Bold, fontSize = 9.5.sp, letterSpacing = 1.2.sp, color = wyrmScopedPalette.quiet)
+                    Text(StudioArt.FINISHES.getOrElse(draft.finish) { "Bead" }, fontFamily = Wyrm.Display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = wyrmScopedPalette.ink)
                 }
                 StudioRoundButton(LucideR.drawable.lucide_ic_undo_2, enabled = undo.isNotEmpty(), size = 38.dp) {
                     redo.add(paint.copy(Bitmap.Config.ARGB_8888, true))
@@ -292,7 +294,7 @@ internal fun StudioBeadEditor(
                             // A checkerboard shows through where the bead is see-through.
                             val cell = s / 16f
                             for (yy in 0 until 16) for (xx in 0 until 16) {
-                                drawRect(if ((xx + yy) % 2 == 0) Wyrm.Card else Wyrm.Rule.copy(alpha = 0.5f),
+                                drawRect(if ((xx + yy) % 2 == 0) wyrmScopedPalette.card else wyrmScopedPalette.rule.copy(alpha = 0.5f),
                                     topLeft = Offset(xx * cell, yy * cell), size = androidx.compose.ui.geometry.Size(cell, cell))
                             }
                             val disc = Path().apply { addOval(androidx.compose.ui.geometry.Rect(left, left, left + 2 * rd, left + 2 * rd)) }
@@ -306,14 +308,14 @@ internal fun StudioBeadEditor(
                                     alpha = draft.opacity, colorFilter = ColorFilter.colorMatrix(matrix))
                             }
                             // The part a body shows: the front (+x) half; the back is under the next bead.
-                            drawArc(Wyrm.Ink.copy(alpha = 0.18f), startAngle = 90f, sweepAngle = 180f, useCenter = false,
+                            drawArc(wyrmScopedPalette.ink, startAngle = 90f, sweepAngle = 180f, useCenter = false,
                                 topLeft = Offset(left, left), size = androidx.compose.ui.geometry.Size(2 * rd, 2 * rd),
                                 style = Stroke(width = 2f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f))))
-                            drawCircle(Wyrm.Rule, radius = rd, center = Offset(s / 2, s / 2), style = Stroke(1.5f))
+                            drawCircle(wyrmScopedPalette.rule, radius = rd, center = Offset(s / 2, s / 2), style = Stroke(1.5f))
                             when (symmetry) {
                                 Symmetry.OFF -> Unit
                                 else -> {
-                                    val guide = Wyrm.Link.copy(alpha = 0.35f)
+                                    val guide = wyrmScopedPalette.link.copy(alpha = 0.35f)
                                     drawLine(guide, Offset(left, s / 2), Offset(left + 2 * rd, s / 2), 1.5f)
                                     if (symmetry != Symmetry.MIRROR) drawLine(guide, Offset(s / 2, left), Offset(s / 2, left + 2 * rd), 1.5f)
                                 }
@@ -322,7 +324,7 @@ internal fun StudioBeadEditor(
                     }
                 }
                 Text("The front half (right) is what shows along the body.", fontFamily = Wyrm.Body, fontSize = 11.sp,
-                    color = Wyrm.Quiet, modifier = Modifier.padding(horizontal = 24.dp))
+                    color = wyrmScopedPalette.quiet, modifier = Modifier.padding(horizontal = 24.dp))
                 Spacer(Modifier.height(12.dp))
                 Box(Modifier.padding(horizontal = 16.dp)) {
                     PaperSegmented(options = listOf("Paint", "Look"), selected = panel, onSelect = { panel = it })
@@ -354,9 +356,9 @@ internal fun StudioBeadEditor(
                         StudioValueSlider("Brush size", brushSize, 2f..80f, { "${it.roundToInt()}" }) { brushSize = it }
                         StudioValueSlider("Brush softness", brushSoft, 0f..1f, ::percent) { brushSoft = it }
                     } else {
-                        Text("Finish", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Ink)
+                        Text("Finish", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = wyrmScopedPalette.ink)
                         FinishGrid(draft, textures) { draft = draft.copy(finish = it) }
-                        Text("Colour", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = Wyrm.Ink)
+                        Text("Colour", fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, color = wyrmScopedPalette.ink)
                         StudioColorPicker(draft.color) { draft = draft.copy(color = it) }
                         StudioValueSlider("Hue", draft.hue, -180f..180f, { "${it.roundToInt()}°" }) { draft = draft.copy(hue = it) }
                         StudioValueSlider("Saturation", draft.saturation, 0f..2f, ::percent) { draft = draft.copy(saturation = it) }
@@ -380,6 +382,8 @@ internal fun StudioBeadEditor(
 /** Every finish, drawn in this bead's own colour. */
 @Composable
 private fun FinishGrid(bead: StudioBead, textures: SkinTextures?, onPick: (Int) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val previews = remember(bead.color, bead.detail, textures) {
         StudioArt.FINISHES.indices.map { finish ->
             StudioArt.renderBase(bead.copy(finish = finish), 96, textures).asImageBitmap()
@@ -398,7 +402,7 @@ private fun FinishGrid(bead: StudioBead, textures: SkinTextures?, onPick: (Int) 
                                 Modifier
                                     .size(58.dp)
                                     .clip(CircleShape)
-                                    .border(if (chosen) 2.5.dp else 1.dp, if (chosen) Wyrm.Ink else Wyrm.Rule, CircleShape)
+                                    .border(if (chosen) 2.5.dp else 1.dp, if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.rule, CircleShape)
                                     .clickableNoRipple { onPick(index) }
                                     .padding(4.dp),
                             ) {
@@ -406,7 +410,7 @@ private fun FinishGrid(bead: StudioBead, textures: SkinTextures?, onPick: (Int) 
                                 Canvas(Modifier.fillMaxSize()) { drawImageInto(image, 0f, 0f, size.width, size.height) }
                             }
                             Text(StudioArt.FINISHES[index], fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 9.5.sp,
-                                color = if (chosen) Wyrm.Ink else Wyrm.Quiet, modifier = Modifier.padding(top = 3.dp))
+                                color = if (chosen) wyrmScopedPalette.ink else wyrmScopedPalette.quiet, modifier = Modifier.padding(top = 3.dp))
                         }
                     }
                 }

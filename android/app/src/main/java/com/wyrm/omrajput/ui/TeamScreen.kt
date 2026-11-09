@@ -28,7 +28,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -158,17 +158,19 @@ private fun TeamRosterPage(
     onForget: () -> Unit,
     onJoinArena: (String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val playing = state.members.filter { it.playing }
     val idle = state.members.filter { !it.playing }
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
         ) {
@@ -181,7 +183,7 @@ private fun TeamRosterPage(
                     text = "‹ $backLabel",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onBack)
@@ -192,7 +194,7 @@ private fun TeamRosterPage(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center),
                 )
                 Box(modifier = Modifier.align(Alignment.CenterEnd)) {
@@ -222,14 +224,14 @@ private fun TeamRosterPage(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(if (state.connected) Wyrm.Live else Wyrm.Chevron),
+                                .background(if (state.connected) wyrmScopedPalette.live else wyrmScopedPalette.chevron),
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
                             text = if (state.connected) "Connected" else state.status.ifBlank { "Connecting" },
                             fontFamily = Wyrm.Body,
                             fontSize = 12.5.sp,
-                            color = if (state.connected) Wyrm.Live else if (state.status.isNotBlank()) Wyrm.Badge else Wyrm.Quiet,
+                            color = if (state.connected) wyrmScopedPalette.live else if (state.status.isNotBlank()) wyrmScopedPalette.badge else wyrmScopedPalette.quiet,
                             maxLines = 1,
                         )
                     }
@@ -240,7 +242,7 @@ private fun TeamRosterPage(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Wyrm.Rule),
+                .background(wyrmScopedPalette.rule),
         )
         Column(
             modifier = Modifier
@@ -268,14 +270,14 @@ private fun TeamRosterPage(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 11.5.sp,
                             letterSpacing = 0.92.sp,
-                            color = Wyrm.Quiet,
+                            color = wyrmScopedPalette.quiet,
                             modifier = Modifier.weight(1f),
                         )
                         Text(
                             text = "refreshes every 4s",
                             fontFamily = Wyrm.Body,
                             fontSize = 12.sp,
-                            color = Wyrm.Quiet,
+                            color = wyrmScopedPalette.quiet,
                         )
                     }
                     SettingsCard {
@@ -323,6 +325,8 @@ private fun MemberLine(
     first: Boolean,
     onJoin: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val score = NumberFormat.getIntegerInstance(Locale.US).format(member.score)
     Column {
         if (!first) SettingsHairline()
@@ -337,7 +341,7 @@ private fun MemberLine(
                 modifier = Modifier
                     .size(7.dp)
                     .clip(CircleShape)
-                    .background(if (member.playing) Wyrm.Live else Wyrm.Chevron),
+                    .background(if (member.playing) wyrmScopedPalette.live else wyrmScopedPalette.chevron),
             )
             Spacer(Modifier.width(11.dp))
             Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
@@ -345,7 +349,7 @@ private fun MemberLine(
                     text = member.name,
                     fontFamily = Wyrm.Body,
                     fontSize = 15.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -357,7 +361,7 @@ private fun MemberLine(
                     },
                     fontFamily = if (member.playing && !sameArena) FontFamily.Monospace else Wyrm.Body,
                     fontSize = 12.sp,
-                    color = if (sameArena) Wyrm.Live else Wyrm.Quiet,
+                    color = if (sameArena) wyrmScopedPalette.live else wyrmScopedPalette.quiet,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
@@ -367,7 +371,7 @@ private fun MemberLine(
                         text = "Botting",
                         fontFamily = Wyrm.Body,
                         fontSize = 11.5.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
@@ -377,7 +381,7 @@ private fun MemberLine(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
-                color = if (member.playing) Wyrm.Ink else Wyrm.Quiet,
+                color = if (member.playing) wyrmScopedPalette.ink else wyrmScopedPalette.quiet,
                 style = nums,
             )
             if (member.playing && !sameArena) {
@@ -390,6 +394,8 @@ private fun MemberLine(
 
 @Composable
 private fun JoinChip(onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -397,7 +403,7 @@ private fun JoinChip(onClick: () -> Unit) {
             .height(32.dp)
             .scale(pressScale(pressed))
             .clip(wyrmRounded(9.dp))
-            .background(Wyrm.Ink)
+            .background(wyrmScopedPalette.ink)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
@@ -407,7 +413,7 @@ private fun JoinChip(onClick: () -> Unit) {
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp,
-            color = Wyrm.OnInk,
+            color = wyrmScopedPalette.onInk,
         )
     }
 }
@@ -418,22 +424,24 @@ private fun TeamPill(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val fill = when {
-        selected -> Wyrm.Ink
+        selected -> wyrmScopedPalette.ink
         else -> Color.Transparent
     }
     val stroke = when {
         selected -> Color.Transparent
-        else -> Wyrm.Rule
+        else -> wyrmScopedPalette.rule
     }
     Text(
         text = label,
         fontFamily = Wyrm.Body,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         fontSize = 13.sp,
-        color = if (selected) Wyrm.OnInk else Wyrm.Mute,
+        color = if (selected) wyrmScopedPalette.onInk else wyrmScopedPalette.mute,
         modifier = Modifier
             .scale(pressScale(pressed))
             .clip(wyrmRounded(99.dp))
@@ -446,6 +454,8 @@ private fun TeamPill(
 
 @Composable
 private fun PaperDangerButton(label: String, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -454,8 +464,8 @@ private fun PaperDangerButton(label: String, onClick: () -> Unit) {
             .height(46.dp)
             .scale(pressScale(pressed))
             .clip(wyrmRounded(12.dp))
-            .border(1.dp, Wyrm.Rule, wyrmRounded(12.dp))
-            .background(if (pressed) Wyrm.Badge.copy(alpha = 0.08f) else Color.Transparent)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(12.dp))
+            .background(if (pressed) wyrmScopedPalette.badge.copy(alpha = 0.08f) else Color.Transparent)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -463,7 +473,7 @@ private fun PaperDangerButton(label: String, onClick: () -> Unit) {
             text = label,
             fontFamily = Wyrm.Body,
             fontSize = 15.sp,
-            color = Wyrm.Badge,
+            color = wyrmScopedPalette.badge,
         )
     }
 }
@@ -482,18 +492,20 @@ private fun TeamChatPage(
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val playing = members.count { it.playing }
     val idle = members.size - playing
     val faces = members.take(3)
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
         ) {
@@ -506,7 +518,7 @@ private fun TeamChatPage(
                     text = "‹ Team",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onBack)
@@ -517,7 +529,7 @@ private fun TeamChatPage(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
@@ -554,7 +566,7 @@ private fun TeamChatPage(
                         },
                         fontFamily = Wyrm.Body,
                         fontSize = 12.5.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                     )
                 }
             }
@@ -563,7 +575,7 @@ private fun TeamChatPage(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Wyrm.Rule),
+                .background(wyrmScopedPalette.rule),
         )
         Box(modifier = Modifier.weight(1f)) {
             if (messages.isEmpty()) {
@@ -575,7 +587,7 @@ private fun TeamChatPage(
                         text = "No team messages yet.",
                         fontFamily = Wyrm.Body,
                         fontSize = 14.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                     )
                 }
             } else {
@@ -611,16 +623,18 @@ private fun isMine(message: TeamMessage, myName: String): Boolean {
 
 @Composable
 private fun ChatBubble(message: TeamMessage, mine: Boolean) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     if (message.from.equals("TEAM", ignoreCase = true)) {
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Text(
                 text = message.text,
                 fontFamily = Wyrm.Body,
                 fontSize = 12.sp,
-                color = Wyrm.Quiet,
+                color = wyrmScopedPalette.quiet,
                 modifier = Modifier
                     .clip(wyrmRounded(99.dp))
-                    .background(Wyrm.Hover)
+                    .background(wyrmScopedPalette.hover)
                     .padding(horizontal = 12.dp, vertical = 5.dp),
             )
         }
@@ -646,12 +660,12 @@ private fun ChatBubble(message: TeamMessage, mine: Boolean) {
                         bottomEnd = if (mine) 5.dp else 14.dp,
                     ),
                 )
-                .background(if (mine) Wyrm.Ink else Wyrm.Card)
+                .background(if (mine) wyrmScopedPalette.ink else wyrmScopedPalette.card)
                 .then(
                     if (mine) Modifier
                     else Modifier.border(
                         1.dp,
-                        Wyrm.Rule,
+                        wyrmScopedPalette.rule,
                         RoundedCornerShape(
                             topStart = 14.dp,
                             topEnd = 14.dp,
@@ -668,7 +682,7 @@ private fun ChatBubble(message: TeamMessage, mine: Boolean) {
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(bottom = 3.dp),
                 )
             }
@@ -677,7 +691,7 @@ private fun ChatBubble(message: TeamMessage, mine: Boolean) {
                 fontFamily = Wyrm.Body,
                 fontSize = 14.5.sp,
                 lineHeight = 21.sp,
-                color = if (mine) Wyrm.OnInk else Wyrm.Ink,
+                color = if (mine) wyrmScopedPalette.onInk else wyrmScopedPalette.ink,
             )
         }
     }
@@ -685,15 +699,17 @@ private fun ChatBubble(message: TeamMessage, mine: Boolean) {
 
 @Composable
 private fun InitialsWell(name: String, playing: Boolean, modifier: Modifier = Modifier) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val initials = name.filter { it.isLetter() }.take(2).uppercase().ifBlank { "·" }
-    val fill = if (playing) Color(0xFFE6EFE8) else Wyrm.Well
-    val ink = if (playing) Wyrm.Live else Wyrm.Mute
+    val fill = if (playing) Color(0xFFE6EFE8) else wyrmScopedPalette.well
+    val ink = if (playing) wyrmScopedPalette.live else wyrmScopedPalette.mute
     Box(
         modifier = modifier
             .size(24.dp)
             .clip(wyrmRounded(8.dp))
             .background(fill)
-            .border(2.dp, Wyrm.Paper, wyrmRounded(8.dp)),
+            .border(2.dp, wyrmScopedPalette.paper, wyrmRounded(8.dp)),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -715,11 +731,13 @@ private fun PaperComposer(
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val canSend = draft.isNotBlank() && !sending
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Wyrm.Paper.copy(alpha = 0.94f))
+            .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
             .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = insetBottom.coerceAtLeast(12.dp)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
@@ -729,8 +747,8 @@ private fun PaperComposer(
                 .weight(1f)
                 .heightIn(min = 42.dp)
                 .clip(wyrmRounded(11.dp))
-                .background(Wyrm.Card)
-                .border(1.dp, Wyrm.Rule, wyrmRounded(11.dp))
+                .background(wyrmScopedPalette.card)
+                .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(11.dp))
                 .padding(horizontal = 13.dp, vertical = 10.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -738,8 +756,8 @@ private fun PaperComposer(
                 value = draft,
                 onValueChange = { onDraftChange(it.take(280)) },
                 enabled = !sending,
-                textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = Wyrm.Ink),
-                cursorBrush = SolidColor(Wyrm.Ink),
+                textStyle = TextStyle(fontFamily = Wyrm.Body, fontSize = 15.sp, color = wyrmScopedPalette.ink),
+                cursorBrush = SolidColor(wyrmScopedPalette.ink),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
                 maxLines = 4,
@@ -750,7 +768,7 @@ private fun PaperComposer(
                             text = placeholder,
                             fontFamily = Wyrm.Body,
                             fontSize = 15.sp,
-                            color = Wyrm.TabIdle,
+                            color = wyrmScopedPalette.tabIdle,
                         )
                     }
                     inner()
@@ -761,7 +779,7 @@ private fun PaperComposer(
             modifier = Modifier
                 .size(42.dp)
                 .clip(wyrmRounded(11.dp))
-                .background(if (canSend) Wyrm.Ink else Wyrm.Ink.copy(alpha = 0.35f))
+                .background(if (canSend) wyrmScopedPalette.ink else wyrmScopedPalette.ink)
                 .clickable(enabled = canSend, onClick = onSend),
             contentAlignment = Alignment.Center,
         ) {
@@ -770,7 +788,7 @@ private fun PaperComposer(
                 fontFamily = Wyrm.Body,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 18.sp,
-                color = Wyrm.OnInk,
+                color = wyrmScopedPalette.onInk,
             )
         }
     }
@@ -785,6 +803,8 @@ private fun TeamConnectPage(
     onCancel: () -> Unit,
     onSave: (String, String, String) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var name by remember { mutableStateOf("") }
     var teamId by remember { mutableStateOf("") }
     var authKey by remember { mutableStateOf("") }
@@ -792,12 +812,12 @@ private fun TeamConnectPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
         ) {
@@ -810,7 +830,7 @@ private fun TeamConnectPage(
                     text = "Cancel",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onCancel)
@@ -821,7 +841,7 @@ private fun TeamConnectPage(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
@@ -830,7 +850,7 @@ private fun TeamConnectPage(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Wyrm.Rule),
+                .background(wyrmScopedPalette.rule),
         )
         Column(
             modifier = Modifier
@@ -844,14 +864,14 @@ private fun TeamConnectPage(
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
                     letterSpacing = (-0.4).sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                 )
                 Text(
                     text = "Team mode runs on the NTL service. The ID and key are kept on this phone only — they are never sent to Wyrm.",
                     fontFamily = Wyrm.Body,
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
-                    color = Wyrm.Mute,
+                    color = wyrmScopedPalette.mute,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
@@ -885,7 +905,7 @@ private fun TeamConnectPage(
                     text = status,
                     fontFamily = Wyrm.Body,
                     fontSize = 13.sp,
-                    color = Wyrm.Badge,
+                    color = wyrmScopedPalette.badge,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
                 )
             }
@@ -915,20 +935,22 @@ private fun ConnectField(
     secret: Boolean = false,
     valid: Boolean = false,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         if (!first) SettingsHairline()
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
-            Text(text = caption, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet)
+            Text(text = caption, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet)
             Box(
                 modifier = Modifier
                     .padding(top = 7.dp)
                     .fillMaxWidth()
                     .height(42.dp)
                     .clip(wyrmRounded(10.dp))
-                    .background(Wyrm.Card)
+                    .background(wyrmScopedPalette.card)
                     .border(
                         if (valid) 1.5.dp else 1.dp,
-                        if (valid) Wyrm.Link else Wyrm.Rule,
+                        if (valid) wyrmScopedPalette.link else wyrmScopedPalette.rule,
                         wyrmRounded(10.dp),
                     )
                     .padding(horizontal = 12.dp),
@@ -941,9 +963,9 @@ private fun ConnectField(
                     textStyle = TextStyle(
                         fontFamily = if (mono) FontFamily.Monospace else Wyrm.Body,
                         fontSize = 15.sp,
-                        color = Wyrm.Ink,
+                        color = wyrmScopedPalette.ink,
                     ),
-                    cursorBrush = SolidColor(Wyrm.Ink),
+                    cursorBrush = SolidColor(wyrmScopedPalette.ink),
                     visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -953,7 +975,7 @@ private fun ConnectField(
                     text = "Looks valid.",
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Live,
+                    color = wyrmScopedPalette.live,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }

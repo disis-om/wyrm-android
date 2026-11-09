@@ -41,7 +41,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -125,8 +125,8 @@ internal object Night {
     val Mute: Color get() = Wyrm.Mute
     val Quiet: Color get() = Wyrm.Quiet
     val Well: Color get() = Wyrm.Well
-    val Gold: Color get() = if (Wyrm.Paper.luminance() < 0.45f) Color(0xFFE3BA6B) else Color(0xFFB07A1E)
-    val OnGold = Color(0xFF1C1A16)
+    val Gold: Color get() = Wyrm.Link
+    val OnGold: Color get() = Wyrm.Paper
     val Discord = Color(0xFF5865F2)
 }
 
@@ -148,13 +148,14 @@ fun AboutScreen(
         }
     }
 
-    // A night page: light status-bar icons while it is open, whatever the theme.
+    // About follows the same explicit Light/Dark/Auto appearance as the app.
     val view = LocalView.current
-    DisposableEffect(view) {
+    val darkTheme = Wyrm.currentPalette.dark
+    DisposableEffect(view, darkTheme) {
         val window = (view.context as? Activity)?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         val previous = controller?.isAppearanceLightStatusBars
-        controller?.isAppearanceLightStatusBars = false
+        controller?.isAppearanceLightStatusBars = !darkTheme
         onDispose { if (previous != null) controller?.isAppearanceLightStatusBars = previous }
     }
 
@@ -299,7 +300,7 @@ private fun Hero() {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(96.dp)
-                    .shadow(24.dp, RoundedCornerShape(26.dp), ambientColor = Night.Gold, spotColor = Night.Gold)
+
                     .clip(RoundedCornerShape(26.dp)),
             )
         }
@@ -330,7 +331,7 @@ private fun Chapter(numeral: String, title: String, text: String, last: Boolean 
             Box(
                 Modifier
                     .size(34.dp)
-                    .shadow(10.dp, CircleShape, ambientColor = Night.Gold, spotColor = Night.Gold)
+
                     .clip(CircleShape)
                     .background(Night.Gold),
                 contentAlignment = Alignment.Center,
@@ -436,7 +437,7 @@ private fun Community(onJoin: () -> Unit) = Section {
             .padding(top = 6.dp)
             .fillMaxWidth()
             .height(56.dp)
-            .shadow(16.dp, RoundedCornerShape(16.dp), ambientColor = Night.Discord, spotColor = Night.Discord)
+
             .clip(RoundedCornerShape(16.dp))
             .background(Night.Discord)
             .clickable(onClick = onJoin)

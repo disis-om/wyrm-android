@@ -39,7 +39,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -126,6 +126,8 @@ fun Modifier.chatSendKeys(onSend: () -> Unit): Modifier = composed {
 /** A full-window popup keeps the card sharp while the desktop page blurs. */
 @Composable
 fun CentredDialog(onDismiss: () -> Unit, onConfirm: (() -> Unit)? = null, content: @Composable () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val appear = remember { Animatable(0f) }
     androidx.compose.runtime.LaunchedEffect(Unit) { appear.animateTo(1f, tween(180)) }
     androidx.compose.ui.window.Popup(alignment = Alignment.Center, onDismissRequest = onDismiss,
@@ -134,7 +136,7 @@ fun CentredDialog(onDismiss: () -> Unit, onConfirm: (() -> Unit)? = null, conten
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDismiss), contentAlignment = Alignment.Center) {
             Box(Modifier.widthIn(max = 500.dp).fillMaxWidth().padding(20.dp)
                 .scale(0.96f + 0.04f * appear.value)
-                .clip(wyrmRounded(26.dp)).background(Wyrm.Card)
+                .clip(wyrmRounded(26.dp)).background(wyrmScopedPalette.card)
                 .clickable(remember { MutableInteractionSource() }, indication = null) {}
                 .centredDialogKeys(onDismiss, onConfirm).padding(20.dp)) { content() }
         }
@@ -174,6 +176,8 @@ internal fun SettingsDrillScaffold(
     onRefresh: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     if (contentOnly) {
         Column(modifier = Modifier.fillMaxWidth()) { content() }
         return
@@ -191,12 +195,12 @@ internal fun SettingsDrillScaffold(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Wyrm.Paper),
+            .background(wyrmScopedPalette.paper),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Wyrm.Paper.copy(alpha = 0.94f))
+                .background(wyrmScopedPalette.paper.copy(alpha = 0.94f))
                 .padding(top = insetTop)
                 .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
         ) {
@@ -209,7 +213,7 @@ internal fun SettingsDrillScaffold(
                     text = "‹ $parent",
                     fontFamily = Wyrm.Body,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .clickable(onClick = onBack)
@@ -220,7 +224,7 @@ internal fun SettingsDrillScaffold(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center),
                 )
                 if (trailing != null && onTrailing != null) {
@@ -228,7 +232,7 @@ internal fun SettingsDrillScaffold(
                         text = trailing,
                         fontFamily = Wyrm.Body,
                         fontSize = 15.5.sp,
-                        color = if (trailingEnabled) Wyrm.Link else Wyrm.TabIdle,
+                        color = if (trailingEnabled) wyrmScopedPalette.link else wyrmScopedPalette.tabIdle,
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .clickable(enabled = trailingEnabled, onClick = onTrailing)
@@ -242,7 +246,7 @@ internal fun SettingsDrillScaffold(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Wyrm.Rule),
+                .background(wyrmScopedPalette.rule),
         )
         val body: @Composable (Modifier) -> Unit = { modifier ->
             Column(
@@ -264,37 +268,43 @@ internal fun SettingsDrillScaffold(
 
 @Composable
 internal fun SettingsSectionLabel(text: String, top: Dp = 22.dp) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = text.uppercase(),
         fontFamily = Wyrm.Body,
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.5.sp,
         letterSpacing = 0.92.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = top, bottom = 8.dp),
     )
 }
 
 @Composable
 internal fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val shape = wyrmRounded(14.dp)
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, Wyrm.Rule, shape),
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, wyrmScopedPalette.rule, shape),
         content = content,
     )
 }
 
 @Composable
 internal fun SettingsHairline() {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(Wyrm.RowRule),
+            .background(wyrmScopedPalette.rowRule),
     )
 }
 
@@ -304,6 +314,8 @@ internal fun AdvancedFold(
     open: Boolean,
     onToggle: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val chevronRotation by animateFloatAsState(
         targetValue = if (open) 180f else 0f,
         label = "fold chevron",
@@ -315,8 +327,8 @@ internal fun AdvancedFold(
             .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 8.dp)
             .heightIn(min = 52.dp)
             .clip(shape)
-            .background(Wyrm.Card)
-            .border(1.dp, if (open) Wyrm.Chevron else Wyrm.RowRule, shape)
+            .background(wyrmScopedPalette.card)
+            .border(1.dp, if (open) wyrmScopedPalette.chevron else wyrmScopedPalette.rowRule, shape)
             .semantics { stateDescription = if (open) "Expanded" else "Collapsed" }
             .clickable(role = Role.Button, onClick = onToggle)
             .padding(start = 15.dp, end = 11.dp),
@@ -328,7 +340,7 @@ internal fun AdvancedFold(
             fontWeight = FontWeight.SemiBold,
             fontSize = 11.sp,
             letterSpacing = 0.78.sp,
-            color = Wyrm.Ink,
+            color = wyrmScopedPalette.ink,
             modifier = Modifier.weight(1f),
         )
         Text(
@@ -337,20 +349,20 @@ internal fun AdvancedFold(
             fontWeight = FontWeight.SemiBold,
             fontSize = 9.sp,
             letterSpacing = 0.7.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
         Spacer(Modifier.width(9.dp))
         Box(
             modifier = Modifier
                 .size(30.dp)
                 .clip(wyrmRounded(9.dp))
-                .background(if (open) Wyrm.Ink else Color(0x0D37352F)),
+                .background(if (open) wyrmScopedPalette.ink else Color(0x0D37352F)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 painter = painterResource(LucideR.drawable.lucide_ic_chevron_down),
                 contentDescription = if (open) "Collapse $label" else "Expand $label",
-                tint = if (open) Wyrm.Paper else Wyrm.Ink,
+                tint = if (open) wyrmScopedPalette.paper else wyrmScopedPalette.ink,
                 modifier = Modifier.size(17.dp).rotate(chevronRotation),
             )
         }
@@ -359,12 +371,14 @@ internal fun AdvancedFold(
 
 @Composable
 internal fun SettingsCaption(text: String) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Text(
         text = text,
         fontFamily = Wyrm.Body,
         fontSize = 12.5.sp,
         lineHeight = 18.sp,
-        color = Wyrm.Quiet,
+        color = wyrmScopedPalette.quiet,
         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 8.dp),
     )
 }
@@ -398,6 +412,8 @@ internal fun SettingsBoolRow(
     first: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         if (!first) SettingsHairline()
         Row(
@@ -409,13 +425,13 @@ internal fun SettingsBoolRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+                Text(text = title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
                 if (detail.isNotBlank()) {
                     Text(
                         text = detail,
                         fontFamily = Wyrm.Body,
                         fontSize = 12.5.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(top = 1.dp),
                     )
                 }
@@ -437,6 +453,8 @@ internal fun SettingsSliderRow(
     first: Boolean,
     onChange: (Float) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         if (!first) SettingsHairline()
         Column(modifier = Modifier.padding(14.dp)) {
@@ -445,14 +463,14 @@ internal fun SettingsSliderRow(
                     text = title,
                     fontFamily = Wyrm.Body,
                     fontSize = 15.5.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
                     text = valueText,
                     fontFamily = Wyrm.Body,
                     fontSize = 14.sp,
-                    color = Wyrm.Mute,
+                    color = wyrmScopedPalette.mute,
                     style = nums,
                 )
             }
@@ -461,7 +479,7 @@ internal fun SettingsSliderRow(
                     text = detail,
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
@@ -485,16 +503,18 @@ internal fun SettingsEnumBlock(
     first: Boolean,
     onSelect: (Int) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         if (!first) SettingsHairline()
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(text = title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+            Text(text = title, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
             if (detail.isNotBlank()) {
                 Text(
                     text = detail,
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
-                    color = Wyrm.Quiet,
+                    color = wyrmScopedPalette.quiet,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
@@ -513,6 +533,8 @@ internal fun SettingsValueRow(
     /** The badge trail: a red count for something new behind this row. */
     badge: Int = 0,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -541,11 +563,11 @@ internal fun SettingsValueRow(
                 text = title,
                 fontFamily = Wyrm.Body,
                 fontSize = 15.5.sp,
-                color = Wyrm.Ink,
+                color = wyrmScopedPalette.ink,
                 modifier = Modifier.weight(1f),
             )
             if (value.isNotBlank()) {
-                Text(text = value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Quiet)
+                Text(text = value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.quiet)
             }
             if (badge > 0) {
                 Spacer(Modifier.width(8.dp))
@@ -553,7 +575,7 @@ internal fun SettingsValueRow(
             }
             if (onOpen != null) {
                 Spacer(Modifier.width(6.dp))
-                Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = Wyrm.Chevron)
+                Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = wyrmScopedPalette.chevron)
             }
         }
     }
@@ -566,6 +588,8 @@ internal fun SettingsActionRow(
     danger: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column {
@@ -574,7 +598,7 @@ internal fun SettingsActionRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 52.dp)
-                .background(if (danger && pressed) Wyrm.Badge.copy(alpha = 0.08f) else Color.Transparent)
+                .background(if (danger && pressed) wyrmScopedPalette.badge.copy(alpha = 0.08f) else Color.Transparent)
                 .scale(pressScale(pressed))
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -584,7 +608,7 @@ internal fun SettingsActionRow(
                 text = title,
                 fontFamily = Wyrm.Body,
                 fontSize = 15.5.sp,
-                color = if (danger) Wyrm.Badge else Wyrm.Ink,
+                color = if (danger) wyrmScopedPalette.badge else wyrmScopedPalette.ink,
             )
         }
     }
@@ -597,6 +621,8 @@ internal fun SettingsLinkRow(
     first: Boolean,
     onClick: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         if (!first) SettingsHairline()
         Row(
@@ -611,11 +637,11 @@ internal fun SettingsLinkRow(
                 text = title,
                 fontFamily = Wyrm.Body,
                 fontSize = 15.5.sp,
-                color = Wyrm.Link,
+                color = wyrmScopedPalette.link,
                 modifier = Modifier.weight(1f),
             )
             if (value.isNotBlank()) {
-                Text(text = value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = Wyrm.Quiet)
+                Text(text = value, fontFamily = Wyrm.Body, fontSize = 14.sp, color = wyrmScopedPalette.quiet)
             }
         }
     }
@@ -623,6 +649,8 @@ internal fun SettingsLinkRow(
 
 @Composable
 internal fun PaperPrimaryButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -631,7 +659,7 @@ internal fun PaperPrimaryButton(label: String, enabled: Boolean = true, onClick:
             .height(46.dp)
             .scale(pressScale(pressed, enabled = enabled))
             .clip(wyrmRounded(12.dp))
-            .background(if (enabled) Wyrm.Ink else Wyrm.Ink.copy(alpha = 0.35f))
+            .background(if (enabled) wyrmScopedPalette.ink else wyrmScopedPalette.ink)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -645,13 +673,15 @@ internal fun PaperPrimaryButton(label: String, enabled: Boolean = true, onClick:
             fontFamily = Wyrm.Body,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.5.sp,
-            color = Wyrm.OnInk,
+            color = wyrmScopedPalette.onInk,
         )
     }
 }
 
 @Composable
 internal fun PaperOutlineButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -660,8 +690,8 @@ internal fun PaperOutlineButton(label: String, enabled: Boolean = true, onClick:
             .height(46.dp)
             .scale(pressScale(pressed, enabled = enabled))
             .clip(wyrmRounded(12.dp))
-            .border(1.dp, Wyrm.Rule, wyrmRounded(12.dp))
-            .background(if (pressed) Wyrm.Hover else Color.Transparent)
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(12.dp))
+            .background(if (pressed) wyrmScopedPalette.hover else Color.Transparent)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -674,7 +704,7 @@ internal fun PaperOutlineButton(label: String, enabled: Boolean = true, onClick:
             text = label,
             fontFamily = Wyrm.Body,
             fontSize = 15.sp,
-            color = if (enabled) Wyrm.Mute else Wyrm.TabIdle,
+            color = if (enabled) wyrmScopedPalette.mute else wyrmScopedPalette.tabIdle,
         )
     }
 }
@@ -685,6 +715,8 @@ internal fun SettingsColourRow(
     first: Boolean,
     onChange: (Setting, List<Float>) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     var open by remember { mutableStateOf(false) }
     val channels = setting.channels
     val swatch = Color(channels[0], channels[1], channels[2], 1f)
@@ -699,13 +731,13 @@ internal fun SettingsColourRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = setting.label, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
+                Text(text = setting.label, fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
                 if (setting.hint.isNotBlank()) {
                     Text(
                         text = setting.hint,
                         fontFamily = Wyrm.Body,
                         fontSize = 12.5.sp,
-                        color = Wyrm.Quiet,
+                        color = wyrmScopedPalette.quiet,
                         modifier = Modifier.padding(top = 1.dp),
                     )
                 }
@@ -715,10 +747,10 @@ internal fun SettingsColourRow(
                     .size(26.dp)
                     .clip(wyrmRounded(8.dp))
                     .background(swatch)
-                    .border(1.dp, Wyrm.Rule, wyrmRounded(8.dp)),
+                    .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(8.dp)),
             )
             Spacer(Modifier.width(8.dp))
-            Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = Wyrm.Chevron)
+            Text(text = "›", fontFamily = Wyrm.Body, fontSize = 17.sp, color = wyrmScopedPalette.chevron)
         }
         AnimatedVisibility(
             visible = open,
@@ -799,6 +831,8 @@ private fun PaperShadeTrack(
     gradient: List<Color>,
     onPick: (Float) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Column {
         Text(
             text = label,
@@ -806,7 +840,7 @@ private fun PaperShadeTrack(
             fontSize = 11.5.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.6.sp,
-            color = Wyrm.Quiet,
+            color = wyrmScopedPalette.quiet,
         )
         Spacer(Modifier.height(6.dp))
         PaperGradientTrack(fraction = value, brush = Brush.horizontalGradient(gradient), onPick = onPick)
@@ -816,6 +850,8 @@ private fun PaperShadeTrack(
 /** Wyrm iOS's `WSGradientTrack`: a 22 dp gradient capsule and a 20 dp ink knob ringed in card. */
 @Composable
 private fun PaperGradientTrack(fraction: Float, brush: Brush, onPick: (Float) -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val pick by androidx.compose.runtime.rememberUpdatedState(onPick)
     val adjusting by androidx.compose.runtime.rememberUpdatedState(LocalAdjustSubject.current)
     BoxWithConstraints(
@@ -850,7 +886,7 @@ private fun PaperGradientTrack(fraction: Float, brush: Brush, onPick: (Float) ->
                 .matchParentSize()
                 .clip(WyrmCapsule)
                 .background(brush)
-                .border(1.dp, Wyrm.Rule, WyrmCapsule),
+                .border(1.dp, wyrmScopedPalette.rule, WyrmCapsule),
         )
         Box(
             Modifier
@@ -859,8 +895,8 @@ private fun PaperGradientTrack(fraction: Float, brush: Brush, onPick: (Float) ->
                 .size(20.dp)
                 .shadow(2.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
                 .clip(CircleShape)
-                .background(Wyrm.Ink)
-                .border(2.dp, Wyrm.Card, CircleShape),
+                .background(wyrmScopedPalette.ink)
+                .border(2.dp, wyrmScopedPalette.card, CircleShape),
         )
     }
 }
@@ -871,6 +907,16 @@ internal fun SettingTypedRow(
     first: Boolean,
     onChange: (Setting, List<Float>) -> Unit,
 ) {
+    if (setting.id == "general.name_font") {
+        SnakeNameSizeSetting(setting, first, onChange)
+        return
+    }
+    if (setting.id == "general.lb_font") {
+        SettingsSliderRow(title = setting.label, valueText = "${(setting.number*100).toInt()}%",
+            detail = setting.hint, value = setting.number, range = 0.25f..3f, steps = 0,
+            first = first, onChange = { onChange(setting, listOf(it)) })
+        return
+    }
     // Every engine row is a settings-search anchor under its own id, and a
     // row that changes a control raises the adjust preview while held.
     androidx.compose.runtime.CompositionLocalProvider(LocalAdjustSubject provides AdjustPreview.subjectFor(setting.id)) {

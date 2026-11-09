@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -59,6 +59,8 @@ internal fun LogOutSheet(
     onLogOut: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     AnimatedVisibility(visible, enter = fadeIn(tween(180)), exit = fadeOut(tween(160))) {
         Box(
             Modifier
@@ -84,45 +86,45 @@ internal fun LogOutSheet(
                     .padding(bottom = if (centred) 0.dp else insetBottom + 10.dp)
                     .centredDialogKeys(onCancel, onLogOut)
                     .clip(wyrmRounded(30.dp))
-                    .background(Wyrm.Card)
+                    .background(wyrmScopedPalette.card)
                     .clickable(remember { MutableInteractionSource() }, indication = null) {}
                     .padding(horizontal = 22.dp, vertical = 22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (!centred) {
-                    Box(Modifier.width(38.dp).height(5.dp).clip(wyrmRounded(3.dp)).background(Wyrm.Rule))
+                    Box(Modifier.width(38.dp).height(5.dp).clip(wyrmRounded(3.dp)).background(wyrmScopedPalette.rule))
                     Spacer(Modifier.height(18.dp))
                 }
                 WyrmAvatar(url = avatarUrl, avatarKey = avatarKey, initial = name.take(1).uppercase(), size = 64.dp)
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Log out of Wyrm?",
-                    fontFamily = Wyrm.Display, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, color = Wyrm.Ink,
+                    fontFamily = Wyrm.Display, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, color = wyrmScopedPalette.ink,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     if (handle.isBlank()) name else "$name · $handle",
-                    fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = Wyrm.Quiet,
+                    fontFamily = Wyrm.Body, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = wyrmScopedPalette.quiet,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(16.dp))
                 Row(
-                    Modifier.fillMaxWidth().clip(wyrmRounded(16.dp)).background(Wyrm.Well).padding(14.dp),
+                    Modifier.fillMaxWidth().clip(wyrmRounded(16.dp)).background(wyrmScopedPalette.well).padding(14.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
-                    Icon(painterResource(LucideR.drawable.lucide_ic_cloud_upload), null, tint = Wyrm.Ink, modifier = Modifier.size(19.dp))
+                    Icon(painterResource(LucideR.drawable.lucide_ic_cloud_upload), null, tint = wyrmScopedPalette.ink, modifier = Modifier.size(19.dp))
                     Text(
                         "Your settings, skin and layouts are saved to your account first. " +
                             "Then this ${if (centred) "computer" else "phone"} forgets everything, and it all comes back when you log in again.",
-                        fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = Wyrm.Mute,
+                        fontFamily = Wyrm.Body, fontSize = 13.5.sp, lineHeight = 19.sp, color = wyrmScopedPalette.mute,
                     )
                 }
                 Spacer(Modifier.height(18.dp))
-                SheetButton("Log out", filled = Wyrm.Badge, text = Color.White, icon = LucideR.drawable.lucide_ic_log_out, onClick = onLogOut)
+                SheetButton("Log out", filled = wyrmScopedPalette.badge, text = Color.White, icon = LucideR.drawable.lucide_ic_log_out, onClick = onLogOut)
                 Spacer(Modifier.height(8.dp))
-                SheetButton("Cancel", filled = Wyrm.Well, text = Wyrm.Ink, onClick = onCancel)
+                SheetButton("Cancel", filled = wyrmScopedPalette.well, text = wyrmScopedPalette.ink, onClick = onCancel)
             }
         }
     }
@@ -139,6 +141,8 @@ internal fun LogOutSaveFailed(
     onLogOutAnyway: () -> Unit,
     onStay: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val card: @Composable () -> Unit = {
         Column(
             Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(horizontal = 24.dp),
@@ -146,28 +150,28 @@ internal fun LogOutSaveFailed(
         ) {
             WyrmBrandMark(size = 84.dp)
             Spacer(Modifier.height(22.dp))
-            Icon(painterResource(LucideR.drawable.lucide_ic_cloud_off), null, tint = Wyrm.Badge, modifier = Modifier.size(22.dp))
+            Icon(painterResource(LucideR.drawable.lucide_ic_cloud_off), null, tint = wyrmScopedPalette.badge, modifier = Modifier.size(22.dp))
             Spacer(Modifier.height(10.dp))
             Text(
                 "Your settings could not be saved",
-                fontFamily = Wyrm.Display, fontWeight = FontWeight.SemiBold, fontSize = 23.sp, color = Wyrm.Ink,
+                fontFamily = Wyrm.Display, fontWeight = FontWeight.SemiBold, fontSize = 23.sp, color = wyrmScopedPalette.ink,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 message,
-                fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 20.sp, color = Wyrm.Mute, textAlign = TextAlign.Center,
+                fontFamily = Wyrm.Body, fontSize = 14.sp, lineHeight = 20.sp, color = wyrmScopedPalette.mute, textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(22.dp))
-            SheetButton("Try again", filled = Wyrm.Ink, text = Wyrm.OnInk, icon = LucideR.drawable.lucide_ic_refresh_cw, onClick = onRetry)
+            SheetButton("Try again", filled = wyrmScopedPalette.ink, text = wyrmScopedPalette.onInk, icon = LucideR.drawable.lucide_ic_refresh_cw, onClick = onRetry)
             Spacer(Modifier.height(8.dp))
-            SheetButton("Log out anyway", filled = Wyrm.Well, text = Wyrm.Badge, onClick = onLogOutAnyway)
+            SheetButton("Log out anyway", filled = wyrmScopedPalette.well, text = wyrmScopedPalette.badge, onClick = onLogOutAnyway)
             Spacer(Modifier.height(8.dp))
-            SheetButton("Stay logged in", filled = Color.Transparent, text = Wyrm.Mute, onClick = onStay)
+            SheetButton("Stay logged in", filled = Color.Transparent, text = wyrmScopedPalette.mute, onClick = onStay)
         }
     }
     if (LocalCentredDialogs.current) CentredDialog(onStay, onRetry, card)
-    else Box(Modifier.fillMaxSize().background(Wyrm.Paper), contentAlignment = Alignment.Center) { card() }
+    else Box(Modifier.fillMaxSize().background(wyrmScopedPalette.paper), contentAlignment = Alignment.Center) { card() }
 }
 
 @Composable

@@ -7,12 +7,17 @@ typedef struct bp_instance {
   vec4s circle;
   vec4s uv_rect;
   vec4s color;
+  /* Hidden part (OM, 2026-10-30, game/redraw.c bead_cull_apply): x, y the
+     unit line to the bead above, z where that bead's solid disc begins, w 1
+     when set. Zero (every compound literal) draws the whole bead. */
+  vec4s clip;
 } bp_instance;
 
 typedef struct bp_renderer {
   VkPipeline pipeline;
   tdbuffer* instance_buffer;
   bp_instance* instances;
+  int capacity;
   int max_instances;
   int num_instances;
 } bp_renderer;

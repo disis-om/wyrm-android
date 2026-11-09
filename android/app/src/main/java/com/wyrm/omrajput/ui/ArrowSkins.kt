@@ -34,7 +34,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -199,6 +199,8 @@ private fun styleName(setting: Setting?, index: Int): String {
 /** The Controls › arrow block: the chosen arrow with a way into the picker. */
 @Composable
 internal fun ArrowStyleRow(styleSetting: Setting?, colour: Color, first: Boolean, onOpen: () -> Unit) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val style = styleSetting?.index ?: 0
@@ -218,7 +220,7 @@ internal fun ArrowStyleRow(styleSetting: Setting?, colour: Color, first: Boolean
                 modifier = Modifier
                     .size(width = 76.dp, height = 56.dp)
                     .clip(wyrmRounded(10.dp))
-                    .background(Wyrm.Well)
+                    .background(wyrmScopedPalette.well)
                     .padding(6.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -226,10 +228,10 @@ internal fun ArrowStyleRow(styleSetting: Setting?, colour: Color, first: Boolean
             }
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("Arrow style", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = Wyrm.Ink)
-                Text(name, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = Wyrm.Quiet, maxLines = 1)
+                Text("Arrow style", fontFamily = Wyrm.Body, fontSize = 15.5.sp, color = wyrmScopedPalette.ink)
+                Text(name, fontFamily = Wyrm.Body, fontSize = 12.5.sp, color = wyrmScopedPalette.quiet, maxLines = 1)
             }
-            Text("›", fontFamily = Wyrm.Body, fontSize = 20.sp, color = Wyrm.Chevron)
+            Text("›", fontFamily = Wyrm.Body, fontSize = 20.sp, color = wyrmScopedPalette.chevron)
         }
     }
 }
@@ -245,6 +247,8 @@ internal fun ArrowPickerSheet(
     onPickStyle: (Int) -> Unit,
     onClose: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     Dialog(
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -255,7 +259,7 @@ internal fun ArrowPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Wyrm.Paper)
+                .background(wyrmScopedPalette.paper)
                 .windowInsetsPadding(WindowInsets.statusBars),
         ) {
             Box(modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 14.dp)) {
@@ -264,7 +268,7 @@ internal fun ArrowPickerSheet(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Ink,
+                    color = wyrmScopedPalette.ink,
                     modifier = Modifier.align(Alignment.Center),
                 )
                 Text(
@@ -272,14 +276,14 @@ internal fun ArrowPickerSheet(
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Wyrm.Link,
+                    color = wyrmScopedPalette.link,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .clickable(onClick = onClose)
                         .padding(horizontal = 8.dp, vertical = 8.dp),
                 )
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Wyrm.Rule))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(wyrmScopedPalette.rule))
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -316,6 +320,8 @@ internal fun ArrowPickerSheet(
 /** The chosen arrow sweeping round as a finger would steer it. */
 @Composable
 private fun LiveArrowPreview(style: Int, skin: Int, colour: Color, brightness: Float) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val turn = rememberInfiniteTransition(label = "arrow preview")
     val angle by turn.animateFloat(
         initialValue = -28f,
@@ -330,7 +336,7 @@ private fun LiveArrowPreview(style: Int, skin: Int, colour: Color, brightness: F
             .height(150.dp)
             .clip(wyrmRounded(14.dp))
             .background(Color(0xFF12161C))
-            .border(1.dp, Wyrm.Rule, wyrmRounded(14.dp)),
+            .border(1.dp, wyrmScopedPalette.rule, wyrmRounded(14.dp)),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -368,6 +374,8 @@ private fun ArrowTile(
     onClick: () -> Unit,
     glyph: @Composable (Modifier) -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = wyrmRounded(14.dp)
@@ -376,8 +384,8 @@ private fun ArrowTile(
             .fillMaxWidth()
             .scale(pressScale(pressed))
             .clip(shape)
-            .background(Wyrm.Well)
-            .border(if (selected) 2.dp else 1.dp, if (selected) Wyrm.Ink else Wyrm.Rule, shape)
+            .background(wyrmScopedPalette.well)
+            .border(if (selected) 2.dp else 1.dp, if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.rule, shape)
             .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .padding(vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -389,7 +397,7 @@ private fun ArrowTile(
             fontFamily = Wyrm.Body,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
             fontSize = 11.sp,
-            color = if (selected) Wyrm.Ink else Wyrm.Mute,
+            color = if (selected) wyrmScopedPalette.ink else wyrmScopedPalette.mute,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.heightIn(min = 14.dp).padding(horizontal = 6.dp),

@@ -32,7 +32,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Text
+import com.wyrm.omrajput.i18n.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -551,6 +551,8 @@ fun LiquidSegmented(
     /** A live position (0..n-1) to follow, e.g. a pager's scroll. */
     follow: Float? = null,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     if (options.isEmpty()) return
     val safe = selected.coerceIn(options.indices)
     val haptics = LocalHapticFeedback.current
@@ -621,7 +623,7 @@ fun LiquidSegmented(
                 .matchParentSize()
                 .layerBackdrop(contentBackdrop)
                 .clip(WyrmCapsule)
-                .background(Wyrm.Card)
+                .background(wyrmScopedPalette.card)
                 .background(track),
         ) {
             // At rest the thumb is a plain raised capsule beneath the words.
@@ -646,7 +648,7 @@ fun LiquidSegmented(
                                 fontFamily = Wyrm.Body,
                                 fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = fontSize,
-                                color = if (chosen) Wyrm.PillInk else Wyrm.Mute,
+                                color = if (chosen) Wyrm.PillInk else wyrmScopedPalette.mute,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -656,7 +658,7 @@ fun LiquidSegmented(
                                     fontFamily = Wyrm.Body,
                                     fontWeight = if (chosen) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = fontSize,
-                                    color = Wyrm.Quiet,
+                                    color = wyrmScopedPalette.quiet,
                                     maxLines = 1,
                                 )
                             }
@@ -743,8 +745,10 @@ private fun FoldingTabGlass(
     fullWidth: Dp,
     onExpand: () -> Unit,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val pageBackdrop = LocalPageBackdrop.current
-    val container = Wyrm.Paper.copy(alpha = LocalTabBarFrost.current)
+    val container = wyrmScopedPalette.paper.copy(alpha = LocalTabBarFrost.current)
     val frostBlur = LocalTabBarBlur.current
     // A light, see-through pill over the chosen tab; its ink shows through (OM).
     val restingThumb = Wyrm.TabThumb
@@ -768,7 +772,7 @@ private fun FoldingTabGlass(
                 },
                 shadow = { Shadow(radius = 14.dp, offset = DpOffset(0.dp, 6.dp), color = Color.Black.copy(alpha = 0.07f)) },
                 onDrawSurface = {
-                    if (!glassAvailable) drawRect(Wyrm.TabBar)
+                    if (!glassAvailable) drawRect(wyrmScopedPalette.tabBar)
                     drawRect(container)
                 },
             )
@@ -829,6 +833,8 @@ private fun ExpandedLiquidTabBar(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
+
     val count = tabs.size
     val haptics = LocalHapticFeedback.current
     val pageBackdrop = LocalPageBackdrop.current
@@ -838,7 +844,7 @@ private fun ExpandedLiquidTabBar(
     // comparing against the value the bar was first composed with is how a
     // tap on Settings could move the pill without ever opening Settings.
     val chosen by rememberUpdatedState(selected)
-    val container = Wyrm.Paper.copy(alpha = LocalTabBarFrost.current)
+    val container = wyrmScopedPalette.paper.copy(alpha = LocalTabBarFrost.current)
     val frostBlur = LocalTabBarBlur.current
     // A light, see-through pill over the chosen tab; its ink shows through (OM).
     val restingThumb = Wyrm.TabThumb
@@ -948,7 +954,7 @@ private fun ExpandedLiquidTabBar(
                     },
                     shadow = { Shadow(radius = 14.dp, offset = DpOffset(0.dp, 6.dp), color = Color.Black.copy(alpha = 0.07f)) },
                     onDrawSurface = {
-                        if (!glassAvailable) drawRect(Wyrm.TabBar)
+                        if (!glassAvailable) drawRect(wyrmScopedPalette.tabBar)
                         drawRect(container)
                     },
                 )

@@ -13,6 +13,12 @@
   <a href="https://github.com/disis-om/wyrm-android/releases/latest"><b>⬇&nbsp; Download the latest version</b></a>
 </p>
 
+<p align="center">
+  <img src="images/play.png" width="260" alt="Play page">&nbsp;
+  <img src="images/skin.png" width="260" alt="Skin page">&nbsp;
+  <img src="images/settings.png" width="260" alt="Settings page">
+</p>
+
 ---
 
 Hey! This is the Android version of Wyrm. Same account, same skins, same
@@ -23,6 +29,10 @@ Vulkan), so it stays smooth and high FPS even when the arena gets crowded. On
 top of that you get skins you build bead by bead, team play, global chat, a
 live leaderboard, Trails, assist mode, Snakey Rain and a lot of controls to
 make it feel the way you like.
+
+<p align="center">
+  <img src="images/ready.png" width="720" alt="Ready room">
+</p>
 
 ## Installing
 

@@ -1,149 +1,102 @@
-# Wyrm for Android
+<p align="center">
+  <img src="images/icon.png" width="128" alt="Wyrm icon">
+</p>
 
-Wyrm is a social platform and a snake arena game in one Android app, by
-**OM Rajput**. A native C engine draws the arena with Vulkan; Jetpack Compose
-draws everything around it, in an iOS-style Liquid Glass interface.
+<h1 align="center">Wyrm for Android</h1>
 
-This repository holds the app's source, its releases and its update channel.
+<p align="center">
+  The slither game app I've been building, on your Android phone.<br>
+  Needs Android 8.0 or newer.
+</p>
 
-## Updates and releases
+<p align="center">
+  <a href="https://github.com/disis-om/wyrm-android/releases/latest"><b>⬇&nbsp; Download the latest version</b></a>
+</p>
 
-Installed apps read a signed manifest from this repository and verify its
-signature before they trust a single field in it.
+---
 
-| Channel | Manifest | Who is offered it |
-|---|---|---|
-| Stable | `update/latest.json` (+ `.sig`) | everyone |
-| Beta | `update/beta.json` (+ `.sig`) | players who turn on **Settings › Backup › Beta updates**; they are offered whichever of the two is newer |
+Hey! This is the Android version of Wyrm. Same account, same skins, same
+friends as on iPhone, Windows and Mac. Log in and your settings follow you.
 
-Every release is a tagged GitHub release with the APK attached. Betas step the
-patch number (8.1.1, 8.1.2…) and say "(beta)" in their title. Latest release:
-**8.1.0 (810)** stable (2026-10-14). 8.0.0 brought arena chat with TEAM, GLOBAL and
-ONLINE tabs, Snakey Rain built in, Skin Studio and saved skins, Wyrm skins,
-bigger and recolourable on-screen buttons, background play, joystick knob
-modes, free in-game names, message deletion, and NTL's bot again.
+It plays on the real slither.io servers with its own fast engine (C and
+Vulkan), so it stays smooth and high FPS even when the arena gets crowded. On
+top of that you get skins you build bead by bead, team play, global chat, a
+live leaderboard, Trails, assist mode, Snakey Rain and a lot of controls to
+make it feel the way you like.
 
-## Features
+## Installing
 
-- **Accounts and social:** username/password accounts, profiles, follows,
-  direct messages, global chat, leaderboards, notifications and voice rooms,
-  all through the Wyrm backend.
-- **Delete messages:** touch and hold your own Global or direct message, then
-  Delete; the active server row is removed and connected clients drop it live.
-- **Arena chat:** the chat window in a match has TEAM, GLOBAL and ONLINE tabs.
-  Global chat can be read and answered without leaving the match; ONLINE lists
-  players seen on Wyrm lately with their in-game name, username and arena
-  (players who turn off "Show my activity to friends" are left out). Each tab
-  counts its own unread messages.
-- **Snakey Rain:** built in, with its own page, an on-screen key and a movable,
-  resizable arena panel.
-- **Observatory:** the separate hosted operator dashboard includes a Live
-  presence page that can be opened with its own read-only password.
-- **Online arenas:** slither protocol 19, a live arena directory, arena codes,
-  and recent and saved custom arenas.
-  - Latency probes run only while the arena picker is open, and each arena is
-    dialled at most once a minute.
-  - One arena connection per Play. A refused entry returns to the lobby with no
-    automatic retry.
-- **Offline play:** Play with AI, with local bots. The assist bot follows NTL's
-  grow/circle behavior, exactly like NTL's bot.
-- **Skin Studio:** presets, a pattern builder with the slither.io colour wheel,
-  Wyrm beads, accessories, Wyrm looks (hair, ears, glasses) and arena
-  backgrounds. A custom skin is sent to the arena in at most 146 colour runs
-  (300 bytes), the same limit NTL uses; longer skins got the snake refused.
-  The new Studio paints local beads and eyes; the classic editor also keeps
-  saved skins, and tags fly away when a snake dies.
-- **Trails:** photo and text posts with a story-style studio. After a run,
-  "Share run" opens it with the run's screenshot or your skin, a stats box
-  (score, kills, time) and text. A post can share its skin, and other players
-  can try it on ("Try this skin") before wearing it.
-  Deleting a Trail removes its rows and unreferenced photos/thumbnails/videos
-  from active storage; backups retain older copies until their retention ends.
-- **Help & feedback:** report a problem, suggest an idea or ask for help,
-  with optional device info and a recent log; crash and arena-drop reports
-  (always asked first unless you turn on automatic sending) and replies from
-  Wyrm as notifications.
-- **Controls:** joystick or arrow steering, with 5 drawn arrows and 20 image
-  arrows, and a picker with a live preview. Also on-screen buttons and a
-  draggable arena HUD layout editor, joystick knob modes and keys up to 2.5x.
-- **Background play:** the game/socket/bot can keep running without GPU frames
-  while a foreground service shows a notification and keeps CPU/Wi-Fi awake.
-- **Team mode:** NTL-compatible presence, roster (FPS, ping, leaderboard place)
-  and chat, with several saved teams.
-- **Look and account settings:** themes, food styles, bot mode and layouts
-  save to the account and restore on login; shared play options follow Android
-  and iPhone. Logging out clears the device. Updates use a signed manifest.
+1. Download `Wyrm-v<version>.apk` from the
+   [latest release](https://github.com/disis-om/wyrm-android/releases/latest).
+2. Open it. If Android asks, allow your browser or file manager to
+   **install unknown apps**.
+3. Tap **Install**, then open Wyrm, create an account or log in, and play.
 
-NTL services are on (since 2026-10-04). Do not turn them off without a yes.
+If you already have Wyrm, just install the new APK over it. Your account and
+settings stay.
 
-## Architecture
+There's also a step by step guide on
+[wyrm.web.app](https://wyrm.web.app/download/android).
 
-```text
-Jetpack Compose interface (Kotlin)       Android activity, updater, backup (Java)
-                 │                                   │
-                 └──────── JNI mailboxes and callbacks ────────┘
-                                   │
-                    C engine: game, protocol, bot, UI overlay
-                                   │
-                  SDL3 (window, input) · Thermite · Vulkan
-```
+## "Play Protect" warning? That's normal
 
-The app is portrait; the lobby and the arena are landscape. Compose never
-touches engine state directly: requests go through mutex-guarded mailboxes that
-are drained on the engine thread.
+Wyrm isn't on the Play Store, so Google doesn't know it. If Play Protect warns
+you, tap **More details › Install anyway**. Every Wyrm build is signed with the
+same key, so Android only ever installs it over Wyrm if it's really mine.
 
-## Repository layout
+## Updates
 
-| Path | Contents |
-|---|---|
-| `app/src/` | C engine: gameplay, slither protocol, renderer glue, touch controls, JNI bridges (`platform/`) |
-| `app/res/` | Fonts, textures (including the arrow atlas) and shader sources, packaged as assets |
-| `android/` | The Gradle project; Kotlin/Java under `android/app/src/main/java/com/wyrm/omrajput/` |
-| `android-sdl/` | Vendored SDL3 |
-| `thermite/` | The Vulkan rendering framework |
-| `glfw/` | The desktop window/input dependency, kept for upstream compatibility |
-| `tools/`, `scripts/`, `tests/` | Asset tools, the build script, the release script and protocol tests |
-| `update/` | The signed update manifests read by installed apps |
+You don't need to come back here for new versions. Wyrm checks by itself, and
+when there's a new one you'll get a card in the app. Tap **Update now**, it
+downloads, checks the file and installs it.
 
-## Building
+You can also check yourself in **Settings › Updates**. Turn on
+**Beta updates** there if you want new stuff a bit earlier than everyone else.
 
-Requirements:
-- JDK 17 (the Android Studio JBR)
-- Android SDK 36
-- NDK `28.2.13676358`
-- CMake `3.22.1`
-- an ARM64 Android 8.0+ device with Vulkan
+Every update is signed by me, and Wyrm won't install anything whose
+signature, size or checksum doesn't match.
 
-1. Generate the SPIR-V shaders with `python build.py` (it needs `slangc`). The
-   compiled `.spv` files are not committed.
-2. Add your own Firebase `android/app/google-services.json`. It is not published.
+## Something not working?
+
+Send me a message in Wyrm (Settings › Help & feedback) or on Discord and tell
+me your phone model and Android version. Crash reports are only sent if you
+say yes.
+
+<details>
+<summary>For developers: building from source</summary>
+
+<br>
+
+A native C engine draws the arena with Vulkan; Jetpack Compose draws
+everything around it.
+
+| Path | What's in it |
+| --- | --- |
+| `app/src/` | C engine: gameplay, slither protocol, renderer, touch controls, JNI |
+| `app/res/` | Fonts, textures and shader sources |
+| `android/` | The Gradle project (Kotlin/Java) |
+| `android-sdl/`, `thermite/`, `glfw/` | SDL3, the Vulkan framework, the desktop window library |
+| `update/` | The signed update manifests the app reads |
+
+You need JDK 17 (the Android Studio JBR), Android SDK 36, NDK
+`28.2.13676358`, CMake `3.22.1` and an ARM64 phone with Vulkan.
+
+1. Generate the shaders with `python build.py` (needs `slangc`).
+2. Add your own Firebase `android/app/google-services.json`.
 3. Build:
 
    ```powershell
    cd android
-   .\gradlew.bat :app:assembleDebug "-PWYRM_VERSION_CODE=628" "-PWYRM_VERSION_NAME=6.2.8"
+   .\gradlew.bat :app:assembleDebug "-PWYRM_VERSION_CODE=900" "-PWYRM_VERSION_NAME=9.0.0"
    ```
 
-Optional Gradle properties: `WYRM_API_URL`, `GOOGLE_WEB_CLIENT_ID`,
-`WYRM_VERSION_CODE`, `WYRM_VERSION_NAME`. The version reaches the C engine
-through a generated header (`android/app/.cxx-version/wyrm_version.h`), so a
-new version does not rebuild the whole engine.
+Release signing keys are private and not in this repository, so a debug build
+can't replace the official app. No keys, passwords or player data are stored
+here, only the updater's public key.
 
-The first native build compiles the whole engine and takes several minutes.
+</details>
 
-Release signing reads `release-signing/keystore.properties`, which is private
-and not in this repository. Debug builds cannot replace official builds.
+---
 
-## Security
-
-Report security issues privately to OM Rajput through the contact methods at omrajput.in; do not open a public issue with credentials, exploit details or private data.
-
-No signing keys, keystores, passwords, service credentials or player data are
-stored here. The only key file is the updater's public verification key. Team
-credentials and sessions live in the Android Keystore on the device.
-
-## License
-
-GNU GPL v3; see `LICENSE` and `NOTICE`. Third-party components keep their own
-licenses in their folders. Slither.io names, artwork and trademarks belong to
-their owners. Wyrm is independent and not affiliated with the game's developer.
+<p align="center">GPL-3.0, see <code>LICENSE</code> and <code>NOTICE</code>. © 2026 OM Rajput<br>
+Slither.io names and artwork belong to their owners. Wyrm is independent and not affiliated with the game's developer.</p>

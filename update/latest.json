@@ -3,15 +3,15 @@
   "source": "github",
   "productName": "Wyrm",
   "packageName": "com.wyrm.omrajput",
-  "versionCode": 904,
-  "versionName": "9.0.4",
+  "versionCode": 907,
+  "versionName": "9.0.7",
   "minimumVersionCode": 0,
   "mandatory": false,
-  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v9.0.4/Wyrm-v9.0.4.apk",
-  "apkSize": 122723327,
-  "sha256": "f5abb96c390a16300e019c85e33e232ddd7ee3165d74fc6ea95f9565e1e3122f",
-  "publishedAt": "2026-11-18T19:03:56Z",
+  "apkUrl": "https://github.com/disis-om/wyrm-android/releases/download/v9.0.7/Wyrm-v9.0.7.apk",
+  "apkSize": 122724395,
+  "sha256": "93e61d6a89f01cf6c70bb88c0100de178203d38659527b687147fa2e9f101798",
+  "publishedAt": "2026-11-18T20:32:47Z",
   "headline": "A new version of Wyrm",
   "author": "OM Rajput",
-  "releaseNotes": ["No other changes in this release.", "Fixed: typing in the arena chat no longer presses game keys (like K turning on assist).", "Fixed: the spine now reaches the tail even when you zoom in a lot."]
+  "releaseNotes": ["Minor bug fixes."]
 }

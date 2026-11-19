@@ -223,6 +223,8 @@ typedef struct user_settings_ext {
   bool arrow_double_tap_boost_v1;
   /* Append after legacy tail padding; 0 Normal, 1 High visibility texts. */
   int32_t native_text_style;
+  /* Wyrm AI Trainer: independent automatic threat-avoidance steering. */
+  bool ai_coach_enabled;
 } user_settings_ext;
 
 typedef struct user_settings {

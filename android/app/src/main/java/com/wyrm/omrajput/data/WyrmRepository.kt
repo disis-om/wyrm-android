@@ -567,9 +567,25 @@ class WyrmRepository(
         )
     }
 
-    suspend fun replyToTrail(id: String, body: String): TrailReply = withContext(Dispatchers.IO) {
-        val response = call("/v1/trails/$id/comments", method = "POST", body = JSONObject().put("body", body))
+    suspend fun trailCommentReplies(id: String, commentId: String): TrailCommentPage = withContext(Dispatchers.IO) {
+        val response = call("/v1/trails/$id/comments/$commentId/replies?limit=40")
+        val rows = response.optJSONArray("comments")
+        TrailCommentPage(
+            comments = (0 until (rows?.length() ?: 0)).map { rows!!.getJSONObject(it).toTrailComment(api) },
+            nextCursor = response.optString("nextCursor").takeIf { it.isNotBlank() && it != "null" },
+        )
+    }
+
+    suspend fun replyToTrail(id: String, body: String, parentId: String? = null): TrailReply = withContext(Dispatchers.IO) {
+        val payload = JSONObject().put("body", body)
+        parentId?.takeIf { it.isNotBlank() }?.let { payload.put("parentId", it) }
+        val response = call("/v1/trails/$id/comments", method = "POST", body = payload)
         TrailReply(response.getJSONObject("comment").toTrailComment(api), response.optInt("commentCount"))
+    }
+
+    suspend fun editTrailReply(id: String, commentId: String, body: String): TrailComment = withContext(Dispatchers.IO) {
+        val response = call("/v1/trails/$id/comments/$commentId", method = "PATCH", body = JSONObject().put("body", body))
+        (response.optJSONObject("comment") ?: response).toTrailComment(api)
     }
 
     suspend fun deleteTrailReply(id: String, commentId: String) = withContext(Dispatchers.IO) {

@@ -191,6 +191,9 @@ static const setting_desc GLOBAL_FIELDS[] = {
      0, 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(laser_color)},
     {"general.laser_thickness", "general.bot", "Laser thickness", "",
      SETTING_INT, 1, 4, NULL, OWNER_SETTINGS, SETTINGS_FIELD(laser_thickness)},
+    {"general.ai_coach", "general.bot", "AI Trainer",
+     "Automatically steers away from nearby snake collisions. Manual controls remain active when disabled.",
+     SETTING_BOOL, 0, 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(ext.ai_coach_enabled)},
     {"general.bot_circle", "general.bot", "Circle after score",
      "Below this score the bot hunts for food. From this score on it coils "
      "round itself to guard its length and closes the coil on any snake "

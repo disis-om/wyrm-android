@@ -29,12 +29,13 @@ fun SettingsBotScreen(
 ) {
     val wyrmScopedPalette = LocalWyrmPalette.current ?: Wyrm.currentPalette
 
+    val coach = settings.named("general.ai_coach")
     val circle = settings.named("general.bot_circle")
     val radius = settings.named("general.bot_radius")
-    val rows = listOfNotNull(circle, radius)
+    val rows = listOfNotNull(coach, circle, radius)
 
     SettingsDrillScaffold(
-        title = "Bot",
+        title = "AI Trainer",
         insetTop = insetTop,
         insetBottom = insetBottom,
         onBack = onBack,
@@ -44,14 +45,14 @@ fun SettingsBotScreen(
         SettingsCard {
             Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 15.dp, bottom = 15.dp)) {
                 Text(
-                    text = "Let the bot play",
+                    text = "Treinador IA independente",
                     fontFamily = Wyrm.Body,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
                     color = wyrmScopedPalette.ink,
                 )
                 Text(
-                    text = "Turn it on with the Bot button in a match. It eats, dodges snakes, breaks away with boost when it is surrounded, and coils round itself once it is big.",
+                    text = "Ative o Treinador IA para desviar automaticamente de cobras próximas. Seus controles manuais continuam funcionando quando ele está desligado. O bot tradicional permanece separado.",
                     fontFamily = Wyrm.Body,
                     fontSize = 12.5.sp,
                     color = wyrmScopedPalette.quiet,
@@ -60,7 +61,7 @@ fun SettingsBotScreen(
             }
         }
 
-        SettingsSectionLabel("Basic · behaviour")
+        SettingsSectionLabel("Treinador IA e bot tradicional")
         SettingsCard {
             rows.forEachIndexed { index, setting ->
                 SettingTypedRow(setting = setting, first = index == 0, onChange = onChange)

@@ -56,6 +56,12 @@ jobs:
       - name: Compile Vulkan shaders
         run: python3 build.py 2
 
+      - name: Compile Android native engine (including AI Trainer)
+        working-directory: android
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: bash ./gradlew :app:externalNativeBuildDebug -PWYRM_VERSION_CODE=908 -PWYRM_VERSION_NAME=9.0.8 --stacktrace
+
       - name: Build debug APK
         working-directory: android
         env:

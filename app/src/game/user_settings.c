@@ -226,6 +226,7 @@ void user_settings_ext_default(user_settings_ext* x) {
   x->arrow_double_tap_boost = true;
   x->arrow_double_tap_boost_v1 = true;
   x->native_text_style = 1;
+  x->ai_coach_enabled = false;
 #ifdef WYRM_DESKTOP
   x->eyes_back_key = GLFW_KEY_E;
 #endif

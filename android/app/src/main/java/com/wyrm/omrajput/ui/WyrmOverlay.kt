@@ -1440,7 +1440,7 @@ class WyrmOverlay(private val activity: Activity) :
                             minimap = layoutPosition("hud.minimap_x", "hud.minimap_y"),
                             leaderboard = layoutPosition("hud.leaderboard_x", "hud.leaderboard_y"),
                             minimapSize = value("general.minimap_size", 300f),
-                            leaderboardFont = value("general.lb_font", 1f).toInt(),
+                            leaderboardFont = value("general.lb_font", 1f),
                             safeInsets = SafeInsets(),
                             onScale = ::setBackgroundScale,
                             onReset = { setBackgroundScale(DEFAULT_BG_SCALE) },
@@ -1786,7 +1786,7 @@ class WyrmOverlay(private val activity: Activity) :
                                 layoutPosition("${target.prefix}_x", "${target.prefix}_y")
                             },
                             minimapSize = value("general.minimap_size", 300f),
-                            leaderboardFont = value("general.lb_font", 1f).toInt(),
+                            leaderboardFont = value("general.lb_font", 1f),
                             statsFont = value("general.stats_font", 1f).toInt(),
                             statsScale = value("layout.stats_scale", 1f),
                             statsOpacity = value("layout.stats_opacity", 1f),
@@ -1833,7 +1833,7 @@ class WyrmOverlay(private val activity: Activity) :
                                 layoutPosition("${target.prefix}_x", "${target.prefix}_y")
                             },
                             minimapSize = value("general.minimap_size", 300f),
-                            leaderboardFont = value("general.lb_font", 1f).toInt(),
+                            leaderboardFont = value("general.lb_font", 1f),
                             statsFont = value("general.stats_font", 1f).toInt(),
                             safeInsets = SafeInsets(),
                             onMove = ::moveArenaHud,

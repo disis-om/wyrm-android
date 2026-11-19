@@ -1,4 +1,5 @@
 #include "input.h"
+#include "ai_coach.h"
 
 #include <math.h>
 #include <string.h>
@@ -353,6 +354,17 @@ static void input_with_policy(tenv* env, bool team_protected,
       xm = gdata->data.lsxm;
       ym = gdata->data.lsym;
     }
+    /* AI Trainer is an optional safety override: only take steering when enabled,
+       the regular bot is off, and the Team panel does not own the controls. */
+    if (usrs->ext.ai_coach_enabled && !usrs->hotkeys[HOTKEY_BOT].active &&
+        !team_protected) {
+      float coach_angle;
+      if (ai_coach_steer(gdata->data.snakes, snakes_len, me, &coach_angle)) {
+        xm = (int)(cosf(coach_angle) * 1000.0f);
+        ym = (int)(sinf(coach_angle) * 1000.0f);
+      }
+    }
+
     // SDL turns Android touches into compatibility mouse events so ImGui stays
     // touchable. Never treat that synthetic left mouse as gameplay boost: the
     // mobile controls layer owns boost using an explicit finger ID.

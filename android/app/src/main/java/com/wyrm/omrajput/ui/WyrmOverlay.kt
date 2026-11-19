@@ -605,7 +605,7 @@ class WyrmOverlay(private val activity: Activity) :
         AUTH, ONBOARDING, HOME, SOCIAL, SKIN, SKIN_EDIT, SKIN_PATTERN, SKIN_ACCESSORY, SKIN_TAG,
         SKIN_BACKGROUND, DEATH, PROFILE, EDIT_PROFILE, LEADERBOARD, ARENA,
         CROP_PHOTO, SETTINGS, SETTINGS_GENERAL, SETTINGS_ASSIST, SETTINGS_NORMAL,
-        SETTINGS_CONTROLS, SETTINGS_BUTTONS, SETTINGS_BOT, SETTINGS_NOTIFICATIONS,
+        SETTINGS_CONTROLS, SETTINGS_BUTTONS, SETTINGS_BOT, SETTINGS_AI_TRAINER, SETTINGS_NOTIFICATIONS,
         SETTINGS_ACCESSIBILITY, SETTINGS_FOOD, SETTINGS_BACKUP,
         SETTINGS_UPDATES, CONTROL_LAYOUT, ON_SCREEN_BUTTON_LAYOUT, ARENA_HUD_LAYOUT, BACKGROUND_SIZE_EDITOR, SNAKE_LOOK_EDITOR,
         CHAT, THREAD, PLAYER, CONNECTIONS, TEAM, VOICE, ARENA_CHAT, PRIVACY, NOTIFICATIONS,
@@ -1462,6 +1462,14 @@ class WyrmOverlay(private val activity: Activity) :
                         )
 
                         Route.SETTINGS_BOT -> SettingsBotScreen(
+                            settings = settings,
+                            insetTop = insetTop,
+                            insetBottom = insetBottom,
+                            onBack = back { panelOpen = false },
+                            onChange = ::writeSetting,
+                        )
+
+                        Route.SETTINGS_AI_TRAINER -> SettingsAiTrainerScreen(
                             settings = settings,
                             insetTop = insetTop,
                             insetBottom = insetBottom,
@@ -4196,6 +4204,7 @@ class WyrmOverlay(private val activity: Activity) :
         if (id == "general.vsync") return null
         val arrowSteering = settings.named("controls.joystick_mode")?.index == 2
         return when {
+            id == "general.ai_coach" -> Route.SETTINGS_AI_TRAINER to "AI Trainer"
             id == "general.bot_circle" || id == "general.bot_radius" -> Route.SETTINGS_BOT to "Bot"
             group == "general.bot" -> null
             group == "general" || group.startsWith("general.") -> Route.SETTINGS_GENERAL to "Display"

@@ -2,7 +2,13 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
-    id 'com.google.gms.google-services'
+    id 'com.google.gms.google-services' apply false
+}
+
+// Firebase configuration is private and may be supplied by the builder.
+// Keep local/debug source builds possible when google-services.json is absent.
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
 }
 
 def wyrmVersionCode = (project.findProperty('WYRM_VERSION_CODE') ?: '1').toInteger()

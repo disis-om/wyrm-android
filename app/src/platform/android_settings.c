@@ -144,7 +144,7 @@ static const setting_desc GLOBAL_FIELDS[] = {
        it. The ranges are the mod's own: chain 1 to 3, swing 1 to 2. */
     {"tags.index", "tags", "Tag",
      "Which tag hangs from your head. Below zero is none.", SETTING_INT, -1,
-     TAG_INDEX_LIMIT - 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(tag_index)},
+     (TAG_COUNT + WYRM_TAG_COUNT) - 1, NULL, OWNER_SETTINGS, SETTINGS_FIELD(tag_index)},
     {"tags.chain", "tags", "Chain length",
      "How far the tag trails behind the head.", SETTING_FLOAT, 1.0f, 3.0f, NULL,
      OWNER_SETTINGS, SETTINGS_FIELD(tag_chain)},

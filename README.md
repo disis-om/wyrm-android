@@ -104,7 +104,7 @@ Release signing keys are private and not in this repository, so a debug build
 can't replace the official app. No keys, passwords or player data are stored
 here, only the updater's public key.
 
-</details>
+</details> 
 
 ---
 
